@@ -1,8 +1,24 @@
 # @searchicus/api
 
-The searchicus HTTP API — a thin JSON layer over the `core` package's
+The searchicus HTTP server — a JSON search API **and** an MCP Streamable
+HTTP endpoint, both thin layers over the `core` package's
 `SearchEngineRegistry`. Only the mock engine ships registered; see the repo
 root `README.md` for adding a browser-backed one.
+
+## Why one process
+
+MCP is mounted at `POST /mcp` in the same Express app rather than running as
+its own service. It can be, because the MCP server is **stateless** — a
+fresh `McpServer` and transport per request, so there's no session state to
+coordinate.
+
+Sharing a process means sharing one registry, and therefore one rate-limit
+throttle and one persistent browser profile. As two processes they would
+each throttle independently and query the backends at twice the configured
+rate, while building two divergent cookie jars.
+
+Set `MCP_ENABLED=false` to serve the search API alone; `/mcp` then 404s and
+nothing else changes.
 
 ## Running
 
@@ -23,7 +39,7 @@ On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits
 for in-flight browser sessions to finish, since a search can return results
 while its session is still running. A 15s grace period bounds that wait.
 
-## Endpoints
+## HTTP API
 
 ### `GET /health`
 
@@ -75,6 +91,40 @@ curl -s localhost:3000/search -H 'content-type: application/json' \
   -d '{"query":"typescript generics","limit":3}' | jq
 ```
 
+## MCP endpoint
+
+`POST /mcp`, Streamable HTTP transport, stateless mode. `GET` and `DELETE`
+return `405` — without sessions there's no server-initiated stream to open
+or session to tear down.
+
+### Tools
+
+- **`search`** — `{ query, limit?, page?, filters?, engines? }` → fans the
+  query out across the requested (or every) registered engine. Query and
+  engine-selection validation is shared with the HTTP API: query text is
+  trimmed and non-whitespace, and a supplied `engines` list is non-empty and
+  duplicate-free.
+- **`list_engines`** — lists the engines currently registered.
+
+Per-engine failures come back inside the result payload rather than as tool
+errors. Errors at the endpoint itself use JSON-RPC error objects, including
+`-32700` for a malformed request body.
+
+```bash
+curl -s localhost:3000/mcp \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": { "name": "search", "arguments": { "query": "typescript generics", "limit": 2 } }
+  }'
+```
+
+Or point any MCP client that supports Streamable HTTP at
+`http://localhost:3000/mcp`.
+
 ## Scripts
 
 ```bash
@@ -82,3 +132,9 @@ npm run build -w @searchicus/api
 npm run test -w @searchicus/api
 npm run typecheck -w @searchicus/api
 ```
+
+Tests cover the search API through `supertest`, connect an SDK `Client` to
+`createMcpServer()` over `InMemoryTransport` for focused tool coverage, and
+connect one over a real ephemeral Streamable HTTP endpoint — covering tool
+logic, the stateless HTTP wiring, and the `MCP_ENABLED=false` path without
+external services.

@@ -7,7 +7,8 @@ monorepo with a shared core, and several front doors onto that core:
 - **CLI** — run searches from a terminal
 - **HTTP API** — a JSON API for programmatic access
 - **MCP server** — a Model Context Protocol server (Streamable HTTP
-  transport) so AI agents/tools can search through it
+  transport) so AI agents/tools can search through it, served from the same
+  process as the HTTP API
 - **Web UI** — a minimal browser UI for interactive search
 
 The set of backend search engines is **pluggable**: every engine implements
@@ -42,18 +43,25 @@ the mock engine ships with it; see "Adding a new search engine backend".
                           │  - mock engine │
                           └───────┬────────┘
                                   │
-        ┌───────────┬────────────┼────────────┬────────────┐
-        │            │            │            │
-   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
-   │   cli   │  │   api   │  │   mcp   │  │   ui    │
-   │ command │  │  HTTP   │  │ MCP     │  │ browser │
-   │  line   │  │  JSON   │  │ server  │  │  app    │
-   └─────────┘  └─────────┘  └─────────┘  └─────────┘
+             ┌────────────────┼────────────────┐
+             │                │                │
+        ┌─────────┐   ┌───────────────┐   ┌─────────┐
+        │   cli   │   │      api      │   │   ui    │
+        │ command │   │  HTTP  +  MCP │   │ browser │
+        │  line   │   │  JSON     /mcp│   │   app   │
+        └─────────┘   └───────────────┘   └─────────┘
 ```
 
 All of the search-facing surfaces (CLI, HTTP API, MCP server) are thin
 adapters over the `core` package's `SearchEngineRegistry`. The web UI talks
 to the HTTP API.
+
+The HTTP API and the MCP server share **one process** (`packages/api`), with
+MCP mounted at `POST /mcp` and toggleable via `MCP_ENABLED`. That's not just
+packaging convenience: sharing a process means sharing one registry, and
+therefore one rate-limit throttle and one persistent browser profile. Run as
+two processes they would throttle independently and query the backends at
+twice the configured rate.
 
 ### The browser layer
 
@@ -87,8 +95,7 @@ searchicus/
 ├── packages/
 │   ├── core/   # shared types, SearchEngine interface, registry, mock engine
 │   ├── cli/    # `searchicus` command-line tool
-│   ├── api/    # HTTP API server
-│   ├── mcp/    # MCP server (Streamable HTTP transport)
+│   ├── api/    # HTTP API server + MCP endpoint (Streamable HTTP)
 │   └── ui/     # web UI
 ├── AGENTS.md   # notes for humans and AI coding agents working in this repo
 └── README.md
@@ -107,14 +114,15 @@ Run the API, MCP server, and UI dev servers together:
 npm run dev
 ```
 
-That starts the HTTP API on `:3000`, the MCP server on `:3001`, and the
-Vite dev server (UI) on `:5173`, wired together (the UI dev server proxies
-`/api/*` to the HTTP API). Or run any one of them on its own — see each
-package's README (`packages/{core,cli,api,mcp,ui}/README.md`) for details:
+That starts the HTTP API on `:3000` — with the MCP endpoint at
+`:3000/mcp` — and the Vite dev server (UI) on `:5173`, wired together (the
+UI dev server proxies `/api/*` to the HTTP API). Or run either on its own —
+see each package's README (`packages/{core,cli,api,ui}/README.md`) for
+details:
 
 ```bash
 npm run dev -w @searchicus/api
-npm run dev -w @searchicus/mcp
+MCP_ENABLED=false npm run dev -w @searchicus/api   # search API only
 npm run dev -w @searchicus/ui
 
 # CLI (no long-running server — build once, then invoke it directly)

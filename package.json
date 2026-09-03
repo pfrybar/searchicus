@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "dev": "npm run build -w @searchicus/core && concurrently -n api,mcp,ui -c blue,magenta,green \"npm run dev -w @searchicus/api\" \"npm run dev -w @searchicus/mcp\" \"npm run dev -w @searchicus/ui\"",
+    "dev": "npm run build -w @searchicus/core && concurrently -n api,ui -c blue,green \"npm run dev -w @searchicus/api\" \"npm run dev -w @searchicus/ui\"",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
