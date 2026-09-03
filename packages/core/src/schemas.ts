@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SearchQuery } from "./types.js";
+import type { SearchQuery, SearchRequest } from "./types.js";
 
 /**
  * Validates untrusted input (HTTP request bodies, MCP tool arguments) into
@@ -8,8 +8,22 @@ import type { SearchQuery } from "./types.js";
  * drift at compile time.
  */
 export const SearchQuerySchema = z.object({
-  query: z.string().min(1, "query must not be empty"),
+  query: z.string().trim().min(1, "query must not be empty"),
   limit: z.number().int().positive().max(100).optional(),
   page: z.number().int().positive().optional(),
   filters: z.record(z.string(), z.string()).optional(),
 }) satisfies z.ZodType<SearchQuery>;
+
+/**
+ * The complete request accepted by front doors that let callers choose
+ * engines. Keeping this here ensures the HTTP API and MCP tool apply the
+ * same validation rather than inspecting untrusted input themselves.
+ */
+export const SearchRequestSchema = SearchQuerySchema.extend({
+  engines: z
+    .array(z.string().min(1, "engine id must not be empty"))
+    .min(1, "engines must contain at least one engine id")
+    .refine((engineIds) => new Set(engineIds).size === engineIds.length, "engines must not contain duplicates")
+    .optional()
+    .describe("Specific engine ids to search; defaults to every registered engine."),
+}) satisfies z.ZodType<SearchRequest>;

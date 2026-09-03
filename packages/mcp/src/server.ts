@@ -1,6 +1,5 @@
-import { MockSearchEngine, SearchEngineRegistry, SearchQuerySchema } from "@searchicus/core";
+import { MockSearchEngine, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 
 /**
  * Builds the registry the MCP server searches against. Real backends
@@ -24,13 +23,7 @@ export function createMcpServer(registry: SearchEngineRegistry = createRegistry(
     {
       title: "Search",
       description: "Search one or more backend search engines and return matching results.",
-      inputSchema: {
-        ...SearchQuerySchema.shape,
-        engines: z
-          .array(z.string())
-          .optional()
-          .describe("Specific engine ids to search; defaults to every registered engine."),
-      },
+      inputSchema: SearchRequestSchema.shape,
     },
     async ({ engines, ...query }) => {
       const outcomes = await registry.searchAll(query, engines);

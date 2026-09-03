@@ -1,4 +1,4 @@
-import { MockSearchEngine, SearchEngineRegistry, SearchQuerySchema } from "@searchicus/core";
+import { MockSearchEngine, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 
 /**
@@ -27,29 +27,42 @@ export function createApp(registry: SearchEngineRegistry = createRegistry()): Ex
   });
 
   app.post("/search", async (req, res) => {
-    const parsed = SearchQuerySchema.safeParse(req.body);
+    const parsed = SearchRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid search query", details: parsed.error.issues });
+      res.status(400).json({ error: "Invalid search request", details: parsed.error.issues });
       return;
     }
 
-    const engineIds = Array.isArray((req.body as { engines?: unknown })?.engines)
-      ? (req.body as { engines: string[] }).engines
-      : undefined;
-
-    const outcomes = await registry.searchAll(parsed.data, engineIds);
-    res.json({ query: parsed.data, outcomes });
+    const { engines, ...query } = parsed.data;
+    const outcomes = await registry.searchAll(query, engines);
+    res.json({ query, outcomes });
   });
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });
   });
 
-  // Express recognizes error-handling middleware by its 4-argument arity —
-  // this is what catches express.json()'s malformed-body SyntaxErrors.
-  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    res.status(400).json({ error: err instanceof Error ? err.message : "Invalid request" });
+  // Express recognizes error-handling middleware by its 4-argument arity.
+  // Only malformed JSON is a client error; unexpected failures must not be
+  // mislabeled as a 400 or expose implementation details.
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+
+    if (isMalformedJsonError(err)) {
+      res.status(400).json({ error: "Invalid JSON" });
+      return;
+    }
+
+    console.error("Unhandled API error:", err);
+    res.status(500).json({ error: "Internal server error" });
   });
 
   return app;
+}
+
+function isMalformedJsonError(err: unknown): boolean {
+  return err instanceof SyntaxError && (err as { status?: unknown }).status === 400;
 }

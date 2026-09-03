@@ -6,11 +6,15 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
+    "prebuild": "npm run build -w @searchicus/core",
     "build": "tsc -p tsconfig.build.json",
+    "predev": "npm run build -w @searchicus/core",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "pretest": "npm run build -w @searchicus/core",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretypecheck": "npm run build -w @searchicus/core",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

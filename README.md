@@ -20,10 +20,11 @@ exercised end to end without external dependencies or API keys.
 ## Status
 
 The scaffold is complete: `core`, `cli`, `api`, `mcp`, and `ui` all build,
-typecheck, lint, and have passing tests. Every surface currently searches
-against the `core` package's mock engine — see "Adding a new search engine
-backend" below for what plugging in a real one looks like. See the commit
-history for how each piece was added.
+typecheck, lint, and have passing tests. The API, MCP tool server, CLI, and
+UI are covered at their adapter boundaries; the MCP suite also makes a real
+Streamable HTTP request. Every surface currently searches against the `core`
+package's mock engine — see "Adding a new search engine backend" below for
+what plugging in a real one looks like.
 
 ## Architecture
 
@@ -95,10 +96,10 @@ node packages/cli/dist/index.js search "typescript generics"
 Other useful root-level scripts (each runs across every package):
 
 ```bash
-npm test # vitest, per package
-npm run typecheck # tsc --noEmit, per package
-npm run lint # eslint .
-npm run format # prettier --write .
+npm test           # builds core as needed, then runs Vitest per package
+npm run typecheck  # builds core declarations as needed, then runs tsc --noEmit
+npm run lint       # eslint .
+npm run format     # prettier --write .
 ```
 
 ## Adding a new search engine backend
@@ -107,8 +108,10 @@ Real backends aren't implemented yet, by design — see "Status" above. The
 intended shape: implement the `SearchEngine` interface from `core` (`id`,
 `name`, `search(query)`) and `.register()` it on the `SearchEngineRegistry`
 each front door builds in its own `createRegistry()` — see `src/app.ts` in
-`api`/`mcp`, or `src/index.ts` in `cli`. That's currently the one place in
-each package that would change; nothing else assumes the mock engine.
+`api`, `src/server.ts` in `mcp`, or `src/index.ts` in `cli`. That's currently
+the one place in each package that would change; nothing else assumes the
+mock engine. Keep engine ids stable and unique: callers can select them in
+the API, MCP tool, and CLI.
 
 ## License
 

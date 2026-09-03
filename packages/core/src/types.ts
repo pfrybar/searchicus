@@ -1,6 +1,6 @@
 /** A search request, independent of which engine(s) it's sent to. */
 export interface SearchQuery {
-  /** The raw search text. */
+  /** The normalized search text. */
   query: string;
   /** Maximum number of results to return per engine. Defaults to 10. */
   limit?: number;
@@ -8,6 +8,12 @@ export interface SearchQuery {
   page?: number;
   /** Free-form filters an engine may use to narrow results (e.g. site, lang). */
   filters?: Record<string, string>;
+}
+
+/** A query plus an optional, explicit set of engines to search. */
+export interface SearchRequest extends SearchQuery {
+  /** Engine ids to search. Omitting this searches every registered engine. */
+  engines?: string[];
 }
 
 /** A single result, tagged with the engine that produced it. */

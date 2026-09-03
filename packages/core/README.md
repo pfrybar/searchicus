@@ -4,8 +4,9 @@ Shared building blocks for every searchicus front door (CLI, HTTP API, MCP
 server, UI):
 
 - `SearchQuery` / `SearchResult` / `SearchResponse` — the common data shapes.
-- `SearchQuerySchema` — a zod schema that validates untrusted input (HTTP
-  bodies, MCP tool arguments) into a `SearchQuery`.
+- `SearchQuerySchema` — a zod schema that validates and trims a `SearchQuery`.
+- `SearchRequestSchema` — the shared API/MCP request schema, which adds an
+  optional, non-empty, duplicate-free `engines` selection.
 - `SearchEngine` — the plugin interface a backend search engine implements.
 - `SearchEngineRegistry` — registers engines and fans a query out to one or
   all of them, capturing per-engine failures instead of throwing.
@@ -29,7 +30,8 @@ const outcomes = await registry.searchAll({ query: "typescript", limit: 5 });
 Implement `SearchEngine` (`id`, `name`, `search(query)`) and `register()` it
 on a `SearchEngineRegistry` wherever your app constructs one (see the CLI,
 API, and MCP packages for examples of that wiring). Nothing else in this
-package needs to change.
+package needs to change. Engine ids must be stable and unique; callers use
+them to select a backend.
 
 ## Scripts
 

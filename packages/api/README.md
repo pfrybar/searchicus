@@ -37,11 +37,13 @@ Request body:
 { "query": "typescript generics", "limit": 5, "engines": ["mock"] }
 ```
 
-- `query` (required, non-empty string)
-- `limit` (optional, 1–100, defaults to each engine's own default)
-- `page` (optional)
-- `filters` (optional, string→string map)
-- `engines` (optional array of engine ids; defaults to every registered engine)
+- `query` (required string containing non-whitespace text; surrounding
+  whitespace is trimmed)
+- `limit` (optional integer, 1–100; defaults to each engine's own default)
+- `page` (optional positive integer)
+- `filters` (optional string→string map)
+- `engines` (optional non-empty, duplicate-free array of engine-id strings;
+  defaults to every registered engine)
 
 Response body:
 
@@ -52,7 +54,7 @@ Response body:
 }
 ```
 
-An invalid body returns `400` with `{ "error": "...", "details": [...] }`.
+An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`.
 
 ```bash
 curl -s localhost:3000/search -H 'content-type: application/json' \

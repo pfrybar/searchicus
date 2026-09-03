@@ -23,6 +23,7 @@ export function App() {
 
     setStatus("loading");
     setError(null);
+    setResult(null);
     try {
       const response = await search({ query, limit: 10 });
       setResult(response);

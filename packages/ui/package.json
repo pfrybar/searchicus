@@ -6,10 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run build -w @searchicus/core",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "pretest": "npm run build -w @searchicus/core",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretypecheck": "npm run build -w @searchicus/core",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
