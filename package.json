@@ -1,0 +1,28 @@
+{
+  "name": "searchicus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A search proxy: send one query to multiple backend search engines via a CLI, HTTP API, MCP server, and web UI.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Paul Frybarger",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}
