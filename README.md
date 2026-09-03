@@ -19,9 +19,11 @@ exercised end to end without external dependencies or API keys.
 
 ## Status
 
-This repository is being scaffolded incrementally; see the commit history
-for how each piece was added. Check back here for the parts that are wired
-up so far.
+The scaffold is complete: `core`, `cli`, `api`, `mcp`, and `ui` all build,
+typecheck, lint, and have passing tests. Every surface currently searches
+against the `core` package's mock engine — see "Adding a new search engine
+backend" below for what plugging in a real one looks like. See the commit
+history for how each piece was added.
 
 ## Architecture
 
@@ -64,25 +66,49 @@ searchicus/
 
 ## Getting started
 
-> Tooling is being layered in commit by commit — this section will fill out
-> as each package lands. Once the workspace is set up:
-
 ```bash
 npm install
-npm run build --workspaces --if-present
+npm run build   # builds every package (core first — the others depend on it)
 ```
 
-Individual package READMEs (as they're added under `packages/*`) will cover
-running the CLI, API, MCP server, and UI.
+Run the API, MCP server, and UI dev servers together:
+
+```bash
+npm run dev
+```
+
+That starts the HTTP API on `:3000`, the MCP server on `:3001`, and the
+Vite dev server (UI) on `:5173`, wired together (the UI dev server proxies
+`/api/*` to the HTTP API). Or run any one of them on its own — see each
+package's README (`packages/{core,cli,api,mcp,ui}/README.md`) for details:
+
+```bash
+npm run dev -w @searchicus/api
+npm run dev -w @searchicus/mcp
+npm run dev -w @searchicus/ui
+
+# CLI (no long-running server — build once, then invoke it directly)
+npm run build -w @searchicus/cli
+node packages/cli/dist/index.js search "typescript generics"
+```
+
+Other useful root-level scripts (each runs across every package):
+
+```bash
+npm test # vitest, per package
+npm run typecheck # tsc --noEmit, per package
+npm run lint # eslint .
+npm run format # prettier --write .
+```
 
 ## Adding a new search engine backend
 
-Not yet implemented, by design — see "Status" above. The intended shape is:
-a package/module implementing the `SearchEngine` interface from `core`
-(`id`, `name`, `search(query)`), registered with the `SearchEngineRegistry`
-that the CLI/API/MCP server construct at startup. That registration wiring
-is left open on purpose so real backends can be dropped in later without
-changing any of the front doors.
+Real backends aren't implemented yet, by design — see "Status" above. The
+intended shape: implement the `SearchEngine` interface from `core` (`id`,
+`name`, `search(query)`) and `.register()` it on the `SearchEngineRegistry`
+each front door builds in its own `createRegistry()` — see `src/app.ts` in
+`api`/`mcp`, or `src/index.ts` in `cli`. That's currently the one place in
+each package that would change; nothing else assumes the mock engine.
 
 ## License
 

@@ -51,20 +51,21 @@ resolution through npm workspaces — no publishing required for local dev).
 Run from the repo root unless noted otherwise.
 
 ```bash
-npm install                              # install everything
-npm run build --workspaces --if-present  # build all packages
-npm run test --workspaces --if-present   # run all tests (vitest)
-npm run lint                             # eslint across the repo
-npm run format                           # prettier --write
-npm run typecheck --workspaces --if-present
+npm install         # install everything
+npm run build       # build all packages (core first — the rest depend on it)
+npm run test        # run all tests (vitest)
+npm run lint         # eslint across the repo
+npm run format       # prettier --write
+npm run typecheck    # tsc --noEmit, per package
 ```
 
-Per-package dev servers (once those packages exist):
+`npm run dev` starts the API, MCP server, and UI dev servers together
+(via `concurrently`); each is also runnable on its own:
 
 ```bash
-npm run dev -w @searchicus/api   # HTTP API with reload
-npm run dev -w @searchicus/mcp   # MCP Streamable HTTP server
-npm run dev -w @searchicus/ui    # Vite dev server
+npm run dev -w @searchicus/api   # HTTP API with reload, :3000
+npm run dev -w @searchicus/mcp   # MCP Streamable HTTP server, :3001
+npm run dev -w @searchicus/ui    # Vite dev server, :5173 (proxies /api to :3000)
 npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "query"
 ```
 

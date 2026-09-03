@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "concurrently -n api,mcp,ui -c blue,magenta,green \"npm run dev -w @searchicus/api\" \"npm run dev -w @searchicus/mcp\" \"npm run dev -w @searchicus/ui\"",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
@@ -25,6 +25,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "26.4.1",
+    "concurrently": "10.0.5",
     "eslint": "10.9.1",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.12.0",
