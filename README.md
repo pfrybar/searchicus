@@ -143,6 +143,60 @@ npm run lint       # eslint .
 npm run format     # prettier --write .
 ```
 
+## Running in Docker
+
+One image serves everything. The default command starts the server — web UI at
+`/`, search API at `/api`, MCP at `/mcp` — so there's no reverse proxy and no
+CORS to configure.
+
+```bash
+docker build -t searchicus .
+
+docker run --rm --init --shm-size=1g -p 3000:3000 \
+  -v searchicus-api-profile:/profiles/api \
+  searchicus
+```
+
+The CLI is the same image with a different command, and needs its own profile
+volume (a Chromium user-data directory is single-writer, so it cannot share
+the server's):
+
+```bash
+docker run --rm --init --shm-size=1g \
+  -e SEARCHICUS_PROFILE_DIR=/profiles/cli \
+  -v searchicus-cli-profile:/profiles/cli \
+  searchicus node packages/cli/dist/index.js search "typescript generics"
+```
+
+### Flags that aren't optional
+
+| Flag                        | Why                                                                                                                                                               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--init`                    | Chromium spawns many child processes; with no init process to reap them, zombies accumulate in a container meant to run for days.                                 |
+| `--shm-size=1g`             | Docker's default `/dev/shm` is 64MB. Chromium leans on shared memory and dies with opaque renderer crashes without more.                                          |
+| `-v <volume>:/profiles/...` | Without it the Chromium profile lives in the container's writable layer and is discarded on exit — silently degrading to a cold profile every run, with no error. |
+| `docker stop -t 30`         | The server drains live browser sessions for up to 15s; `docker stop` SIGKILLs after 10s by default.                                                               |
+
+**Use a named volume for the profile, never a host bind mount.** Chromium
+profiles are SQLite databases, and SQLite locking over virtiofs/9p — which is
+what a macOS or Windows bind mount is — is unreliable. A profile written by
+one platform's Chromium also isn't valid for another's.
+
+### Configuration
+
+| Variable                 | Default                      | Effect                                                 |
+| ------------------------ | ---------------------------- | ------------------------------------------------------ |
+| `PORT`                   | `3000`                       | Port to listen on.                                     |
+| `SEARCHICUS_PROFILE_DIR` | `/profiles/api` in the image | Chromium user-data directory. One per process.         |
+| `MCP_ENABLED`            | on                           | `false` serves the search API alone; `/mcp` then 404s. |
+| `SERVE_UI`               | on when a build exists       | `false` skips the static UI.                           |
+| `UI_DIST_DIR`            | `packages/ui/dist`           | Alternate UI build directory.                          |
+
+The base image is pinned to the same Playwright version as
+`packages/core/package.json` — the bundled Chromium has to be the revision the
+client expects, and a mismatch fails at launch rather than at build. Bump both
+together.
+
 ## Adding a new search engine backend
 
 Implement the `SearchEngine` interface from `core` (`id`, `name`,

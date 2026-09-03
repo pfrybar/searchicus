@@ -1,0 +1,26 @@
+# Never copy host node_modules into the image. Beyond bloat, this repo is
+# developed from a macOS bind mount, so the host tree can contain the wrong
+# platform's native binaries — exactly the failure that shows up as
+# "Cannot find native binding". The image installs its own.
+node_modules
+**/node_modules
+
+# Built fresh inside the image.
+dist
+**/dist
+*.tsbuildinfo
+
+# Real, growing Chromium profile state. Belongs on a volume, never baked in.
+.searchicus
+
+.git
+.gitignore
+.github
+coverage
+.agent
+*.log
+.env
+.env.*
+.DS_Store
+Dockerfile
+.dockerignore
