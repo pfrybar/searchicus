@@ -139,6 +139,12 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - If you touch the plugin interface or shared request schemas, update the
   mock engine and every adapter (CLI/API/MCP/UI) that assumes their current
   shape, plus their tests and package README files.
+- **The Dockerfile pins the Playwright base image to the `playwright`
+  version in `packages/core/package.json`.** The image's bundled Chromium
+  must match the client revision; bump both together or it fails at launch.
+  `.dockerignore` must keep excluding `node_modules` — this repo is developed
+  from a macOS bind mount, so the host tree can hold the wrong platform's
+  native binaries.
 - Consumers import core's built ESM entry point. Their `prebuild`, `predev`,
   `pretest`, and `pretypecheck` hooks deliberately build core first, so keep
   those hooks when changing package scripts or adding another core consumer.
