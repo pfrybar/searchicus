@@ -39,7 +39,29 @@ On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits
 for in-flight browser sessions to finish, since a search can return results
 while its session is still running. A 15s grace period bounds that wait.
 
+## Web UI
+
+When a UI build exists at `packages/ui/dist`, the server serves it as static
+files. Combined with the search API under `/api`, that makes one process
+serve the whole application same-origin — no reverse proxy, no CORS, and no
+build-time API URL baked into the bundle.
+
+- `SERVE_UI=false` disables it.
+- `UI_DIST_DIR` points at a different build directory.
+- With no build present, `/` simply 404s and the API is unaffected.
+
+There is deliberately **no SPA history fallback**: the UI is a single page
+with no client-side router, and a catch-all would turn genuine API 404s into
+HTML. If routing is added later, scope a fallback to non-API paths.
+
+Static files are matched _after_ the API routes, so a stray file in the UI
+build can never shadow an endpoint.
+
 ## HTTP API
+
+Every endpoint below is served at **both** `/api/...` and the bare root path.
+The UI calls `/api/*` so it works same-origin in production; the root paths
+keep the original contract.
 
 ### `GET /health`
 
@@ -88,6 +110,10 @@ failures are outcomes, not HTTP errors.
 
 ```bash
 curl -s localhost:3000/search -H 'content-type: application/json' \
+  -d '{"query":"typescript generics","limit":3}' | jq
+
+# identical, via the path the UI uses
+curl -s localhost:3000/api/search -H 'content-type: application/json' \
   -d '{"query":"typescript generics","limit":3}' | jq
 ```
 
