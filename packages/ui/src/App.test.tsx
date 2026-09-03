@@ -1,0 +1,70 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { App } from "./App";
+
+function mockFetchSequence(responses: Array<{ url: string; status?: number; body: unknown }>) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const match = responses.find((r) => url.endsWith(r.url));
+      if (!match) throw new Error(`Unexpected fetch: ${url}`);
+      return Promise.resolve(new Response(JSON.stringify(match.body), { status: match.status ?? 200 }));
+    }),
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("App", () => {
+  it("loads engines, then renders search results on submit", async () => {
+    mockFetchSequence([
+      { url: "/api/engines", body: [{ id: "mock", name: "Mock Search Engine" }] },
+      {
+        url: "/api/search",
+        body: {
+          query: { query: "cats" },
+          outcomes: [
+            {
+              engineId: "mock",
+              ok: true,
+              response: {
+                engine: "mock",
+                query: { query: "cats" },
+                tookMs: 1,
+                results: [
+                  { title: "Cats 101", url: "https://example.com/cats", source: "mock", snippet: "All about cats" },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    render(<App />);
+
+    await screen.findByText(/Mock Search Engine/);
+
+    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
+    fireEvent.click(screen.getByRole("button", { name: /search/i }));
+
+    expect(await screen.findByText("Cats 101")).toBeInTheDocument();
+  });
+
+  it("shows an error message when the search request fails", async () => {
+    mockFetchSequence([
+      { url: "/api/engines", body: [] },
+      { url: "/api/search", status: 500, body: { error: "boom" } },
+    ]);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
+    fireEvent.click(screen.getByRole("button", { name: /search/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+  });
+});

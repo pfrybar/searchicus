@@ -1,0 +1,97 @@
+.page {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.tagline {
+  color: #555;
+  margin-top: 0.25rem;
+}
+
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 2rem;
+}
+
+.search-form input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.search-form button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.search-form button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.engines {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #777;
+}
+
+.error {
+  color: #b00020;
+}
+
+.results {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.engine-results h2 {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+  margin-bottom: 0.5rem;
+}
+
+.engine-results ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.engine-results a {
+  font-size: 1.05rem;
+  color: #1a56db;
+  text-decoration: none;
+}
+
+.engine-results a:hover {
+  text-decoration: underline;
+}
+
+.engine-results p {
+  margin: 0.25rem 0 0;
+  color: #444;
+}
+
+.empty {
+  color: #777;
+}
