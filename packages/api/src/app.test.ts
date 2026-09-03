@@ -1,10 +1,20 @@
-import { createDefaultRegistry } from "@searchicus/core";
+import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 
+/**
+ * A registry holding only the mock engine. These tests exercise the adapter
+ * layer, not whichever engines happen to be registered by default — pinning
+ * the roster here keeps them stable as engines are added, and browser-free
+ * however those engines behave.
+ */
+function mockOnlyRegistry(): SearchEngineRegistry {
+  return new SearchEngineRegistry({ throttle: null }).register(new MockSearchEngine());
+}
+
 function testApp() {
-  return createApp(createDefaultRegistry());
+  return createApp(mockOnlyRegistry());
 }
 
 describe("GET /health", () => {
