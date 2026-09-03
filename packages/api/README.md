@@ -48,9 +48,7 @@ Response body:
 ```json
 {
   "query": { "query": "typescript generics", "limit": 5 },
-  "outcomes": [
-    { "engineId": "mock", "ok": true, "response": { "...": "..." } }
-  ]
+  "outcomes": [{ "engineId": "mock", "ok": true, "response": { "...": "..." } }]
 }
 ```
 

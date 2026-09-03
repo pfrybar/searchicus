@@ -34,7 +34,7 @@ export function createApp(registry: SearchEngineRegistry = createRegistry()): Ex
     }
 
     const engineIds = Array.isArray((req.body as { engines?: unknown })?.engines)
-      ? ((req.body as { engines: string[] }).engines)
+      ? (req.body as { engines: string[] }).engines
       : undefined;
 
     const outcomes = await registry.searchAll(parsed.data, engineIds);
