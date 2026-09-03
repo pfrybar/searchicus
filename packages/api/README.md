@@ -1,9 +1,8 @@
 # @searchicus/api
 
 The searchicus HTTP API — a thin JSON layer over the `core` package's
-`SearchEngineRegistry`. Currently searches against the mock engine only;
-see the repo root `README.md`/`AGENTS.md` for how real backends will plug
-in later.
+`SearchEngineRegistry`. Only the mock engine ships registered; see the repo
+root `README.md` for adding a browser-backed one.
 
 ## Running
 
@@ -14,6 +13,15 @@ npm run build -w @searchicus/api && npm run start -w @searchicus/api
 ```
 
 Listens on `PORT` (default `3000`).
+
+The server builds its registry with `createBrowserRegistry("api")`, giving it
+its own Chromium profile at `.searchicus/profile/api/` (override with
+`SEARCHICUS_PROFILE_DIR`). Chromium launches lazily — nothing starts until an
+engine actually asks for a browser.
+
+On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits
+for in-flight browser sessions to finish, since a search can return results
+while its session is still running. A 15s grace period bounds that wait.
 
 ## Endpoints
 
@@ -55,6 +63,12 @@ Response body:
 ```
 
 An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`.
+
+A single request fans out to every selected engine in parallel, but
+_consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
+default). A request that waits out its budget without getting a slot still
+returns `200`, with every engine reporting `ok: false` — engine-level
+failures are outcomes, not HTTP errors.
 
 ```bash
 curl -s localhost:3000/search -H 'content-type: application/json' \

@@ -10,33 +10,37 @@ monorepo with a shared core, and several front doors onto that core:
   transport) so AI agents/tools can search through it
 - **Web UI** — a minimal browser UI for interactive search
 
-The set of backend search engines is designed to be **pluggable**: every
-engine implements one small interface and is registered with the core
-registry. Implementing real backends (e.g. web search providers) is
-intentionally **out of scope for this initial scaffold** — the core ships
-with a deterministic mock engine so every surface (CLI/API/MCP/UI) can be
-exercised end to end without external dependencies or API keys.
+The set of backend search engines is **pluggable**: every engine implements
+one small interface and is registered with the core registry. Engines run
+against a real headless browser — core keeps a single long-lived Chromium
+instance with a persistent profile and hands each search a page from it.
+A deterministic mock engine is also registered, so every surface
+(CLI/API/MCP/UI) can be exercised end to end with no browser installed.
 
 ## Status
 
-The scaffold is complete: `core`, `cli`, `api`, `mcp`, and `ui` all build,
-typecheck, lint, and have passing tests. The API, MCP tool server, CLI, and
-UI are covered at their adapter boundaries; the MCP suite also makes a real
-Streamable HTTP request. Every surface currently searches against the `core`
-package's mock engine — see "Adding a new search engine backend" below for
-what plugging in a real one looks like.
+`core`, `cli`, `api`, `mcp`, and `ui` all build, typecheck, lint, and have
+passing tests. The API, MCP tool server, CLI, and UI are covered at their
+adapter boundaries; the MCP suite also makes a real Streamable HTTP request.
+
+The browser layer — persistent Chromium session, page-per-search leases,
+two-phase search sessions, and rate limiting — is in place in `core`. Only
+the mock engine ships with it; see "Adding a new search engine backend".
 
 ## Architecture
 
 ```
-                          ┌───────────────┐
-                          │  core package │
-                          │  - types      │
-                          │  - engine     │
-                          │    interface  │
-                          │  - registry   │
-                          │  - mock engine│
-                          └───────┬───────┘
+                          ┌────────────────┐
+                          │  core package  │
+                          │  - types       │
+                          │  - engine      │
+                          │    interface   │
+                          │  - registry    │
+                          │  - throttle    │
+                          │  - browser     │
+                          │    session     │
+                          │  - mock engine │
+                          └───────┬────────┘
                                   │
         ┌───────────┬────────────┼────────────┬────────────┐
         │            │            │            │
@@ -50,6 +54,31 @@ what plugging in a real one looks like.
 All of the search-facing surfaces (CLI, HTTP API, MCP server) are thin
 adapters over the `core` package's `SearchEngineRegistry`. The web UI talks
 to the HTTP API.
+
+### The browser layer
+
+Core runs **one** long-lived Chromium instance with **one** persistent
+browser context, handing each search its own page. There is deliberately no
+browser pool: a pool would isolate concurrent searches, but sharing a single
+persistent context is what carries cookies, dismissed consent banners, and
+cache across searches — and, because the profile lives on disk, across
+process restarts too.
+
+Two consequences shape the API:
+
+- **Results and sessions are separate.** `search()` resolving means results
+  are ready; the `SearchSession.completed` promise settling means the browser
+  work is finished. An engine can return results immediately and keep paging
+  or following links afterwards. The registry holds the browser lease until
+  `completed` settles, which is why short-lived processes must `drain()`
+  before exiting.
+- **Searches are rate limited as whole fan-outs.** One global throttle gates
+  entry to `searchAll()`, so a single query still hits every engine in
+  parallel while consecutive searches are spaced apart (5s ±30% by default).
+
+Each surface gets its own Chromium profile under `.searchicus/profile/`
+(override with `SEARCHICUS_PROFILE_DIR`), because a user-data directory is
+single-writer and `npm run dev` runs the API and MCP server side by side.
 
 ## Repository layout
 
@@ -104,14 +133,47 @@ npm run format     # prettier --write .
 
 ## Adding a new search engine backend
 
-Real backends aren't implemented yet, by design — see "Status" above. The
-intended shape: implement the `SearchEngine` interface from `core` (`id`,
-`name`, `search(query)`) and `.register()` it in `core`'s
-`createDefaultRegistry()` (`packages/core/src/registry.ts`) — every front
-door (CLI/API/MCP) builds its registry by calling that one function, so
-that's currently the one place that would change; nothing else assumes the
-mock engine. Keep engine ids stable and unique: callers can select them in
-the API, MCP tool, and CLI.
+Implement the `SearchEngine` interface from `core` (`id`, `name`,
+`search(query, ctx)`) and `.register()` it in `createDefaultRegistry()`
+(`packages/core/src/registry.ts`). Every front door builds its registry by
+calling that one function, so that's the only place that changes. Keep
+engine ids stable and unique — callers select them in the API, MCP tool, and
+CLI.
+
+```ts
+class ExampleEngine implements SearchEngine {
+  readonly id = "example";
+  readonly name = "Example";
+
+  async search(query: SearchQuery, ctx: SearchContext): Promise<SearchSession> {
+    const { page } = await ctx.acquireBrowser();
+    await page.goto(`https://example.com/search?q=${encodeURIComponent(query.query)}`);
+    const results = await parseResults(page);
+
+    return {
+      response: { query, results, engine: this.id, tookMs: 0 },
+      // Results are ready now; this settles when the page work is done.
+      completed: prefetchNextPage(page),
+    };
+  }
+}
+```
+
+`ctx.acquireBrowser()` is lazy — an engine that never calls it never causes
+Chromium to launch, which is what keeps the mock engine and the test suite
+browser-free. An engine with no work to do after returning results can just
+return a bare `SearchResponse`; the registry normalizes both shapes.
+
+Running a browser-backed engine needs Playwright's Chromium **and** its
+system libraries:
+
+```bash
+npx playwright install chromium
+sudo npx playwright install-deps   # needs root; slim containers lack these
+```
+
+Without them the browser-backed tests skip and browser-backed engines fail
+with a `BrowserUnavailableError` explaining what's missing.
 
 ## License
 

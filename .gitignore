@@ -27,6 +27,9 @@ Thumbs.db
 # Test / coverage
 coverage/
 
+# Persistent Chromium profiles (real, growing, per-surface browser state)
+.searchicus/
+
 # Local coding-agent session state
 .agent/
 

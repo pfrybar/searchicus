@@ -76,10 +76,19 @@ export function createProgram(registry: SearchEngineRegistry = createDefaultRegi
 
 const entryPoint = process.argv[1];
 if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
-  createProgram()
-    .parseAsync(process.argv)
-    .catch((err: unknown) => {
-      console.error(err instanceof Error ? err.message : err);
-      process.exitCode = 1;
-    });
+  // Imported dynamically so that merely importing createProgram() — as the
+  // tests do — never pulls Playwright into the module graph.
+  const { createBrowserRegistry } = await import("@searchicus/core/browser");
+  const registry = createBrowserRegistry("cli");
+
+  try {
+    await createProgram(registry).parseAsync(process.argv);
+  } catch (err: unknown) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exitCode = 1;
+  } finally {
+    // A search can return results while its browser session is still
+    // running. Exiting here without draining would kill that work mid-flight.
+    await registry.close();
+  }
 }
