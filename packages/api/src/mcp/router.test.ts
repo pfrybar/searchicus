@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { createDefaultRegistry } from "@searchicus/core";
+import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -9,8 +9,18 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 
+/**
+ * A registry holding only the mock engine. These tests exercise the adapter
+ * layer, not whichever engines happen to be registered by default — pinning
+ * the roster here keeps them stable as engines are added, and browser-free
+ * however those engines behave.
+ */
+function mockOnlyRegistry(): SearchEngineRegistry {
+  return new SearchEngineRegistry({ throttle: null }).register(new MockSearchEngine());
+}
+
 async function startServer(): Promise<{ server: Server; url: URL }> {
-  const server = createApp(createDefaultRegistry()).listen(0);
+  const server = createApp(mockOnlyRegistry()).listen(0);
   await once(server, "listening");
 
   const address = server.address() as AddressInfo | null;
@@ -53,7 +63,7 @@ describe("Streamable HTTP endpoint", () => {
   });
 
   it("shares one registry with the search API, so both list the same engines", async () => {
-    const app = createApp(createDefaultRegistry());
+    const app = createApp(mockOnlyRegistry());
 
     const viaApi = await request(app).get("/engines");
     const viaMcp = await request(app)
@@ -67,7 +77,7 @@ describe("Streamable HTTP endpoint", () => {
   });
 
   it("rejects GET and DELETE, which stateless mode can't support", async () => {
-    const app = createApp(createDefaultRegistry());
+    const app = createApp(mockOnlyRegistry());
 
     for (const res of [await request(app).get("/mcp"), await request(app).delete("/mcp")]) {
       expect(res.status).toBe(405);
@@ -76,7 +86,7 @@ describe("Streamable HTTP endpoint", () => {
   });
 
   it("answers a malformed body with a JSON-RPC parse error, not the API's error shape", async () => {
-    const res = await request(createApp(createDefaultRegistry()))
+    const res = await request(createApp(mockOnlyRegistry()))
       .post("/mcp")
       .set("Content-Type", "application/json")
       .send("{not json");
@@ -88,7 +98,7 @@ describe("Streamable HTTP endpoint", () => {
 
 describe("with MCP disabled", () => {
   it("404s the endpoint while leaving the search API intact", async () => {
-    const app = createApp(createDefaultRegistry(), { mcp: false });
+    const app = createApp(mockOnlyRegistry(), { mcp: false });
 
     const mcp = await request(app).post("/mcp").send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(mcp.status).toBe(404);
