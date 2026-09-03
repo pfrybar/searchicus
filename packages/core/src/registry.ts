@@ -1,3 +1,4 @@
+import { MockSearchEngine } from "./engines/mock.js";
 import type { SearchEngine, SearchQuery, SearchResponse } from "./types.js";
 
 export class UnknownEngineError extends Error {
@@ -65,4 +66,16 @@ export class SearchEngineRegistry {
       }),
     );
   }
+}
+
+/**
+ * Builds the registry every front door (CLI/API/MCP) uses by default: just
+ * the mock engine, since real backends aren't implemented yet (see
+ * AGENTS.md). Centralizing this here means adding another dev/test engine
+ * later only requires a change in one place, not one per front door. Each
+ * app-creation function still accepts its own `registry` parameter, so
+ * tests can pass a purpose-built registry instead of this default.
+ */
+export function createDefaultRegistry(): SearchEngineRegistry {
+  return new SearchEngineRegistry().register(new MockSearchEngine());
 }

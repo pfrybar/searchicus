@@ -1,20 +1,13 @@
-import { MockSearchEngine, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
+import { createDefaultRegistry, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 
 /**
- * Builds the registry the API searches against. Real backends aren't wired
- * up yet (see AGENTS.md) — this is the one place that would change to
- * register them.
- */
-export function createRegistry(): SearchEngineRegistry {
-  return new SearchEngineRegistry().register(new MockSearchEngine());
-}
-
-/**
  * Builds the Express app. Takes a registry so tests can inject their own
- * (see app.test.ts) instead of depending on module-level state.
+ * (see app.test.ts) instead of depending on module-level state. Defaults to
+ * core's shared default registry — see AGENTS.md for how to wire up real
+ * backends.
  */
-export function createApp(registry: SearchEngineRegistry = createRegistry()): Express {
+export function createApp(registry: SearchEngineRegistry = createDefaultRegistry()): Express {
   const app = express();
   app.use(express.json());
 

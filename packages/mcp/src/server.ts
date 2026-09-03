@@ -1,21 +1,14 @@
-import { MockSearchEngine, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
+import { createDefaultRegistry, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
-/**
- * Builds the registry the MCP server searches against. Real backends
- * aren't wired up yet (see AGENTS.md) — this is the one place that would
- * change to register them.
- */
-export function createRegistry(): SearchEngineRegistry {
-  return new SearchEngineRegistry().register(new MockSearchEngine());
-}
 
 /**
  * Builds an McpServer exposing the registry as MCP tools. app.ts creates a
  * fresh server (and transport) per HTTP request — stateless mode — so this
- * is cheap to call repeatedly rather than something to share/cache.
+ * is cheap to call repeatedly rather than something to share/cache. Defaults
+ * to core's shared default registry — see AGENTS.md for how to wire up real
+ * backends.
  */
-export function createMcpServer(registry: SearchEngineRegistry = createRegistry()): McpServer {
+export function createMcpServer(registry: SearchEngineRegistry = createDefaultRegistry()): McpServer {
   const server = new McpServer({ name: "searchicus", version: "0.1.0" });
 
   server.registerTool(
