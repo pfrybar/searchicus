@@ -34,7 +34,9 @@ describe("POST /search", () => {
   });
 
   it("can target a specific subset of engines", async () => {
-    const res = await request(testApp()).post("/search").send({ query: "cats", engines: ["mock"] });
+    const res = await request(testApp())
+      .post("/search")
+      .send({ query: "cats", engines: ["mock"] });
 
     expect(res.status).toBe(200);
     expect(res.body.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["mock"]);
@@ -48,10 +50,7 @@ describe("POST /search", () => {
   });
 
   it("rejects malformed JSON bodies", async () => {
-    const res = await request(testApp())
-      .post("/search")
-      .set("Content-Type", "application/json")
-      .send("{not json");
+    const res = await request(testApp()).post("/search").set("Content-Type", "application/json").send("{not json");
 
     expect(res.status).toBe(400);
   });

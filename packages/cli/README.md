@@ -19,11 +19,11 @@ Once published/linked, the same binary is available as `searchicus`
 
 ### `search <query>`
 
-| Option | Description |
-| --- | --- |
+| Option                 | Description                                                 |
+| ---------------------- | ----------------------------------------------------------- |
 | `-e, --engine <id...>` | Engine id(s) to search; defaults to every registered engine |
-| `-l, --limit <n>` | Max results per engine (default `10`) |
-| `--json` | Print raw JSON instead of a formatted list |
+| `-l, --limit <n>`      | Max results per engine (default `10`)                       |
+| `--json`               | Print raw JSON instead of a formatted list                  |
 
 ### `engines`
 

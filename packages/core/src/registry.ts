@@ -9,8 +9,7 @@ export class UnknownEngineError extends Error {
 
 /** One engine's outcome within a fan-out search. */
 export type EngineSearchOutcome =
-  | { engineId: string; ok: true; response: SearchResponse }
-  | { engineId: string; ok: false; error: string };
+  { engineId: string; ok: true; response: SearchResponse } | { engineId: string; ok: false; error: string };
 
 /**
  * Holds the set of available SearchEngine backends and fans a query out to
