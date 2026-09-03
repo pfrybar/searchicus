@@ -12,26 +12,32 @@ server, UI):
   all of them, capturing per-engine failures instead of throwing.
 - `MockSearchEngine` — a deterministic, dependency-free engine used until
   real backends are plugged in.
+- `createDefaultRegistry()` — builds the registry every front door
+  (CLI/API/MCP) uses by default: just `MockSearchEngine`, for now.
 
 ## Usage
 
 ```ts
-import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
+import { createDefaultRegistry } from "@searchicus/core";
 
-const registry = new SearchEngineRegistry().register(new MockSearchEngine());
+const registry = createDefaultRegistry();
 
 const response = await registry.search("mock", { query: "typescript", limit: 5 });
 // or fan out across every registered engine:
 const outcomes = await registry.searchAll({ query: "typescript", limit: 5 });
 ```
 
+Each call to `createDefaultRegistry()` returns a fresh `SearchEngineRegistry`
+instance — it's a factory, not a shared singleton — so callers (including
+tests) can freely mutate what they get back without affecting anyone else.
+
 ## Adding a real engine
 
-Implement `SearchEngine` (`id`, `name`, `search(query)`) and `register()` it
-on a `SearchEngineRegistry` wherever your app constructs one (see the CLI,
-API, and MCP packages for examples of that wiring). Nothing else in this
-package needs to change. Engine ids must be stable and unique; callers use
-them to select a backend.
+Implement `SearchEngine` (`id`, `name`, `search(query)`) and `.register()` it
+in `createDefaultRegistry()` (`src/registry.ts`) — every front door
+(CLI/API/MCP) picks it up automatically since they all build their registry
+by calling that one function. Nothing else in this package needs to change.
+Engine ids must be stable and unique; callers use them to select a backend.
 
 ## Scripts
 

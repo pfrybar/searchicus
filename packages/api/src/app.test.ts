@@ -1,10 +1,10 @@
-import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
+import { createDefaultRegistry } from "@searchicus/core";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 
 function testApp() {
-  return createApp(new SearchEngineRegistry().register(new MockSearchEngine()));
+  return createApp(createDefaultRegistry());
 }
 
 describe("GET /health", () => {

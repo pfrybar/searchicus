@@ -80,6 +80,12 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - Keep the `SearchEngine` interface in `core` minimal and stable; the CLI,
   API, and MCP server should each be a thin adapter over
   `SearchEngineRegistry`, not reimplement search logic themselves.
+- Engines are registered once, in core's `createDefaultRegistry()`
+  (`packages/core/src/registry.ts`) — every front door defaults to calling
+  it rather than building its own registry. Add a new engine there, not per
+  package. It's a factory (fresh instance per call), not a shared singleton,
+  so `createApp`/`createProgram`/`createMcpServer` can keep accepting an
+  injectable `registry` parameter for tests.
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.

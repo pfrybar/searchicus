@@ -1,4 +1,4 @@
-import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
+import { createDefaultRegistry, type SearchEngineRegistry } from "@searchicus/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -6,9 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createMcpServer } from "./server.js";
 
 /** Connects an SDK Client to a fresh createMcpServer() over an in-process transport pair. */
-async function connectedClient(
-  registry: SearchEngineRegistry = new SearchEngineRegistry().register(new MockSearchEngine()),
-): Promise<Client> {
+async function connectedClient(registry: SearchEngineRegistry = createDefaultRegistry()): Promise<Client> {
   const server = createMcpServer(registry);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.1.0" });

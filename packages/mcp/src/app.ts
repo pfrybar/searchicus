@@ -1,7 +1,7 @@
-import type { SearchEngineRegistry } from "@searchicus/core";
+import { createDefaultRegistry, type SearchEngineRegistry } from "@searchicus/core";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { type Express, type Request, type Response } from "express";
-import { createMcpServer, createRegistry } from "./server.js";
+import { createMcpServer } from "./server.js";
 
 /**
  * Builds the Express app hosting the MCP Streamable HTTP endpoint at
@@ -11,7 +11,7 @@ import { createMcpServer, createRegistry } from "./server.js";
  * (persistent sessions, server-initiated notifications) can layer on top
  * of the same `createMcpServer` later without changing it.
  */
-export function createApp(registry: SearchEngineRegistry = createRegistry()): Express {
+export function createApp(registry: SearchEngineRegistry = createDefaultRegistry()): Express {
   const app = express();
   app.use(express.json());
 

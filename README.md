@@ -106,10 +106,10 @@ npm run format     # prettier --write .
 
 Real backends aren't implemented yet, by design — see "Status" above. The
 intended shape: implement the `SearchEngine` interface from `core` (`id`,
-`name`, `search(query)`) and `.register()` it on the `SearchEngineRegistry`
-each front door builds in its own `createRegistry()` — see `src/app.ts` in
-`api`, `src/server.ts` in `mcp`, or `src/index.ts` in `cli`. That's currently
-the one place in each package that would change; nothing else assumes the
+`name`, `search(query)`) and `.register()` it in `core`'s
+`createDefaultRegistry()` (`packages/core/src/registry.ts`) — every front
+door (CLI/API/MCP) builds its registry by calling that one function, so
+that's currently the one place that would change; nothing else assumes the
 mock engine. Keep engine ids stable and unique: callers can select them in
 the API, MCP tool, and CLI.
 

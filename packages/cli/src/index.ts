@@ -1,17 +1,8 @@
 #!/usr/bin/env node
-import { MockSearchEngine, SearchEngineRegistry, SearchQuerySchema } from "@searchicus/core";
+import { createDefaultRegistry, SearchEngineRegistry, SearchQuerySchema } from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
 import { formatOutcome } from "./format.js";
-
-/**
- * Builds the registry the CLI searches against. Real backends aren't wired
- * up yet (see AGENTS.md) — this is the one place that would change to
- * register them.
- */
-export function createRegistry(): SearchEngineRegistry {
-  return new SearchEngineRegistry().register(new MockSearchEngine());
-}
 
 /** Parse and validate the CLI's numeric limit with the core's shared rules. */
 export function parseLimit(value: string): number {
@@ -29,9 +20,11 @@ export function parseLimit(value: string): number {
 
 /**
  * Creates the CLI program. Supplying a registry makes command behavior easy
- * to exercise in tests without relying on module-level state.
+ * to exercise in tests without relying on module-level state. Defaults to
+ * core's shared default registry — see AGENTS.md for how to wire up real
+ * backends.
  */
-export function createProgram(registry: SearchEngineRegistry = createRegistry()): Command {
+export function createProgram(registry: SearchEngineRegistry = createDefaultRegistry()): Command {
   const program = new Command();
 
   program.name("searchicus").description("Send a search query to one or more backend search engines.").version("0.1.0");
