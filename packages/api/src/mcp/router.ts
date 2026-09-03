@@ -1,21 +1,27 @@
-import { createDefaultRegistry, type SearchEngineRegistry } from "@searchicus/core";
+import type { SearchEngineRegistry } from "@searchicus/core";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import express, { type Express, type Request, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { createMcpServer } from "./server.js";
 
 /**
- * Builds the Express app hosting the MCP Streamable HTTP endpoint at
- * POST /mcp, in stateless mode: every request gets its own McpServer and
- * transport, so there's no session state to manage between requests. This
- * is the simplest correct way to serve MCP over HTTP; a stateful variant
- * (persistent sessions, server-initiated notifications) can layer on top
- * of the same `createMcpServer` later without changing it.
+ * The MCP Streamable HTTP endpoint, mounted at /mcp by createApp().
+ *
+ * Stateless mode: every request gets its own McpServer and transport, so
+ * there's no session state to manage between requests. That's what makes
+ * MCP mountable as an ordinary router alongside the search API rather than
+ * needing a process of its own — a stateful variant (persistent sessions,
+ * server-initiated notifications) could still layer on top of the same
+ * `createMcpServer` later.
+ *
+ * Sharing the API's process is deliberate: both surfaces then share one
+ * registry, and therefore one rate-limit throttle and one browser profile.
+ * Run as separate processes they would each throttle independently and hit
+ * the backends at twice the configured rate.
  */
-export function createApp(registry: SearchEngineRegistry = createDefaultRegistry()): Express {
-  const app = express();
-  app.use(express.json());
+export function createMcpRouter(registry: SearchEngineRegistry): Router {
+  const router = Router();
 
-  app.post("/mcp", async (req: Request, res: Response) => {
+  router.post("/", async (req: Request, res: Response) => {
     try {
       const server = createMcpServer(registry);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -49,8 +55,8 @@ export function createApp(registry: SearchEngineRegistry = createDefaultRegistry
       id: null,
     });
   };
-  app.get("/mcp", methodNotAllowed);
-  app.delete("/mcp", methodNotAllowed);
+  router.get("/", methodNotAllowed);
+  router.delete("/", methodNotAllowed);
 
-  return app;
+  return router;
 }

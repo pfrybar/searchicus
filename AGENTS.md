@@ -7,7 +7,8 @@ Notes for anyone (human or AI coding agent) working in this repository.
 `searchicus` is a search proxy: one query in, results from multiple backend
 search engines out. It's a TypeScript npm-workspaces monorepo with a shared
 `core` package and four front doors: a CLI, an HTTP API, an MCP server
-(Streamable HTTP transport), and a web UI. See `README.md` for the
+(Streamable HTTP transport), and a web UI. The HTTP API and MCP server share
+one process and one package (`packages/api`). See `README.md` for the
 architecture picture.
 
 Backend engines drive a real headless browser. `core` owns a single
@@ -24,8 +25,7 @@ packages/
   core/   shared types + SearchEngine interface + registry + mock engine
           + browser session (Playwright) + rate-limit throttle
   cli/    `searchicus` CLI (commander)
-  api/    HTTP API (express)
-  mcp/    MCP server, Streamable HTTP transport (@modelcontextprotocol/sdk)
+  api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
   ui/     web UI (vite + react)
 ```
 
@@ -72,8 +72,7 @@ trusting changes to `browser.ts`.
 (via `concurrently`); each is also runnable on its own:
 
 ```bash
-npm run dev -w @searchicus/api   # HTTP API with reload, :3000
-npm run dev -w @searchicus/mcp   # MCP Streamable HTTP server, :3001
+npm run dev -w @searchicus/api   # HTTP API + MCP with reload, :3000 (MCP at /mcp)
 npm run dev -w @searchicus/ui    # Vite dev server, :5173 (proxies /api to :3000)
 npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "query"
 ```
@@ -121,6 +120,13 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   and across restarts. Each surface gets its own profile directory because a
   Chromium user-data dir is single-writer and `npm run dev` starts the API
   and MCP server together.
+- **MCP is mounted, not a separate service.** `createMcpRouter` is stateless
+  (a fresh `McpServer` per request), so it mounts as an ordinary router in
+  the API app and is toggled with `createApp(registry, { mcp })` /
+  `MCP_ENABLED`. Keep it mounted _before_ the catch-all 404, which would
+  otherwise swallow every MCP request, and keep MCP failures in JSON-RPC
+  error shape — body-parse errors reach the shared error middleware, not the
+  MCP router, so that branch has to stay.
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.
