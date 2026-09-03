@@ -127,6 +127,12 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   otherwise swallow every MCP request, and keep MCP failures in JSON-RPC
   error shape — body-parse errors reach the shared error middleware, not the
   MCP router, so that branch has to stay.
+- **The search router is mounted twice**, at `/` and `/api`, so the UI can
+  call `/api/*` same-origin in production while the original root contract
+  keeps working. Static UI files are mounted after those routes (a build
+  must never shadow an endpoint) and before the 404. There is no SPA history
+  fallback on purpose — it would turn API 404s into HTML, and the UI has no
+  client-side router.
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.

@@ -1,9 +1,19 @@
 import { createDefaultRegistry, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import express, { Router, type Express, type NextFunction, type Request, type Response } from "express";
+import { fileURLToPath } from "node:url";
 import { createMcpRouter } from "./mcp/router.js";
 
 /** Path the MCP Streamable HTTP endpoint is mounted at, when enabled. */
 const MCP_PATH = "/mcp";
+
+/**
+ * The built UI, resolved relative to this module — which lands on
+ * packages/ui/dist whether this runs from src/ (vitest) or dist/ (node),
+ * since both sit one level under the package root.
+ */
+export function defaultUiDir(): string {
+  return fileURLToPath(new URL("../../ui/dist/", import.meta.url));
+}
 
 export interface CreateAppOptions {
   /**
@@ -15,6 +25,17 @@ export interface CreateAppOptions {
    * independently and query the backends at twice the configured rate.
    */
   mcp?: boolean;
+  /**
+   * Serve the built web UI as static files. `true` uses defaultUiDir();
+   * a string serves that directory instead. Defaults to false so tests and
+   * library callers don't depend on whether the UI happens to be built —
+   * the server entry point turns it on when a build is present.
+   *
+   * There is deliberately no SPA history fallback: the UI is a single page
+   * with no client-side router, and a catch-all would turn genuine API 404s
+   * into HTML. Add one (scoped to non-API paths) if routing arrives.
+   */
+  ui?: boolean | string;
 }
 
 /**
@@ -27,7 +48,7 @@ export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   options: CreateAppOptions = {},
 ): Express {
-  const { mcp = true } = options;
+  const { mcp = true, ui = false } = options;
   const app = express();
   app.use(express.json());
 
@@ -35,25 +56,17 @@ export function createApp(
   // swallow every MCP request.
   if (mcp) app.use(MCP_PATH, createMcpRouter(registry));
 
-  app.get("/health", (_req, res) => {
-    res.json({ status: "ok" });
-  });
+  // Mounted twice on purpose. The UI calls /api/* so that it works
+  // same-origin in production without a build-time API URL baked in, while
+  // the root paths keep the existing contract (README curl examples, every
+  // existing test) working unchanged.
+  const search = createSearchRouter(registry);
+  app.use("/api", search);
+  app.use(search);
 
-  app.get("/engines", (_req, res) => {
-    res.json(registry.list().map((engine) => ({ id: engine.id, name: engine.name })));
-  });
-
-  app.post("/search", async (req, res) => {
-    const parsed = SearchRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid search request", details: parsed.error.issues });
-      return;
-    }
-
-    const { engines, ...query } = parsed.data;
-    const outcomes = await registry.searchAll(query, engines);
-    res.json({ query, outcomes });
-  });
+  // After the API routes, so a stray file in the UI build can never shadow
+  // an endpoint; before the 404, so index.html is reachable at /.
+  if (ui) app.use(express.static(typeof ui === "string" ? ui : defaultUiDir()));
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });
@@ -94,6 +107,33 @@ export function createApp(
   });
 
   return app;
+}
+
+/** The search endpoints, mounted at both / and /api. */
+function createSearchRouter(registry: SearchEngineRegistry): Router {
+  const router = Router();
+
+  router.get("/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  router.get("/engines", (_req, res) => {
+    res.json(registry.list().map((engine) => ({ id: engine.id, name: engine.name })));
+  });
+
+  router.post("/search", async (req, res) => {
+    const parsed = SearchRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid search request", details: parsed.error.issues });
+      return;
+    }
+
+    const { engines, ...query } = parsed.data;
+    const outcomes = await registry.searchAll(query, engines);
+    res.json({ query, outcomes });
+  });
+
+  return router;
 }
 
 function isMalformedJsonError(err: unknown): boolean {

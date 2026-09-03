@@ -56,6 +56,10 @@ All of the search-facing surfaces (CLI, HTTP API, MCP server) are thin
 adapters over the `core` package's `SearchEngineRegistry`. The web UI talks
 to the HTTP API.
 
+In production `packages/api` also serves the built web UI as static files,
+so a single process serves the UI at `/`, the search API at `/api`, and MCP
+at `/mcp` — same-origin, with no reverse proxy or CORS setup.
+
 The HTTP API and the MCP server share **one process** (`packages/api`), with
 MCP mounted at `POST /mcp` and toggleable via `MCP_ENABLED`. That's not just
 packaging convenience: sharing a process means sharing one registry, and

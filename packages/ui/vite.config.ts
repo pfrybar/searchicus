@@ -7,12 +7,12 @@ export default defineConfig({
   server: {
     proxy: {
       // Lets the UI call same-origin `/api/*` in dev without dealing with
-      // CORS; production deploys will need their own equivalent (a reverse
-      // proxy, or setting VITE_API_URL — see src/api.ts).
+      // CORS. The API serves those same paths under /api, so there's no
+      // rewrite here and dev and production hit identical URLs — in
+      // production the API serves the built UI itself, same-origin.
       "/api": {
         target: "http://localhost:3000",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
   },
