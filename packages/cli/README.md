@@ -1,8 +1,14 @@
 # @searchicus/cli
 
-The `searchicus` command-line interface. Currently searches against the
-`core` package's `MockSearchEngine` — real backends aren't wired up yet
-(see the repo root `README.md`/`AGENTS.md`).
+The `searchicus` command-line interface — a thin adapter over the `core`
+package's `SearchEngineRegistry`. Only the mock engine ships registered;
+see the repo root `README.md` for adding a browser-backed one.
+
+The CLI builds its registry with `createBrowserRegistry("cli")`, so it gets
+its own Chromium profile at `.searchicus/profile/cli/`. Because a search can
+return results while its browser session is still running, the CLI drains
+those sessions before exiting rather than killing them mid-flight — so the
+process may stay alive briefly after printing results.
 
 ## Usage
 
@@ -27,6 +33,9 @@ Once published/linked, the same binary is available as `searchicus`
 
 The query is trimmed and must contain non-whitespace text. Invalid limits or
 queries make the command exit non-zero before any engine is called.
+
+Rate limiting is in-memory, so it does **not** survive across invocations: a
+shell loop calling the CLI repeatedly gets no spacing between searches.
 
 ### `engines`
 

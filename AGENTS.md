@@ -10,18 +10,19 @@ search engines out. It's a TypeScript npm-workspaces monorepo with a shared
 (Streamable HTTP transport), and a web UI. See `README.md` for the
 architecture picture.
 
-Pluggable backend search engines are **out of scope for now**. The `core`
-package defines the `SearchEngine` plugin interface and ships a
-deterministic `MockSearchEngine` so the rest of the stack has something real
-to call. Don't add real backend integrations (web search providers, API-key
-based engines, etc.) unless explicitly asked — the interface is the point of
-this phase, not the integrations.
+Backend engines drive a real headless browser. `core` owns a single
+long-lived Chromium instance (Playwright `launchPersistentContext`) and
+hands each search a page from it; engines parse results out of that page.
+A deterministic `MockSearchEngine` is still registered by default so the
+whole stack runs — and the whole test suite passes — with no browser
+installed at all.
 
 ## Repo layout
 
 ```
 packages/
   core/   shared types + SearchEngine interface + registry + mock engine
+          + browser session (Playwright) + rate-limit throttle
   cli/    `searchicus` CLI (commander)
   api/    HTTP API (express)
   mcp/    MCP server, Streamable HTTP transport (@modelcontextprotocol/sdk)
@@ -61,6 +62,12 @@ npm run format       # prettier --write
 npm run typecheck    # build core declarations as needed, then tsc --noEmit
 ```
 
+Browser-backed tests skip automatically when Chromium can't launch (a slim
+container usually lacks `libnss3`/`libgbm`/`libX11`, and
+`playwright install-deps` needs root). They are the only coverage of the real
+Playwright wiring, so run them somewhere with a working browser before
+trusting changes to `browser.ts`.
+
 `npm run dev` starts the API, MCP server, and UI dev servers together
 (via `concurrently`); each is also runnable on its own:
 
@@ -86,6 +93,34 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   package. It's a factory (fresh instance per call), not a shared singleton,
   so `createApp`/`createProgram`/`createMcpServer` can keep accepting an
   injectable `registry` parameter for tests.
+- **Playwright must never reach core's main entry.** `createDefaultRegistry()`
+  has no browser attached on purpose; `browser.ts` is published separately as
+  `@searchicus/core/browser` and only entry points import it. The UI
+  type-imports from core, so a value import of Playwright there would drag
+  browser binaries into a Vite bundle. The registry depends on the
+  `BrowserProvider` interface, never on the `BrowserSession` class.
+- **Results and sessions are separate signals.** `search()` resolving means
+  results are ready; the returned `SearchSession.completed` settling means
+  the browser work is done. An engine may return results and keep using its
+  page. The registry releases the browser lease when `completed` settles, so
+  an engine that never settles it leaks a page into a browser that is meant
+  to run for days. Engines with nothing to do afterwards just return a bare
+  `SearchResponse` and the registry normalizes it.
+- **Anything short-lived must `drain()` before exiting.** Sessions outlive the
+  call that started them, so exiting as soon as results arrive kills live
+  browser work. The CLI `close()`s in a `finally`; the servers drain on
+  SIGINT/SIGTERM with a grace period.
+- **Rate limiting is the registry's job, not each engine's.** One global
+  throttle gates entry to `searchAll()`, so a single incoming search still
+  fans out to every engine in parallel while _consecutive_ searches are
+  spaced apart (5s ±30% jitter by default). Tests that run searches back to
+  back should pass `{ throttle: null }`.
+- **One browser, one context, a page per search — deliberately no pool.** A
+  pool would isolate concurrent searches; sharing one persistent context is
+  what carries cookies, dismissed consent banners, and cache across searches
+  and across restarts. Each surface gets its own profile directory because a
+  Chromium user-data dir is single-writer and `npm run dev` starts the API
+  and MCP server together.
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.

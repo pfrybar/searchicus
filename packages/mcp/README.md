@@ -16,6 +16,11 @@ requests; see `src/app.ts` for why that's the right default here).
 Both are backed by the same `core` `SearchEngineRegistry` the CLI and HTTP
 API use; only the mock engine is registered for now (see AGENTS.md).
 
+A `search` call fans out to every selected engine in parallel, but
+consecutive calls are rate limited as whole fan-outs (5s ±30% by default).
+Per-engine failures come back inside the result payload rather than as tool
+errors.
+
 ## Running
 
 ```bash
@@ -25,6 +30,13 @@ npm run build -w @searchicus/mcp && npm run start -w @searchicus/mcp
 ```
 
 Listens on `PORT` (default `3001`), MCP endpoint at `POST /mcp`.
+
+The server builds its registry with `createBrowserRegistry("mcp")`, giving it
+its own Chromium profile at `.searchicus/profile/mcp/` (override with
+`SEARCHICUS_PROFILE_DIR`) — separate from the API's, because a Chromium
+user-data directory is single-writer and `npm run dev` runs both at once.
+On `SIGINT`/`SIGTERM` it drains in-flight browser sessions before exiting,
+bounded by a 15s grace period.
 
 ```bash
 curl -s localhost:3001/mcp \
