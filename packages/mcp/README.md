@@ -7,7 +7,10 @@ requests; see `src/app.ts` for why that's the right default here).
 ## Tools
 
 - **`search`** — `{ query, limit?, page?, filters?, engines? }` → fans the
-  query out across the requested (or every) registered engine.
+  query out across the requested (or every) registered engine. Query and
+  engine-selection validation is shared with the HTTP API: query text is
+  trimmed and non-whitespace, and a supplied `engines` list is non-empty and
+  duplicate-free.
 - **`list_engines`** — lists the engines currently registered.
 
 Both are backed by the same `core` `SearchEngineRegistry` the CLI and HTTP
@@ -47,6 +50,6 @@ npm run typecheck -w @searchicus/mcp
 ```
 
 Tests connect an SDK `Client` to `createMcpServer()` over
-`InMemoryTransport` rather than driving the HTTP layer — that exercises
-the actual tool logic without needing to speak the Streamable HTTP wire
-protocol in tests.
+`InMemoryTransport` for focused tool coverage and also connect one over a
+real ephemeral Streamable HTTP endpoint. That covers both the tool logic and
+the stateless HTTP wiring without external services.

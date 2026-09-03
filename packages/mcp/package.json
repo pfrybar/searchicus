@@ -6,18 +6,21 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
+    "prebuild": "npm run build -w @searchicus/core",
     "build": "tsc -p tsconfig.build.json",
+    "predev": "npm run build -w @searchicus/core",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "pretest": "npm run build -w @searchicus/core",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretypecheck": "npm run build -w @searchicus/core",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@searchicus/core": "0.1.0",
-    "express": "5.2.1",
-    "zod": "4.5.4"
+    "express": "5.2.1"
   },
   "devDependencies": {
     "@types/express": "5.0.6",

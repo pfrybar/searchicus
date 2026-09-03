@@ -22,8 +22,11 @@ Once published/linked, the same binary is available as `searchicus`
 | Option                 | Description                                                 |
 | ---------------------- | ----------------------------------------------------------- |
 | `-e, --engine <id...>` | Engine id(s) to search; defaults to every registered engine |
-| `-l, --limit <n>`      | Max results per engine (default `10`)                       |
+| `-l, --limit <n>`      | Max results per engine (`1`–`100`, default `10`)            |
 | `--json`               | Print raw JSON instead of a formatted list                  |
+
+The query is trimmed and must contain non-whitespace text. Invalid limits or
+queries make the command exit non-zero before any engine is called.
 
 ### `engines`
 

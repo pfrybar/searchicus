@@ -12,7 +12,10 @@ npm run dev -w @searchicus/ui    # in another — Vite dev server on :5173
 
 The dev server proxies `/api/*` to the API at `http://localhost:3000` (see
 `vite.config.ts`), so no CORS setup is needed locally. For a standalone
-build, set `VITE_API_URL` to point at a deployed API instead.
+build, set `VITE_API_URL` to the deployed API URL. If the UI and API use
+different origins, configure CORS at the API's reverse proxy (or serve them
+through one origin); this API intentionally does not enable cross-origin
+requests by default.
 
 ```bash
 npm run build -w @searchicus/ui     # typecheck + production build to dist/

@@ -42,17 +42,25 @@ describe("POST /search", () => {
     expect(res.body.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["mock"]);
   });
 
-  it("rejects a request missing a query", async () => {
-    const res = await request(testApp()).post("/search").send({ limit: 5 });
+  it("rejects an invalid request body", async () => {
+    const missingQuery = await request(testApp()).post("/search").send({ limit: 5 });
+    const whitespaceQuery = await request(testApp()).post("/search").send({ query: "   " });
+    const malformedEngines = await request(testApp())
+      .post("/search")
+      .send({ query: "cats", engines: ["mock", 1] });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBeDefined();
+    for (const res of [missingQuery, whitespaceQuery, malformedEngines]) {
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid search request");
+      expect(res.body.details).toBeInstanceOf(Array);
+    }
   });
 
   it("rejects malformed JSON bodies", async () => {
     const res = await request(testApp()).post("/search").set("Content-Type", "application/json").send("{not json");
 
     expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid JSON" });
   });
 });
 

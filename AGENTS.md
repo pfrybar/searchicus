@@ -28,9 +28,11 @@ packages/
   ui/     web UI (vite + react)
 ```
 
-Each package is independently versioned/built under `packages/*` and
-depends on `core` via the npm workspace protocol (`workspace:*` style local
-resolution through npm workspaces — no publishing required for local dev).
+Each package is independently versioned/built under `packages/*`. Internal
+packages currently declare the matching `0.1.0` version of `@searchicus/core`;
+npm workspaces resolves that compatible dependency to the local workspace, so
+no publishing is required for local development. Keep those versions aligned
+if a package version changes.
 
 ## Conventions
 
@@ -52,11 +54,11 @@ Run from the repo root unless noted otherwise.
 
 ```bash
 npm install         # install everything
-npm run build       # build all packages (core first — the rest depend on it)
-npm run test        # run all tests (vitest)
+npm run build       # build all packages; dependent package hooks build core first
+npm run test         # build core as needed, then run all Vitest suites
 npm run lint         # eslint across the repo
 npm run format       # prettier --write
-npm run typecheck    # tsc --noEmit, per package
+npm run typecheck    # build core declarations as needed, then tsc --noEmit
 ```
 
 `npm run dev` starts the API, MCP server, and UI dev servers together
@@ -78,5 +80,12 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - Keep the `SearchEngine` interface in `core` minimal and stable; the CLI,
   API, and MCP server should each be a thin adapter over
   `SearchEngineRegistry`, not reimplement search logic themselves.
-- If you touch the plugin interface, update the mock engine and every
-  adapter (CLI/API/MCP/UI) that assumes its current shape.
+- Validate untrusted requests through the shared core schemas. `SearchQuery`
+  is the engine input; `SearchRequest` adds the optional engine selection for
+  API/MCP callers. Do not recover `engines` by casting raw request bodies.
+- If you touch the plugin interface or shared request schemas, update the
+  mock engine and every adapter (CLI/API/MCP/UI) that assumes their current
+  shape, plus their tests and package README files.
+- Consumers import core's built ESM entry point. Their `prebuild`, `predev`,
+  `pretest`, and `pretypecheck` hooks deliberately build core first, so keep
+  those hooks when changing package scripts or adding another core consumer.
