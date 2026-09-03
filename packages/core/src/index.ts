@@ -1,3 +1,4 @@
 export * from "./types.js";
+export * from "./schemas.js";
 export * from "./registry.js";
 export * from "./engines/mock.js";

@@ -4,6 +4,8 @@ Shared building blocks for every searchicus front door (CLI, HTTP API, MCP
 server, UI):
 
 - `SearchQuery` / `SearchResult` / `SearchResponse` — the common data shapes.
+- `SearchQuerySchema` — a zod schema that validates untrusted input (HTTP
+  bodies, MCP tool arguments) into a `SearchQuery`.
 - `SearchEngine` — the plugin interface a backend search engine implements.
 - `SearchEngineRegistry` — registers engines and fans a query out to one or
   all of them, capturing per-engine failures instead of throwing.
