@@ -1,6 +1,7 @@
 import type { BrowserLease, BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
 import { BingSearchEngine } from "./engines/bing.js";
 import { BraveSearchEngine } from "./engines/brave.js";
+import { DuckDuckGoSearchEngine } from "./engines/duckduckgo.js";
 import { StartpageSearchEngine } from "./engines/startpage.js";
 import { Throttle, type ThrottleOptions } from "./throttle.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchSession } from "./types.js";
@@ -296,5 +297,6 @@ export function createDefaultRegistry(options: SearchEngineRegistryOptions = {})
   return new SearchEngineRegistry(options)
     .register(new BingSearchEngine())
     .register(new BraveSearchEngine())
+    .register(new DuckDuckGoSearchEngine())
     .register(new StartpageSearchEngine());
 }

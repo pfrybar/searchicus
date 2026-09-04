@@ -27,14 +27,18 @@ two-phase search sessions, and rate limiting — is in place in `core`, along
 with the browser-realism layer that makes automated sessions look like
 ordinary ones (`stealth`, `human`, `dwell`).
 
-Three engines ship and are all registered by default: `bing`, `brave` and
-`startpage`. Each drives a real browser through its search engine's homepage
-the way a person would — typing the query, submitting the form, and reading the
-results page — so one unfiltered search fans out to all three in parallel.
-Startpage is a proxy rather than an index of its own, serving mostly Google's
-results with some of Bing's, so it overlaps with `bing` by design; what it adds
-is Google's ranking, which nothing else here reaches. See "Adding a new search
-engine backend" to add your own.
+Four engines ship and are all registered by default: `bing`, `brave`,
+`duckduckgo` and `startpage`. Each drives a real browser through its search
+engine's homepage the way a person would — typing the query, submitting the
+form, and reading the results page — so one unfiltered search fans out to all
+four in parallel.
+
+Two of them are largely front ends onto someone else's index, and overlap with
+`bing` by design: `startpage` serves mostly Google's results with some of
+Bing's, and `duckduckgo` serves mostly Bing's with its own crawl mixed in. What
+they add is a different ranking over that corpus — and in Startpage's case,
+Google's, which nothing else here reaches. See "Adding a new search engine
+backend" to add your own.
 
 ## Architecture
 

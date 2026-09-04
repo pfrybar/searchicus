@@ -14,10 +14,10 @@ architecture picture.
 Backend engines drive a real headless browser. `core` owns a single
 long-lived Chromium instance (Playwright `launchPersistentContext`) and
 hands each search a page from it; engines parse results out of that page.
-The `bing`, `brave` and `startpage` engines are all registered by default and
-drive the real sites, so an unfiltered search fans out to all of them. Tests
-inject deterministic test doubles where they need browser-free adapter
-coverage.
+The `bing`, `brave`, `duckduckgo` and `startpage` engines are all registered
+by default and drive the real sites, so an unfiltered search fans out to all of
+them. Tests inject deterministic test doubles where they need browser-free
+adapter coverage.
 
 ## Repo layout
 
@@ -144,7 +144,11 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   like `svelte-jmfu5f` that changes whenever they ship CSS. Where a site mixes
   units into one class, name the organic one positively (`data-type="web"`)
   instead of enumerating what to exclude, so a new unit type is ignored by
-  default rather than returned as a result.
+  default rather than returned as a result. Check what an _ad_ looks like
+  before trusting a selector: DuckDuckGo's ads are siblings of its organic
+  results carrying the identical title-link test id, separated only by the
+  parent's `data-layout`, so selecting on the link returns paid placements as
+  search results — output that looks entirely plausible and is wrong.
 - **Content-level failures are shared.** `NoResultsError` and
   `OffTargetResultsError` live in `engines/errors.ts` and carry the engine
   name; don't redeclare them per engine, or core's star exports collide.
