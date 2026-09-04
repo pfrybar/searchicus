@@ -17,21 +17,26 @@ function fakePage(popup?: { close: () => Promise<void> }) {
 function fakeResults(count: number, linkedRanks: ReadonlySet<number> = new Set([0, 1, 2, 3, 4])) {
   const clicks: number[] = [];
   const clickOptions: unknown[] = [];
+  const linkSelectors: string[] = [];
   return {
     clicks,
     clickOptions,
+    linkSelectors,
     locator: {
       count: async () => count,
       nth: (index: number) => ({
-        locator: () => ({
-          first: () => ({
-            count: async () => (linkedRanks.has(index) ? 1 : 0),
-            click: async (options: unknown) => {
-              clicks.push(index);
-              clickOptions.push(options);
-            },
-          }),
-        }),
+        locator: (selector: string) => {
+          linkSelectors.push(selector);
+          return {
+            first: () => ({
+              count: async () => (linkedRanks.has(index) ? 1 : 0),
+              click: async (options: unknown) => {
+                clicks.push(index);
+                clickOptions.push(options);
+              },
+            }),
+          };
+        },
       }),
     },
   };
@@ -69,7 +74,7 @@ describe("clickThroughResult", () => {
       const controller = new AbortController();
       let closed = false;
       const { page, events } = fakePage({ close: async () => void (closed = true) });
-      const { locator, clicks, clickOptions } = fakeResults(5);
+      const { locator, clicks, clickOptions, linkSelectors } = fakeResults(5);
       const draws = [0, 0.5]; // Click, then choose the second-ranked result.
       const clickThrough = clickThroughResult(page as never, locator as never, controller.signal, {
         rate: 0.4,
@@ -82,7 +87,31 @@ describe("clickThroughResult", () => {
       expect(events).toEqual(["popup"]);
       expect(clicks).toEqual([1]);
       expect(clickOptions).toEqual([{ timeout: 5_000, signal: controller.signal }]);
+      expect(linkSelectors).toEqual(["h2 a"]);
       expect(closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks an engine's own link selector for the destination", async () => {
+    // Result markup is engine-specific: Brave has no heading element at all,
+    // so a helper hardcoded to `h2 a` would silently never click through.
+    vi.useFakeTimers();
+    try {
+      const { page } = fakePage();
+      const { locator, clicks, linkSelectors } = fakeResults(5);
+      const clickThrough = clickThroughResult(page as never, locator as never, undefined, {
+        rate: 1,
+        random: () => 0,
+        linkSelector: "a:has(div.title)",
+      });
+
+      await vi.runAllTimersAsync();
+      await expect(clickThrough).resolves.toBeUndefined();
+
+      expect(linkSelectors).toEqual(["a:has(div.title)"]);
+      expect(clicks).toEqual([0]);
     } finally {
       vi.useRealTimers();
     }

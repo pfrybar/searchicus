@@ -27,10 +27,11 @@ two-phase search sessions, and rate limiting — is in place in `core`, along
 with the browser-realism layer that makes automated sessions look like
 ordinary ones (`stealth`, `human`, `dwell`).
 
-The `bing` engine drives a real browser through the Bing homepage the way a
-person would — typing the query, submitting the form, and reading the results
-page. See "Adding a new
-search engine backend" to add your own.
+Two engines ship and are both registered by default: `bing` and `brave`. Each
+drives a real browser through its search engine's homepage the way a person
+would — typing the query, submitting the form, and reading the results page —
+so one unfiltered search fans out to both in parallel. See "Adding a new search
+engine backend" to add your own.
 
 ## Architecture
 
@@ -116,15 +117,18 @@ opt into them rather than reimplementing any of it:
   of searches, weighted toward higher ranks. A short decision pause precedes
   the click and a short landing pause follows it; there is no full dwell or
   further interaction on the destination. Any popup opened by that click is
-  closed after the landing pause. It uses a real link click so normal Bing
-  click and referrer behavior are preserved.
+  closed after the landing pause. It uses a real link click so the search
+  engine's normal click and referrer behavior are preserved. Result markup is
+  engine-specific, so the engine passes the selector for its own result links.
 
 Results are also checked against the query before being believed. A search
 engine can answer with HTTP 200, valid markup and real results that have
 nothing to do with what was asked — classically, results for only the
 query's first term. Nothing about the response looks wrong, so `relevance.ts`
 scores how much of the query actually appears in the results and the engine
-fails the search rather than returning plausible nonsense.
+fails the search rather than returning plausible nonsense. That check, and the
+"no organic results" failure, are shared by every engine and live in
+`engines/errors.ts`.
 
 ## Repository layout
 

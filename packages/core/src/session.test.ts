@@ -299,16 +299,16 @@ describe("close()", () => {
   });
 });
 
-describe("BingSearchEngine (registration and wiring)", () => {
-  it("is the only engine registered by default", () => {
+describe("browser-backed engines (registration and wiring)", () => {
+  it("registers every engine by default, so an unfiltered search fans out to all of them", () => {
     const ids = createDefaultRegistry({ throttle: null })
       .list()
       .map((engine) => engine.id);
-    expect(ids).toEqual(["bing"]);
+    expect(ids).toEqual(["bing", "brave"]);
   });
 
-  it("fails with a diagnosable error when no browser is configured", async () => {
-    const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats" }, ["bing"]);
+  it.each(["bing", "brave"])("fails with a diagnosable error when %s has no browser", async (engineId) => {
+    const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats" }, [engineId]);
 
     expect(outcomes[0]?.ok).toBe(false);
     if (!outcomes[0]?.ok) expect(outcomes[0]?.error).toMatch(/createBrowserRegistry|browser session/i);

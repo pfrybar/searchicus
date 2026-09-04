@@ -72,7 +72,10 @@ keep the original contract.
 ### `GET /engines`
 
 ```json
-[{ "id": "bing", "name": "Bing" }]
+[
+  { "id": "bing", "name": "Bing" },
+  { "id": "brave", "name": "Brave" }
+]
 ```
 
 ### `POST /search`
@@ -80,7 +83,7 @@ keep the original contract.
 Request body:
 
 ```json
-{ "query": "typescript generics", "limit": 5, "engines": ["bing"] }
+{ "query": "typescript generics", "limit": 5, "engines": ["bing", "brave"] }
 ```
 
 - `query` (required string containing non-whitespace text; surrounding

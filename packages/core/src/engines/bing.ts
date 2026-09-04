@@ -3,8 +3,9 @@ import type { SearchContext } from "../context.js";
 import { clickThroughResult } from "../browser/click-through.js";
 import { searchDwell } from "../browser/dwell.js";
 import { humanPause, humanType } from "../browser/human.js";
-import { assessRelevance, type RelevanceReport } from "../relevance.js";
+import { assessRelevance } from "../relevance.js";
 import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../types.js";
+import { NoResultsError, OffTargetResultsError } from "./errors.js";
 
 /**
  * Bing, driven through a real browser the way a person would drive it.
@@ -32,6 +33,9 @@ const HOMEPAGE = "https://www.bing.com/";
 /** Organic results. Ads are `li.b_ad` and are excluded by this selector. */
 const RESULT_SELECTOR = "#b_results li.b_algo";
 
+/** A result's destination link, shared by the parser and the click-through. */
+const LINK_SELECTOR = "h2 a";
+
 /**
  * Snippet candidates, most specific first. Bing rotates the clamp class by
  * layout, so the bare `p` is the last-resort fallback.
@@ -51,34 +55,6 @@ const EXTRACT_TIMEOUT_MS = 2_000;
 
 /** Default result count, matching one Bing page. */
 const DEFAULT_LIMIT = 10;
-
-/** Raised when Bing answers, but the answer is not about the query. */
-export class OffTargetResultsError extends Error {
-  constructor(
-    readonly query: string,
-    readonly report: RelevanceReport,
-  ) {
-    super(
-      `Bing returned results that do not match "${query}" ` +
-        `(coverage ${report.coverage.toFixed(2)}, missing: ${report.missing.join(", ")}). ` +
-        `This is the degraded-serving failure, not a parse error: the page was valid and the ` +
-        `results were real, they were simply answers to a different question.`,
-    );
-    this.name = "OffTargetResultsError";
-  }
-}
-
-/** Raised when the results page never appeared, or held no organic results. */
-export class NoResultsError extends Error {
-  constructor(url: string, cause?: unknown) {
-    super(
-      `Bing returned no organic results (at ${url}). Either the query genuinely has none, ` +
-        `or the page is a consent wall or an anomaly challenge rather than a SERP.`,
-    );
-    this.name = "NoResultsError";
-    if (cause !== undefined) this.cause = cause;
-  }
-}
 
 export class BingSearchEngine implements SearchEngine {
   readonly id = "bing";
@@ -105,14 +81,14 @@ export class BingSearchEngine implements SearchEngine {
     try {
       await results.first().waitFor({ state: "attached", timeout: RESULTS_TIMEOUT_MS });
     } catch (err) {
-      throw new NoResultsError(page.url(), err);
+      throw new NoResultsError(this.name, page.url(), err);
     }
 
-    const parsed = await parseResults(results, limit);
-    if (parsed.length === 0) throw new NoResultsError(page.url());
+    const parsed = await parseBingResults(results, limit);
+    if (parsed.length === 0) throw new NoResultsError(this.name, page.url());
 
     const report = assessRelevance(query.query, parsed);
-    if (report.offTarget) throw new OffTargetResultsError(query.query, report);
+    if (report.offTarget) throw new OffTargetResultsError(this.name, query.query, report);
 
     return {
       response: {
@@ -132,7 +108,7 @@ export class BingSearchEngine implements SearchEngine {
 /** Finishes the background browser behavior after results have been returned. */
 async function completeSearchSession(page: Page, results: Locator, signal: AbortSignal): Promise<void> {
   await searchDwell(page, results, signal);
-  await clickThroughResult(page, results, signal);
+  await clickThroughResult(page, results, signal, { linkSelector: LINK_SELECTOR });
 }
 
 /**
@@ -169,14 +145,14 @@ function searchBox(page: Page): Locator {
  * headless renderer happens to lay the page out. Whitespace is normalized by
  * hand since `textContent` does not collapse it.
  */
-export async function parseResults(results: Locator, limit = DEFAULT_LIMIT): Promise<SearchResult[]> {
+export async function parseBingResults(results: Locator, limit = DEFAULT_LIMIT): Promise<SearchResult[]> {
   const available = await results.count();
   const parsed: SearchResult[] = [];
 
   for (let i = 0; i < available && parsed.length < limit; i++) {
     const item = results.nth(i);
 
-    const link = item.locator("h2 a").first();
+    const link = item.locator(LINK_SELECTOR).first();
     // A b_algo block with no linked heading is a layout variant (video
     // carousels, "people also ask"), not a result we can return.
     if ((await link.count()) === 0) continue;
