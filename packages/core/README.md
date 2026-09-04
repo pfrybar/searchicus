@@ -16,9 +16,9 @@ server, UI):
   of them capturing per-engine failures, and owns rate limiting and session
   lifetime.
 - `Throttle` — spaces consecutive search fan-outs apart, with jitter.
-- `BingSearchEngine` / `BraveSearchEngine` — drive Bing and Brave Search
-  through a real browser: homepage, type, submit, parse. Both need a
-  browser-backed registry.
+- `BingSearchEngine` / `BraveSearchEngine` / `StartpageSearchEngine` — drive
+  Bing, Brave Search and Startpage through a real browser: homepage, type,
+  submit, parse. All need a browser-backed registry.
 - `NoResultsError` / `OffTargetResultsError` — the two content-level failures
   any engine can hit, shared by all of them.
 - `assessRelevance()` — scores a result set against its query, to catch a
@@ -37,7 +37,7 @@ Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 import { createDefaultRegistry } from "@searchicus/core";
 
 const registry = createDefaultRegistry();
-const engines = registry.list(); // [BingSearchEngine, BraveSearchEngine]
+const engines = registry.list(); // [BingSearchEngine, BraveSearchEngine, StartpageSearchEngine]
 
 // This browser-free registry is useful for registration and dependency
 // injection. Run browser-backed engines through the /browser entry point.

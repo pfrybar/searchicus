@@ -14,9 +14,10 @@ architecture picture.
 Backend engines drive a real headless browser. `core` owns a single
 long-lived Chromium instance (Playwright `launchPersistentContext`) and
 hands each search a page from it; engines parse results out of that page.
-The `bing` and `brave` engines are both registered by default and drive the
-real sites, so an unfiltered search fans out to both. Tests inject
-deterministic test doubles where they need browser-free adapter coverage.
+The `bing`, `brave` and `startpage` engines are all registered by default and
+drive the real sites, so an unfiltered search fans out to all of them. Tests
+inject deterministic test doubles where they need browser-free adapter
+coverage.
 
 ## Repo layout
 
@@ -129,7 +130,10 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   result. And Playwright's text/attribute readers _auto-wait_: reading a
   field that isn't there blocks for the full default timeout (30s) before any
   `catch` runs, which is enough to exhaust the registry's whole results
-  budget. `count()` never waits.
+  budget. `count()` never waits. `textContent` has one cost to know about: it
+  also returns the text of `<style>` and `<script>` nodes, so an engine whose
+  site parks styles inline (Startpage does, mid-hydration) has to subtract
+  them — reaching for `innerText` to fix that brings the CSS problem back.
 - **Result markup belongs to the engine; behaviour belongs to the shared
   helpers.** Each engine owns its own selectors and passes them to anything
   shared — `clickThroughResult` takes the engine's `linkSelector` because Bing

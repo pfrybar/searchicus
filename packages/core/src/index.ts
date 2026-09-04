@@ -7,3 +7,4 @@ export * from "./registry.js";
 export * from "./engines/errors.js";
 export * from "./engines/bing.js";
 export * from "./engines/brave.js";
+export * from "./engines/startpage.js";
