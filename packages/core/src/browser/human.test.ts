@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { humanPause, humanType, randInt } from "./human.js";
-import { ThrottleAbortError } from "./throttle.js";
+import { ThrottleAbortError } from "../throttle.js";
 
 describe("randInt", () => {
   it("is inclusive of both bounds", () => {

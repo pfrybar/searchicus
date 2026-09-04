@@ -1,7 +1,7 @@
 import type { Locator, Page } from "playwright";
 import type { SearchContext } from "../context.js";
-import { searchDwell } from "../dwell.js";
-import { humanPause, humanType } from "../human.js";
+import { searchDwell } from "../browser/dwell.js";
+import { humanPause, humanType } from "../browser/human.js";
 import { assessRelevance, type RelevanceReport } from "../relevance.js";
 import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../types.js";
 
