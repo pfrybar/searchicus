@@ -9,7 +9,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // The Node-targeted packages.
-    files: ["packages/{core,cli,api,mcp}/**/*.ts"],
+    files: ["packages/{core,cli,api,mcp}/**/*.{ts,mjs}"],
     languageOptions: { globals: globals.node },
   },
   {
