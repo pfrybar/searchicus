@@ -74,6 +74,18 @@ describe.skipIf(!available)("BrowserSession (live Chromium)", () => {
     await session.close();
   });
 
+  it("rejects an additional page request after its signal aborts", async () => {
+    const controller = new AbortController();
+    const session = new BrowserSession({ profileDir: tempProfile() });
+    const handle = await session.acquire(controller.signal);
+
+    controller.abort();
+
+    await expect(handle.lease.newPage()).rejects.toThrow(/abort/i);
+    await handle.release();
+    await session.close();
+  });
+
   it("shares cookies between pages, which is the point of one context", async () => {
     const session = new BrowserSession({ profileDir: tempProfile() });
     const handle = await session.acquire();

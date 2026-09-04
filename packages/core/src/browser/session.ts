@@ -209,6 +209,8 @@ export class BrowserSession implements BrowserProvider {
   }
 
   #reservePageSlot(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+
     if (this.#openPages < this.#maxPages) {
       this.#openPages++;
       return Promise.resolve();

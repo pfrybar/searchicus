@@ -31,8 +31,9 @@ Once published/linked, the same binary is available as `searchicus`
 | `-l, --limit <n>`      | Max results per engine (`1`–`100`, default `10`)            |
 | `--json`               | Print raw JSON instead of a formatted list                  |
 
-The query is trimmed and must contain non-whitespace text. Invalid limits or
-queries make the command exit non-zero before any engine is called.
+The query is trimmed and must contain non-whitespace text. Invalid limits,
+queries, or engine selections (including duplicate ids) make the command exit
+non-zero before any engine is called.
 
 Rate limiting is in-memory, so it does **not** survive across invocations: a
 shell loop calling the CLI repeatedly gets no spacing between searches.

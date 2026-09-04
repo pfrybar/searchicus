@@ -64,4 +64,18 @@ describe("CLI argument handling", () => {
     expect(outcomes[0].response.query.query).toBe("cats");
     write.mockRestore();
   });
+
+  it("rejects duplicate engine selections with the shared request schema", async () => {
+    const program = createProgram(
+      new SearchEngineRegistry({ throttle: null }).register({
+        id: "test",
+        name: "Test Search Engine",
+        search: async (query) => ({ query, results: [], engine: "test", tookMs: 0 }),
+      }),
+    );
+
+    await expect(
+      program.parseAsync(["node", "searchicus", "search", "cats", "--engine", "test", "test"]),
+    ).rejects.toThrow(/engines must not contain duplicates/);
+  });
 });
