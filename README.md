@@ -156,6 +156,9 @@ searchicus/
 
 ## Getting started
 
+Node 22.5 or newer, which is where `node:sqlite` — the search archive's
+storage engine — landed.
+
 ```bash
 npm install
 npm run build   # builds every package (core first — the others depend on it)
