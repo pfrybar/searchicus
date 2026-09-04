@@ -13,9 +13,9 @@ server, UI):
   `completed` promise for browser work that outlives it.
 - `SearchContext` / `BrowserLease` — what an engine is handed to get at a
   browser page.
-- `SearchEngineRegistry` — registers engines, fans a query out to one or all
-  of them capturing per-engine failures, and owns rate limiting and session
-  lifetime.
+- `SearchEngineRegistry` — registers engines, merges a fan-out into the
+  client-facing ranked response, retains `searchAll()` for raw per-engine
+  debugging, and owns rate limiting and session lifetime.
 - `Throttle` — spaces consecutive search fan-outs apart, with jitter.
 - `BingSearchEngine` / `BraveSearchEngine` / `DuckDuckGoSearchEngine` /
   `StartpageSearchEngine` — drive their search engines through a real browser:
@@ -62,7 +62,7 @@ import { createBrowserRegistry } from "@searchicus/core/browser";
 
 const registry = createBrowserRegistry("api");
 try {
-  await registry.searchAll({ query: "typescript" });
+  await registry.search({ query: "typescript" });
 } finally {
   await registry.close(); // drains live sessions, then closes Chromium
 }

@@ -1,4 +1,5 @@
 import type { SearchContext } from "./context.js";
+import type { RankedResult } from "./ranking.js";
 
 /** A search request, independent of which engine(s) it's sent to. */
 export interface SearchQuery {
@@ -6,10 +7,12 @@ export interface SearchQuery {
   query: string;
 }
 
-/** A query plus an optional, explicit set of engines to search. */
+/** A query plus front-door controls for its merged result list. */
 export interface SearchRequest extends SearchQuery {
   /** Engine ids to search. Omitting this searches every registered engine. */
   engines?: string[];
+  /** Maximum number of merged results to return. Defaults to eight. */
+  limit?: number;
 }
 
 /** A single result, tagged with the engine that produced it. */
@@ -32,6 +35,17 @@ export interface SearchResponse {
   /** id of the engine that produced this response. */
   engine: string;
   tookMs: number;
+}
+
+/** The ranked, client-facing response assembled from a complete engine fan-out. */
+export interface MergedSearchResponse {
+  /** Opaque public id shared by every result ref in this response. */
+  searchId: string;
+  query: SearchQuery;
+  results: RankedResult[];
+  tookMs: number;
+  /** True when at least one selected engine failed before returning results. */
+  degraded: boolean;
 }
 
 /**

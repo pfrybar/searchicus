@@ -62,29 +62,23 @@ export function App() {
 
       {result && (
         <div className="results">
-          {result.outcomes.map((outcome) => (
-            <section key={outcome.engineId} className="engine-results">
-              <h2>{outcome.engineId}</h2>
-              {outcome.ok ? (
-                outcome.response.results.length > 0 ? (
-                  <ul>
-                    {outcome.response.results.map((item) => (
-                      <li key={item.url}>
-                        <a href={item.url} target="_blank" rel="noreferrer">
-                          {item.title}
-                        </a>
-                        {item.snippet && <p>{item.snippet}</p>}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty">No results.</p>
-                )
-              ) : (
-                <p className="error">{outcome.error}</p>
-              )}
-            </section>
-          ))}
+          {result.degraded && <p className="error">Partial results: one or more engines failed.</p>}
+          {result.results.length > 0 ? (
+            <ul>
+              {result.results.map((item) => (
+                <li key={item.ref}>
+                  <a href={item.url} target="_blank" rel="noreferrer">
+                    {item.title}
+                  </a>
+                  <p>Ref: {item.ref}</p>
+                  <p>Found by: {item.found.map(({ engineId }) => engineId).join(", ")}</p>
+                  {item.snippet && <p>{item.snippet}</p>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty">No results.</p>
+          )}
         </div>
       )}
     </main>

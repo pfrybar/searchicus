@@ -1,10 +1,19 @@
+import { randomBytes } from "node:crypto";
 import type { BrowserLease, BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
 import { BingSearchEngine } from "./engines/bing.js";
 import { BraveSearchEngine } from "./engines/brave.js";
 import { DuckDuckGoSearchEngine } from "./engines/duckduckgo.js";
 import { StartpageSearchEngine } from "./engines/startpage.js";
+import { rankResults } from "./ranking.js";
 import { Throttle, type ThrottleOptions } from "./throttle.js";
-import type { SearchEngine, SearchQuery, SearchResponse, SearchSession } from "./types.js";
+import type {
+  MergedSearchResponse,
+  SearchEngine,
+  SearchQuery,
+  SearchRequest,
+  SearchResponse,
+  SearchSession,
+} from "./types.js";
 
 /** Budget from searchAll() entry to results, including time spent throttled. */
 export const DEFAULT_RESULTS_TIMEOUT_MS = 30_000;
@@ -15,6 +24,14 @@ export class UnknownEngineError extends Error {
   constructor(public readonly engineId: string) {
     super(`No search engine registered with id "${engineId}"`);
     this.name = "UnknownEngineError";
+  }
+}
+
+/** Every selected engine failed before returning a result response. */
+export class AllEnginesFailedError extends Error {
+  constructor() {
+    super("All selected search engines failed");
+    this.name = "AllEnginesFailedError";
   }
 }
 
@@ -100,12 +117,35 @@ export class SearchEngineRegistry {
    * unregistered. Resolves as soon as results are ready; any browser work
    * the engine continues afterwards is tracked by the registry.
    */
-  async search(engineId: string, query: SearchQuery): Promise<SearchResponse> {
+  async searchOne(engineId: string, query: SearchQuery): Promise<SearchResponse> {
     if (!this.engines.has(engineId)) throw new UnknownEngineError(engineId);
 
     const deadline = Date.now() + this.#resultsTimeoutMs;
     await this.#awaitSlot(deadline);
     return this.#runEngine(engineId, query, deadline);
+  }
+
+  /**
+   * Searches selected engines, merges their successful results, and exposes
+   * only the ranked list to ordinary callers. A partial engine failure sets
+   * `degraded`; total failure throws AllEnginesFailedError instead of making
+   * an empty result list ambiguous.
+   */
+  async search(request: SearchRequest): Promise<MergedSearchResponse> {
+    const { engines: engineIds, limit, ...query } = request;
+    const started = Date.now();
+    const searchId = createSearchId();
+    const outcomes = await this.searchAll(query, engineIds);
+
+    if (!outcomes.some((outcome) => outcome.ok)) throw new AllEnginesFailedError();
+
+    return {
+      searchId,
+      query,
+      results: rankResults(query, outcomes, { searchId, engines: this.list(), limit }),
+      tookMs: Date.now() - started,
+      degraded: outcomes.some((outcome) => !outcome.ok),
+    };
   }
 
   /**
@@ -263,6 +303,11 @@ class EngineRunScope implements SearchContext {
 
 function isSearchSession(value: SearchResponse | SearchSession): value is SearchSession {
   return "completed" in value;
+}
+
+/** 64-bit base36 id avoids '-' so result refs parse cleanly at the last dash. */
+function createSearchId(): string {
+  return randomBytes(8).readBigUInt64BE().toString(36).padStart(13, "0");
 }
 
 /** Rejects if `promise` hasn't settled by `deadline`. */

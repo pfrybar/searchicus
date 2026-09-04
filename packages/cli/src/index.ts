@@ -2,7 +2,21 @@
 import { createDefaultRegistry, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
-import { formatOutcome } from "./format.js";
+import { formatSearch } from "./format.js";
+
+/** Parse and validate the CLI's final merged-result limit with the shared rules. */
+export function parseLimit(value: string): number {
+  const parsed = SearchRequestSchema.shape.limit.safeParse(Number(value));
+  if (!parsed.success || parsed.data === undefined) {
+    throw new InvalidArgumentError(
+      !parsed.success
+        ? (parsed.error.issues[0]?.message ?? "limit must be a number from 1 to 100")
+        : "limit is required",
+    );
+  }
+
+  return parsed.data;
+}
 
 /**
  * Creates the CLI program. Supplying a registry makes command behavior easy
@@ -19,24 +33,22 @@ export function createProgram(registry: SearchEngineRegistry = createDefaultRegi
     .command("search <query>")
     .description("Search for a query across one or more engines")
     .option("-e, --engine <id...>", "engine id(s) to search; defaults to every registered engine")
+    .option("-l, --limit <n>", "max merged results (1–100; defaults to 8)", parseLimit)
     .option("--json", "print raw JSON instead of a formatted list")
-    .action(async (query: string, opts: { engine?: string[]; json?: boolean }) => {
-      const parsed = SearchRequestSchema.safeParse({ query, engines: opts.engine });
+    .action(async (query: string, opts: { engine?: string[]; limit?: number; json?: boolean }) => {
+      const parsed = SearchRequestSchema.safeParse({ query, limit: opts.limit, engines: opts.engine });
       if (!parsed.success) {
         throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid search request");
       }
 
-      const { engines: engineIds, ...searchQuery } = parsed.data;
-      const outcomes = await registry.searchAll(searchQuery, engineIds);
+      const response = await registry.search(parsed.data);
 
       if (opts.json) {
-        console.log(JSON.stringify(outcomes, null, 2));
+        console.log(JSON.stringify(response, null, 2));
         return;
       }
 
-      for (const outcome of outcomes) {
-        console.log(formatOutcome(outcome).join("\n"));
-      }
+      console.log(formatSearch(response).join("\n"));
     });
 
   program

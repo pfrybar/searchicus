@@ -60,7 +60,8 @@ describe("search API mount points", () => {
 
     const search = await request(app).post("/api/search").send({ query: "cats" });
     expect(search.status).toBe(200);
-    expect(search.body.outcomes[0].engineId).toBe("test");
+    expect(search.body.results[0].found).toEqual([{ engineId: "test", rank: 1 }]);
+    expect(search.body).not.toHaveProperty("outcomes");
   });
 
   it("still answers at the root, keeping the existing contract", async () => {

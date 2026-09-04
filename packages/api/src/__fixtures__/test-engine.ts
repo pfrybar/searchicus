@@ -8,7 +8,7 @@ export class TestSearchEngine implements SearchEngine {
   async search(query: SearchQuery): Promise<SearchResponse> {
     const results: SearchResult[] = Array.from({ length: 10 }, (_, index) => ({
       title: `Test result ${index + 1}`,
-      url: `https://example.test/${index + 1}`,
+      url: `https://result-${index + 1}.example.test/`,
       source: this.id,
     }));
 
