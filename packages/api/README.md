@@ -2,8 +2,8 @@
 
 The searchicus HTTP server — a JSON search API **and** an MCP Streamable
 HTTP endpoint, both thin layers over the `core` package's
-`SearchEngineRegistry`. Only the mock engine ships registered; see the repo
-root `README.md` for adding a browser-backed one.
+`SearchEngineRegistry`. The server entry point attaches the registered
+browser-backed engines; see the repo root `README.md` for adding another one.
 
 ## Why one process
 
@@ -72,7 +72,7 @@ keep the original contract.
 ### `GET /engines`
 
 ```json
-[{ "id": "mock", "name": "Mock Search Engine" }]
+[{ "id": "bing", "name": "Bing" }]
 ```
 
 ### `POST /search`
@@ -80,7 +80,7 @@ keep the original contract.
 Request body:
 
 ```json
-{ "query": "typescript generics", "limit": 5, "engines": ["mock"] }
+{ "query": "typescript generics", "limit": 5, "engines": ["bing"] }
 ```
 
 - `query` (required string containing non-whitespace text; surrounding
@@ -96,7 +96,7 @@ Response body:
 ```json
 {
   "query": { "query": "typescript generics", "limit": 5 },
-  "outcomes": [{ "engineId": "mock", "ok": true, "response": { "...": "..." } }]
+  "outcomes": [{ "engineId": "bing", "ok": true, "response": { "...": "..." } }]
 }
 ```
 

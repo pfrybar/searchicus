@@ -25,10 +25,9 @@ export interface BrowserLease {
 
 /**
  * The per-search environment handed to `SearchEngine.search()`. Browser
- * access is lazy on purpose: an engine that doesn't need a browser (the mock
- * engine, say) never triggers a Chromium launch, which keeps the test suite
- * browser-free and lets the whole stack run with no Playwright system
- * dependencies installed.
+ * access is lazy on purpose: an engine that doesn't need a browser never
+ * triggers a Chromium launch. This keeps non-browser engines lightweight and
+ * lets their tests run with no Playwright system dependencies installed.
  */
 export interface SearchContext {
   /**
@@ -49,7 +48,7 @@ export interface BrowserLeaseHandle {
 }
 
 /**
- * What the registry needs from a browser. `BrowserSession` in `browser.ts`
+ * What the registry needs from a browser. `BrowserSession` in `browser/session.ts`
  * is the real implementation; depending on this interface instead keeps the
  * registry free of any Playwright import and lets tests substitute a fake
  * (a class with #private fields can't be satisfied structurally).

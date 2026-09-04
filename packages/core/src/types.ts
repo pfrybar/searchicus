@@ -66,7 +66,7 @@ export interface SearchSession {
  * internal indexes, etc.) plug into.
  */
 export interface SearchEngine {
-  /** Stable, unique identifier (e.g. "mock", "bing", "internal-docs"). */
+  /** Stable, unique identifier (e.g. "bing", "internal-docs"). */
   readonly id: string;
   /** Human-readable name for display in the UI/CLI. */
   readonly name: string;

@@ -1,0 +1,18 @@
+import type { SearchEngine, SearchQuery, SearchResponse, SearchResult } from "@searchicus/core";
+
+/** A deterministic test double for API and MCP adapter tests. */
+export class TestSearchEngine implements SearchEngine {
+  readonly id = "test";
+  readonly name = "Test Search Engine";
+
+  async search(query: SearchQuery): Promise<SearchResponse> {
+    const limit = query.limit ?? 10;
+    const results: SearchResult[] = Array.from({ length: limit }, (_, index) => ({
+      title: `Test result ${index + 1}`,
+      url: `https://example.test/${index + 1}`,
+      source: this.id,
+    }));
+
+    return { query, results, engine: this.id, tookMs: 0 };
+  }
+}

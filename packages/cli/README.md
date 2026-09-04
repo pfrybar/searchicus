@@ -1,8 +1,8 @@
 # @searchicus/cli
 
 The `searchicus` command-line interface — a thin adapter over the `core`
-package's `SearchEngineRegistry`. Only the mock engine ships registered;
-see the repo root `README.md` for adding a browser-backed one.
+package's `SearchEngineRegistry`. It uses the registered browser-backed
+engines; see the repo root `README.md` for adding another one.
 
 The CLI builds its registry with `createBrowserRegistry("cli")`, so it gets
 its own Chromium profile at `.searchicus/profile/cli/`. Because a search can

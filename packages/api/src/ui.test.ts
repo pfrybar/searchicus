@@ -1,19 +1,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
+import { SearchEngineRegistry } from "@searchicus/core";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
+import { TestSearchEngine } from "./__fixtures__/test-engine.js";
 import { createApp } from "./app.js";
 
-/**
- * A registry holding only the mock engine. These tests exercise the adapter
- * layer, not whichever engines happen to be registered by default — pinning
- * the roster here keeps them stable as engines are added, and browser-free
- * however those engines behave.
- */
-function mockOnlyRegistry(): SearchEngineRegistry {
-  return new SearchEngineRegistry({ throttle: null }).register(new MockSearchEngine());
+/** A registry holding a deterministic test double for adapter tests. */
+function testRegistry(): SearchEngineRegistry {
+  return new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine());
 }
 
 /**
@@ -26,7 +22,7 @@ writeFileSync(path.join(uiDir, "app.js"), "// bundle");
 
 afterAll(() => rmSync(uiDir, { recursive: true, force: true }));
 
-const withUi = () => createApp(mockOnlyRegistry(), { ui: uiDir });
+const withUi = () => createApp(testRegistry(), { ui: uiDir });
 
 describe("static UI", () => {
   it("serves index.html at the root", async () => {
@@ -50,7 +46,7 @@ describe("static UI", () => {
   });
 
   it("is off by default, so / 404s when the UI isn't enabled", async () => {
-    const res = await request(createApp(mockOnlyRegistry())).get("/");
+    const res = await request(createApp(testRegistry())).get("/");
     expect(res.status).toBe(404);
   });
 });
@@ -60,11 +56,11 @@ describe("search API mount points", () => {
     const app = withUi();
 
     expect((await request(app).get("/api/health")).body).toEqual({ status: "ok" });
-    expect((await request(app).get("/api/engines")).body).toEqual([{ id: "mock", name: "Mock Search Engine" }]);
+    expect((await request(app).get("/api/engines")).body).toEqual([{ id: "test", name: "Test Search Engine" }]);
 
     const search = await request(app).post("/api/search").send({ query: "cats", limit: 1 });
     expect(search.status).toBe(200);
-    expect(search.body.outcomes[0].engineId).toBe("mock");
+    expect(search.body.outcomes[0].engineId).toBe("test");
   });
 
   it("still answers at the root, keeping the existing contract", async () => {
@@ -82,7 +78,7 @@ describe("search API mount points", () => {
     const res = await request(withUi()).get("/engines");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: "mock", name: "Mock Search Engine" }]);
+    expect(res.body).toEqual([{ id: "test", name: "Test Search Engine" }]);
   });
 
   it("serves MCP alongside the UI", async () => {
@@ -92,6 +88,6 @@ describe("search API mount points", () => {
       .send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_engines", arguments: {} } });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain("Mock Search Engine");
+    expect(res.text).toContain("Test Search Engine");
   });
 });
