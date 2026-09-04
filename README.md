@@ -115,8 +115,9 @@ opt into them rather than reimplementing any of it:
 - **`click-through.ts`** — after the dwell, clicks an organic result on 40%
   of searches, weighted toward higher ranks. A short decision pause precedes
   the click and a short landing pause follows it; there is no full dwell or
-  further interaction on the destination. It uses a real link click so normal
-  Bing click and referrer behavior are preserved.
+  further interaction on the destination. Any popup opened by that click is
+  closed after the landing pause. It uses a real link click so normal Bing
+  click and referrer behavior are preserved.
 
 Results are also checked against the query before being believed. A search
 engine can answer with HTTP 200, valid markup and real results that have

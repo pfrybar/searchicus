@@ -43,7 +43,7 @@ export async function humanPause(
 ): Promise<void> {
   const r = random();
   const ms =
-    r < 0.8 ? randInt(baseLo, baseHi, random) : r < 0.95 ? randInt(220, 600, random) : randInt(600, 1400, random);
+    r < 0.8 ? randInt(baseLo, baseHi, random) : r < 0.95 ? randInt(220, 420, random) : randInt(420, 1000, random);
   await sleep(ms, signal);
 }
 

@@ -98,7 +98,7 @@ export class BingSearchEngine implements SearchEngine {
     // Read the page before starting to type, as a person would.
     await humanPause(400, 1200, ctx.signal);
     await humanType(box, query.query, ctx.signal);
-    await humanPause(400, 1400, ctx.signal);
+    await humanPause(400, 1000, ctx.signal);
     await box.press("Enter");
 
     const results = page.locator(RESULT_SELECTOR);
@@ -132,7 +132,7 @@ export class BingSearchEngine implements SearchEngine {
 /** Finishes the background browser behavior after results have been returned. */
 async function completeSearchSession(page: Page, results: Locator, signal: AbortSignal): Promise<void> {
   await searchDwell(page, results, signal);
-  await clickThroughResult(results, signal);
+  await clickThroughResult(page, results, signal);
 }
 
 /**
