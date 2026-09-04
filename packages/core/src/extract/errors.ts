@@ -1,0 +1,57 @@
+import type { ExtractFailureKind } from "./types.js";
+
+/**
+ * Extraction is off. Rendering arbitrary caller-supplied URLs is a real
+ * capability with real exposure, so it is opt-in per deployment rather than
+ * something that arrives switched on with an upgrade.
+ */
+export class ExtractionDisabledError extends Error {
+  constructor() {
+    super(
+      "Extraction is not enabled on this server. An operator must set " +
+        "SEARCHICUS_EXTRACT_ENABLED=true, having first restricted the process's outbound network access.",
+    );
+    this.name = "ExtractionDisabledError";
+  }
+}
+
+/**
+ * The caller's request is wrong, and saying exactly how is safe: these
+ * failures describe input the caller already holds, so a precise message
+ * discloses nothing and lets them fix it without guessing.
+ */
+export class ExtractRequestError extends Error {
+  constructor(
+    readonly kind: Extract<ExtractFailureKind, "invalid_url" | "unknown_ref" | "ref_url_mismatch">,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ExtractRequestError";
+  }
+}
+
+/**
+ * Extraction ran and did not produce content.
+ *
+ * Messages here are written to be safe to return verbatim. The failure is
+ * about a host the caller does not control and may not be able to see, so a
+ * detailed one leaks: resolved addresses, DNS behaviour, internal topology,
+ * and which internal names exist are all inferable from a specific enough
+ * error. The real cause is attached for logs and never serialized.
+ */
+export class ExtractFailedError extends Error {
+  constructor(
+    readonly kind: Exclude<ExtractFailureKind, "invalid_url" | "unknown_ref" | "ref_url_mismatch">,
+    message: string,
+    cause?: unknown,
+  ) {
+    super(message);
+    this.name = "ExtractFailedError";
+    if (cause !== undefined) this.cause = cause;
+  }
+
+  /** The address policy refused the destination. Deliberately says no more. */
+  static blockedAddress(cause?: unknown): ExtractFailedError {
+    return new ExtractFailedError("blocked_address", "That URL could not be fetched.", cause);
+  }
+}

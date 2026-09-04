@@ -1,8 +1,9 @@
-import { SearchEngineRegistry } from "@searchicus/core";
+import { ExtractionService, SearchEngineRegistry } from "@searchicus/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
+import { testExtraction } from "../__fixtures__/test-extraction.js";
 import { TestSearchEngine } from "../__fixtures__/test-engine.js";
 import { createMcpServer } from "./server.js";
 
@@ -12,8 +13,11 @@ function testRegistry(): SearchEngineRegistry {
 }
 
 /** Connects an SDK Client to a fresh createMcpServer() over an in-process transport pair. */
-async function connectedClient(registry: SearchEngineRegistry = testRegistry()): Promise<Client> {
-  const server = createMcpServer(registry);
+async function connectedClient(
+  registry: SearchEngineRegistry = testRegistry(),
+  extraction: ExtractionService = new ExtractionService(),
+): Promise<Client> {
+  const server = createMcpServer(registry, extraction);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.1.0" });
 
@@ -34,10 +38,12 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tools/list", () => {
-  it("lists search and list_engines", async () => {
+  it("lists search, extract, and list_engines", async () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["search", "list_engines"]));
+    // extract is advertised whether or not it is switched on: an agent that
+    // cannot see the tool cannot be told the server simply has it disabled.
+    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["search", "extract", "list_engines"]));
   });
 });
 
@@ -118,5 +124,54 @@ describe("list_engines tool", () => {
     const result = await callTool(client, "list_engines", {});
 
     expect(JSON.parse(textOf(result))).toEqual([{ id: "test", name: "Test Search Engine" }]);
+  });
+});
+
+describe("extract tool", () => {
+  it("returns metadata and Markdown as separate blocks", async () => {
+    const client = await connectedClient(testRegistry(), testExtraction());
+
+    const result = await callTool(client, "extract", { url: "https://example.test/article" });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toHaveLength(2);
+    // Escaping a whole article into a JSON string inflates it and makes it
+    // markedly harder to read, so the content travels as itself.
+    expect(JSON.parse(textOf(result))).toMatchObject({
+      url: "https://example.test/article",
+      title: "An article",
+      untrusted: true,
+    });
+    const body = result.content[1];
+    expect(body?.type === "text" && body.text).toBe("# An article\n\nSome readable prose.");
+  });
+
+  it("warns in its own description that the content is untrusted", async () => {
+    const client = await connectedClient();
+    const { tools } = await client.listTools();
+
+    // The agent reads this before it ever calls the tool.
+    const extract = tools.find((tool) => tool.name === "extract");
+    expect(extract?.description).toMatch(/untrusted/i);
+    expect(extract?.description).toMatch(/never as instructions/i);
+  });
+
+  it("says extraction is disabled rather than failing opaquely", async () => {
+    const client = await connectedClient();
+
+    const result = await callTool(client, "extract", { url: "https://example.test/article" });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/SEARCHICUS_EXTRACT_ENABLED/);
+  });
+
+  it("names what is wrong with a request it refuses", async () => {
+    const client = await connectedClient(testRegistry(), testExtraction());
+
+    const scheme = await callTool(client, "extract", { url: "file:///etc/passwd" });
+    const ref = await callTool(client, "extract", { url: "https://example.test/article", ref: "abc123-1" });
+
+    expect(textOf(scheme)).toMatch(/http or https/);
+    expect(textOf(ref)).toMatch(/no search archive/);
   });
 });

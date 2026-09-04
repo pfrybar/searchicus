@@ -1,8 +1,14 @@
 #!/usr/bin/env node
-import { createDefaultRegistry, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
+import {
+  createDefaultRegistry,
+  ExtractionService,
+  ExtractRequestSchema,
+  SearchEngineRegistry,
+  SearchRequestSchema,
+} from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
-import { formatSearch } from "./format.js";
+import { formatExtract, formatSearch } from "./format.js";
 
 /** Parse and validate the CLI's final merged-result limit with the shared rules. */
 export function parseLimit(value: string): number {
@@ -24,7 +30,24 @@ export function parseLimit(value: string): number {
  * core's browser-free registry, which can list registered engines but cannot
  * run browser-backed ones; executable CLI usage injects createBrowserRegistry().
  */
-export function createProgram(registry: SearchEngineRegistry = createDefaultRegistry()): Command {
+/** Parse and validate the CLI's Markdown budget with the shared rules. */
+export function parseMaxChars(value: string): number {
+  const parsed = ExtractRequestSchema.shape.maxChars.safeParse(Number(value));
+  if (!parsed.success || parsed.data === undefined) {
+    throw new InvalidArgumentError(
+      !parsed.success
+        ? (parsed.error.issues[0]?.message ?? "max-chars must be a number from 1 to 100000")
+        : "max-chars is required",
+    );
+  }
+
+  return parsed.data;
+}
+
+export function createProgram(
+  registry: SearchEngineRegistry = createDefaultRegistry(),
+  extraction: ExtractionService = new ExtractionService(),
+): Command {
   const program = new Command();
 
   program.name("searchicus").description("Send a search query to one or more backend search engines.").version("0.1.0");
@@ -49,6 +72,28 @@ export function createProgram(registry: SearchEngineRegistry = createDefaultRegi
       }
 
       console.log(formatSearch(response).join("\n"));
+    });
+
+  program
+    .command("extract <url>")
+    .description("Render a page and print its main content as Markdown")
+    .option("-r, --ref <ref>", "result ref from an earlier search, tying this extraction to that ranking")
+    .option("-m, --max-chars <n>", "max characters of Markdown (1\u2013100000; defaults to 20000)", parseMaxChars)
+    .option("--json", "print raw JSON instead of formatted Markdown")
+    .action(async (url: string, opts: { ref?: string; maxChars?: number; json?: boolean }) => {
+      const parsed = ExtractRequestSchema.safeParse({ url, ref: opts.ref, maxChars: opts.maxChars });
+      if (!parsed.success) {
+        throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid extract request");
+      }
+
+      const response = await extraction.extract(parsed.data);
+
+      if (opts.json) {
+        console.log(JSON.stringify(response, null, 2));
+        return;
+      }
+
+      console.log(formatExtract(response).join("\n"));
     });
 
   program
@@ -93,17 +138,23 @@ if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
 
   // Imported dynamically so that merely importing createProgram() — as the
   // tests do — never pulls Playwright into the module graph.
-  const { createBrowserRegistry } = await import("@searchicus/core/browser");
-  const registry = createBrowserRegistry("cli");
+  const { createDefaultSearchArchive } = await import("@searchicus/core");
+  const { createBrowserExtraction, createBrowserRegistry } = await import("@searchicus/core/browser");
+  // One archive for both, and deliberately not one browser: see
+  // createBrowserExtraction.
+  const archive = createDefaultSearchArchive();
+  const registry = createBrowserRegistry("cli", { archive });
+  const extraction = createBrowserExtraction({ archive });
 
   try {
-    await createProgram(registry).parseAsync(process.argv);
+    await createProgram(registry, extraction).parseAsync(process.argv);
   } catch (err: unknown) {
     console.error(err instanceof Error ? err.message : err);
     process.exitCode = 1;
   } finally {
     // A search can return results while its browser session is still
     // running. Exiting here without draining would kill that work mid-flight.
+    await extraction.close();
     await registry.close();
   }
 }

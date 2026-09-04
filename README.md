@@ -41,6 +41,11 @@ they add is a different ranking over that corpus — and in Startpage's case,
 Google's, which nothing else here reaches. See "Adding a new search engine
 backend" to add your own.
 
+Rendered extraction ships too, disabled by default. `POST /extract`, the
+`extract` MCP tool, `searchicus extract`, and an Extract action on every UI
+result render a page in an isolated browser and return its main content as
+Markdown. See "Extraction" below before enabling it.
+
 ## Architecture
 
 ```
@@ -244,6 +249,7 @@ one platform's Chromium also isn't valid for another's.
 | `SEARCHICUS_STORE`       | enabled                        | Set to `false` to disable best-effort archival.                    |
 | `SEARCHICUS_TIMEZONE`    | `America/Chicago`              | IANA time zone the browser reports.                                |
 | `SEARCHICUS_LOCALE`      | `en-US`                        | Locale the browser reports.                                        |
+| `SEARCHICUS_EXTRACT_*`   | extraction disabled            | Rendered extraction; see "Extraction" below.                       |
 | `MCP_ENABLED`            | on                             | `false` serves the search API alone; `/mcp` then 404s.             |
 | `SERVE_UI`               | on when a build exists         | `false` skips the static UI.                                       |
 | `UI_DIST_DIR`            | `packages/ui/dist`             | Alternate UI build directory.                                      |
@@ -252,6 +258,75 @@ The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the
 client expects, and a mismatch fails at launch rather than at build. Bump both
 together.
+
+## Extraction
+
+Extraction renders a URL and returns its main content as Markdown. It is
+available from every front door — `POST /extract`, the `extract` MCP tool,
+`searchicus extract <url>`, and an Extract action beside each UI result — and
+it is **off until an operator turns it on**.
+
+```bash
+SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
+```
+
+Pass the `ref` from a search result to tie the extraction to the ranking that
+offered it. A ref is provenance, not a label: it must resolve to an archived
+result whose URL matches the one being extracted, or the request is refused.
+Extracting a bare URL is equally supported, because agents arrive with URLs
+from elsewhere.
+
+That correlation is the point. An agent reaching for result 7 is evidence
+about results 1 through 6, and the returned list is stored alongside it, so a
+ranking can later be judged against what was actually shown. Only metadata is
+kept — status, timings, title, domain, sizes, a digest — never page text.
+
+### Read the content as data
+
+The response carries `untrusted: true` and always will. This is arbitrary web
+content: it may contain prompt injection, false claims, or hostile links.
+Treat it as information to evaluate, never as instructions to follow. The UI
+renders it as preformatted text rather than HTML for the same reason.
+
+### Why it is off by default
+
+Rendering caller-supplied URLs means making outbound requests chosen by
+whoever can reach the endpoint — the server-side request forgery shape.
+searchicus checks the scheme, port, credentials, and every resolved address on
+the initial URL and on each redirect hop, refusing loopback, private,
+link-local, carrier-grade NAT, unique-local, and metadata ranges.
+
+**Those checks are defense in depth, not the control.** Chromium ultimately
+resolves and opens its own connections, so a name that answers publicly and
+then privately is not caught by any of it. Before enabling extraction, restrict
+the process's outbound network access so it cannot reach anything internal.
+
+### Isolation
+
+Extraction runs in a second, non-persistent browser. It never touches the
+search profile's cookies, cache, localStorage, or history, and each extraction
+gets a fresh context that is closed on every outcome. `launchPersistentContext`
+exposes no `Browser`, so this separation is structural rather than a rule
+someone has to remember.
+
+### Configuration
+
+| Variable                                   |     Default | Effect                                        |
+| ------------------------------------------ | ----------: | --------------------------------------------- |
+| `SEARCHICUS_EXTRACT_ENABLED`               |    disabled | `true` or `1` enables extraction.             |
+| `SEARCHICUS_EXTRACT_MAX_CONCURRENT`        |         `2` | Extractions running at once, per process.     |
+| `SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS` |    `10_000` | Deadline through `domcontentloaded`.          |
+| `SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS`     |     `2_000` | Fixed pause after the DOM is ready.           |
+| `SEARCHICUS_EXTRACT_TIMEOUT_MS`            |    `30_000` | End-to-end render, dwell, parse, and respond. |
+| `SEARCHICUS_EXTRACT_MAX_BYTES`             | `5_242_880` | Advisory transfer budget; see below.          |
+| `SEARCHICUS_EXTRACT_MAX_REDIRECTS`         |         `5` | Redirect-chain cap.                           |
+| `SEARCHICUS_EXTRACT_ALLOWED_PORTS`         |    `80,443` | Permitted destination ports.                  |
+| `SEARCHICUS_EXTRACT_DWELL`                 |     enabled | `false` skips the post-load dwell.            |
+
+`maxChars` is the one limit a caller controls, since it only bounds the
+response (default 20,000, maximum 100,000). The byte budget is advisory: a
+chunked response reports no length, so a request-count cap and the end-to-end
+deadline are what actually bound the work.
 
 ## Adding a new search engine backend
 
