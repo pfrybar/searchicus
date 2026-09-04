@@ -31,13 +31,16 @@ npm run build -w @searchicus/api && npm run start -w @searchicus/api
 Listens on `PORT` (default `3000`).
 
 The server builds its registry with `createBrowserRegistry("api")`, giving it
-its own Chromium profile at `.searchicus/profile/api/` (override with
-`SEARCHICUS_PROFILE_DIR`). Chromium launches lazily — nothing starts until an
-engine actually asks for a browser.
+its own Chromium profile at `.searchicus/profile/api/` and a shared archive at
+`.searchicus/searches.sqlite`. Set `SEARCHICUS_DATA_DIR` to relocate both, or
+use `SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component
+override. `SEARCHICUS_STORE=false` disables best-effort archival. Chromium
+launches lazily — nothing starts until an engine actually asks for a browser.
 
 On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits
-for in-flight browser sessions to finish, since a search can return results
-while its session is still running. A 15s grace period bounds that wait.
+for in-flight browser sessions and queued archive writes to finish, since a
+search can return results while its session is still running. A 15s grace
+period bounds that wait.
 
 ## Web UI
 
@@ -124,7 +127,9 @@ An invalid request returns `400` with `{ "error": "Invalid search request", "det
 A single request fans out to every selected engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
 default). A partial engine failure still returns `200` with `degraded: true`;
-the response deliberately does not identify the failed engine. If every
+the response deliberately does not identify the failed engine. Every
+completed fan-out, including a total failure, is queued for best-effort local
+archival; persistence failures never change this HTTP contract. If every
 selected engine fails before producing results, the endpoint returns `502`
 with `{ "error": "Search unavailable" }`.
 

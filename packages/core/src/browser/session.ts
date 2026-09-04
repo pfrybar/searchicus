@@ -1,8 +1,9 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
-import path from "node:path";
 
 import type { BrowserLeaseHandle, BrowserProvider } from "../context.js";
+import { defaultProfileDir } from "../paths.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "../registry.js";
+import { createDefaultSearchArchive } from "../storage.js";
 import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
 
 /**
@@ -13,8 +14,8 @@ import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./steal
  */
 export const DEFAULT_MAX_PAGES = 24;
 
-/** Where a surface's persistent Chromium profile lives, by default. */
-export const DEFAULT_PROFILE_ROOT = ".searchicus/profile";
+/** @deprecated Import from the browser-free core entry instead. */
+export { DEFAULT_PROFILE_ROOT } from "../paths.js";
 
 export type PersistentContextOptions = NonNullable<Parameters<typeof chromium.launchPersistentContext>[1]>;
 
@@ -252,17 +253,16 @@ export class BrowserSession implements BrowserProvider {
  * directory is single-writer: `npm run dev` starts the API and MCP server
  * together, and they would otherwise fight over one profile. The tradeoff is
  * that they don't share cookies with each other — each builds its own
- * history. Override the location with SEARCHICUS_PROFILE_DIR.
+ * history. `SEARCHICUS_DATA_DIR` moves the whole persistent state tree;
+ * SEARCHICUS_PROFILE_DIR remains a profile-only override.
  *
  * The browser identity comes from stealth.ts. `launchOptions` is a factory
  * so the user agent can name the version of the binary that is actually
  * about to launch, without interrogating it until something needs a browser.
  */
 export function createDefaultBrowserSession(surface: string): BrowserSession {
-  const profileDir = process.env.SEARCHICUS_PROFILE_DIR ?? path.join(process.cwd(), DEFAULT_PROFILE_ROOT, surface);
-
   return new BrowserSession({
-    profileDir,
+    profileDir: defaultProfileDir(surface),
     launchOptions: async () => buildStealthOptions({ major: await resolveChromiumMajor(chromium.executablePath()) }),
     initScript: STEALTH_INIT,
   });
@@ -279,5 +279,9 @@ export function createBrowserRegistry(
   surface: string,
   options: Omit<SearchEngineRegistryOptions, "browser"> = {},
 ): SearchEngineRegistry {
-  return createDefaultRegistry({ ...options, browser: createDefaultBrowserSession(surface) });
+  return createDefaultRegistry({
+    ...options,
+    browser: createDefaultBrowserSession(surface),
+    archive: options.archive === undefined ? createDefaultSearchArchive() : options.archive,
+  });
 }

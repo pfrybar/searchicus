@@ -25,7 +25,8 @@ adapter boundaries; the MCP suite also makes a real Streamable HTTP request.
 The browser layer — persistent Chromium session, page-per-search leases,
 two-phase search sessions, and rate limiting — is in place in `core`, along
 with the browser-realism layer that makes automated sessions look like
-ordinary ones (`stealth`, `human`, `dwell`).
+ordinary ones (`stealth`, `human`, `dwell`). Completed fan-outs are also
+archived best-effort in a local SQLite database for later analysis.
 
 Four engines ship and are all registered by default: `bing`, `brave`,
 `duckduckgo` and `startpage`. Each drives a real browser through its search
@@ -100,9 +101,12 @@ Two consequences shape the API:
   entry to `searchAll()`, so a single query still hits every engine in
   parallel while consecutive searches are spaced apart (5s ±30% by default).
 
-Each surface gets its own Chromium profile under `.searchicus/profile/`
-(override with `SEARCHICUS_PROFILE_DIR`), because a user-data directory is
-single-writer and `npm run dev` runs the API and MCP server side by side.
+Persistent state is rooted at `.searchicus/`: each surface gets its own
+Chromium profile under `profile/<surface>/`, while `searches.sqlite` is the
+shared application archive beside it. Profiles remain isolated because a
+user-data directory is single-writer; the archive uses SQLite WAL mode so API
+and CLI processes can share it. `SEARCHICUS_DATA_DIR` moves both together;
+`SEARCHICUS_PROFILE_DIR` and `SEARCHICUS_STORE_PATH` override one component.
 
 The browser is also configured to behave like one a person is using, since
 a search engine that concludes otherwise stops returning useful results.
@@ -198,46 +202,48 @@ CORS to configure.
 docker build -t searchicus .
 
 docker run --rm --init --shm-size=1g -p 3000:3000 \
-  -v searchicus-api-profile:/profiles/api \
+  -v searchicus-data:/data \
   searchicus
 ```
 
-The CLI is the same image with a different command, and needs its own profile
-volume (a Chromium user-data directory is single-writer, so it cannot share
-the server's):
+The CLI is the same image with a different command. It can share that named
+volume safely: API and CLI use separate Chromium profile subdirectories while
+sharing the archive database through WAL mode.
 
 ```bash
 docker run --rm --init --shm-size=1g \
-  -e SEARCHICUS_PROFILE_DIR=/profiles/cli \
-  -v searchicus-cli-profile:/profiles/cli \
+  -v searchicus-data:/data \
   searchicus node packages/cli/dist/index.js search "typescript generics"
 ```
 
 ### Flags that aren't optional
 
-| Flag                        | Why                                                                                                                                                               |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--init`                    | Chromium spawns many child processes; with no init process to reap them, zombies accumulate in a container meant to run for days.                                 |
-| `--shm-size=1g`             | Docker's default `/dev/shm` is 64MB. Chromium leans on shared memory and dies with opaque renderer crashes without more.                                          |
-| `-v <volume>:/profiles/...` | Without it the Chromium profile lives in the container's writable layer and is discarded on exit — silently degrading to a cold profile every run, with no error. |
-| `docker stop -t 30`         | The server drains live browser sessions for up to 15s; `docker stop` SIGKILLs after 10s by default.                                                               |
+| Flag                | Why                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--init`            | Chromium spawns many child processes; with no init process to reap them, zombies accumulate in a container meant to run for days. |
+| `--shm-size=1g`     | Docker's default `/dev/shm` is 64MB. Chromium leans on shared memory and dies with opaque renderer crashes without more.          |
+| `-v <volume>:/data` | Without it Chromium profiles and the search archive live in the container's writable layer and are discarded on replacement.      |
+| `docker stop -t 30` | The server drains live browser sessions for up to 15s; `docker stop` SIGKILLs after 10s by default.                               |
 
-**Use a named volume for the profile, never a host bind mount.** Chromium
+**Use a named volume for the data root, never a host bind mount.** Chromium
 profiles are SQLite databases, and SQLite locking over virtiofs/9p — which is
 what a macOS or Windows bind mount is — is unreliable. A profile written by
 one platform's Chromium also isn't valid for another's.
 
 ### Configuration
 
-| Variable                 | Default                      | Effect                                                 |
-| ------------------------ | ---------------------------- | ------------------------------------------------------ |
-| `PORT`                   | `3000`                       | Port to listen on.                                     |
-| `SEARCHICUS_PROFILE_DIR` | `/profiles/api` in the image | Chromium user-data directory. One per process.         |
-| `SEARCHICUS_TIMEZONE`    | `America/Chicago`            | IANA time zone the browser reports.                    |
-| `SEARCHICUS_LOCALE`      | `en-US`                      | Locale the browser reports.                            |
-| `MCP_ENABLED`            | on                           | `false` serves the search API alone; `/mcp` then 404s. |
-| `SERVE_UI`               | on when a build exists       | `false` skips the static UI.                           |
-| `UI_DIST_DIR`            | `packages/ui/dist`           | Alternate UI build directory.                          |
+| Variable                 | Default                        | Effect                                                             |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------------ |
+| `PORT`                   | `3000`                         | Port to listen on.                                                 |
+| `SEARCHICUS_DATA_DIR`    | `/data` in the image           | Persistent-state root: `searches.sqlite` and `profile/<surface>/`. |
+| `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>` | Chromium user-data directory override. One per process.            |
+| `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`   | Search archive SQLite file override.                               |
+| `SEARCHICUS_STORE`       | enabled                        | Set to `false` to disable best-effort archival.                    |
+| `SEARCHICUS_TIMEZONE`    | `America/Chicago`              | IANA time zone the browser reports.                                |
+| `SEARCHICUS_LOCALE`      | `en-US`                        | Locale the browser reports.                                        |
+| `MCP_ENABLED`            | on                             | `false` serves the search API alone; `/mcp` then 404s.             |
+| `SERVE_UI`               | on when a build exists         | `false` skips the static UI.                                       |
+| `UI_DIST_DIR`            | `packages/ui/dist`             | Alternate UI build directory.                                      |
 
 The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the

@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 
-/** How long to wait for live browser sessions before exiting anyway. */
+/** How long to wait for browser sessions and queued archive writes before exiting. */
 const SHUTDOWN_GRACE_MS = 15_000;
 
 interface Closeable {
@@ -8,10 +8,10 @@ interface Closeable {
 }
 
 /**
- * Stops accepting connections, then lets in-flight browser sessions finish
- * before exiting. Searches can return results while their browser work is
- * still running, so exiting the moment the HTTP server closes would kill
- * that work — but a wedged session must not block shutdown forever either,
+ * Stops accepting connections, then lets in-flight browser sessions and
+ * queued archive writes finish before exiting. Searches can return results
+ * while either is still running, so exiting when the HTTP server closes would
+ * kill best-effort work — but a wedged task must not block shutdown forever,
  * hence the grace period.
  */
 export function shutdownOn(server: Server, registry: Closeable): void {
@@ -21,10 +21,10 @@ export function shutdownOn(server: Server, registry: Closeable): void {
     process.on(signal, () => {
       if (shuttingDown) return;
       shuttingDown = true;
-      console.log(`Received ${signal}, finishing in-flight sessions...`);
+      console.log(`Received ${signal}, finishing in-flight search work...`);
 
       const forceExit = setTimeout(() => {
-        console.warn("Shutdown grace period elapsed; exiting with sessions still running.");
+        console.warn("Shutdown grace period elapsed; exiting with search work still running.");
         process.exit(1);
       }, SHUTDOWN_GRACE_MS);
       forceExit.unref();

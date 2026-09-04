@@ -1,6 +1,5 @@
 import { queryTokenCoverage } from "./relevance.js";
-import type { EngineSearchOutcome } from "./registry.js";
-import type { SearchQuery, SearchResult } from "./types.js";
+import type { EngineSearchOutcome, SearchQuery, SearchResult } from "./types.js";
 
 /** Standard Reciprocal Rank Fusion smoothing constant. */
 export const RRF_K = 60;

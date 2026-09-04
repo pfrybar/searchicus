@@ -48,6 +48,22 @@ export interface MergedSearchResponse {
   degraded: boolean;
 }
 
+/** Stable categories for archived engine failures; messages remain diagnostic only. */
+export type EngineFailureKind =
+  | "timeout"
+  | "no_results"
+  | "off_target"
+  | "search_box_unavailable"
+  | "browser_unavailable"
+  | "unknown_engine"
+  | "closed"
+  | "unknown";
+
+/** One engine's raw result or failure within a complete fan-out. */
+export type EngineSearchOutcome =
+  | { engineId: string; ok: true; tookMs: number; response: SearchResponse }
+  | { engineId: string; ok: false; tookMs: number; errorKind: EngineFailureKind; error: string };
+
 /**
  * What an engine returns when its browser work outlives its results.
  *

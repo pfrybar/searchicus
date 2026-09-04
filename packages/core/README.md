@@ -5,8 +5,9 @@ server, UI):
 
 - `SearchQuery` / `SearchResult` / `SearchResponse` — the common data shapes.
 - `SearchQuerySchema` — a zod schema that validates and trims a `SearchQuery`.
-- `SearchRequestSchema` — the shared API/MCP request schema, which adds an
-  optional, non-empty, duplicate-free `engines` selection.
+- `SearchRequestSchema` — the shared API/MCP request schema, which adds a
+  final merged-result `limit` and optional, non-empty, duplicate-free
+  `engines` selection.
 - `SearchEngine` — the plugin interface a backend search engine implements;
   its optional `indexFamily` identifies correlated result sources for ranking.
 - `SearchSession` — an engine's two-phase result: the response plus a
@@ -15,7 +16,9 @@ server, UI):
   browser page.
 - `SearchEngineRegistry` — registers engines, merges a fan-out into the
   client-facing ranked response, retains `searchAll()` for raw per-engine
-  debugging, and owns rate limiting and session lifetime.
+  debugging, and owns rate limiting, sessions, and queued archive writes.
+- `SqliteSearchArchive` / `SearchArchive` — best-effort local persistence of
+  merged responses and raw engine outcomes.
 - `Throttle` — spaces consecutive search fan-outs apart, with jitter.
 - `BingSearchEngine` / `BraveSearchEngine` / `DuckDuckGoSearchEngine` /
   `StartpageSearchEngine` — drive their search engines through a real browser:
@@ -36,7 +39,8 @@ Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 
 - `BrowserSession` — the single long-lived Chromium instance.
 - `createDefaultBrowserSession(surface)` — **fill in browser configuration here.**
-- `createBrowserRegistry(surface)` — a default registry with a real browser attached.
+- `createBrowserRegistry(surface)` — a default registry with a real browser
+  and the default local archive attached.
 
 ## Usage
 
@@ -81,10 +85,12 @@ persistent context is what carries cookies, dismissed consent banners, and
 cache between searches — and, since `launchPersistentContext` keeps a real
 profile directory on disk, across process restarts too.
 
-Each surface gets its own profile under `.searchicus/profile/<surface>/`
-(override with `SEARCHICUS_PROFILE_DIR`), because a Chromium user-data
-directory is single-writer and `npm run dev` starts the API and MCP server
-together. They therefore don't share cookies with each other.
+Persistent state defaults to `.searchicus/`: each surface gets its own
+profile under `profile/<surface>/`, and the application archive is the sibling
+`searches.sqlite`. Chromium profiles are single-writer, so surfaces do not
+share cookies; the archive uses WAL mode and is safe for API and CLI to share.
+Set `SEARCHICUS_DATA_DIR` to move both together, or use
+`SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component override.
 
 ## Results vs. sessions
 
@@ -107,6 +113,21 @@ a bare `SearchResponse`; the registry normalizes both.
 
 Because sessions outlive the call that started them, **a short-lived process
 must `drain()` (or `close()`) before exiting**, or it kills live browser work.
+
+## Search archive
+
+`createBrowserRegistry()` also queues each completed fan-out for best-effort
+archival. The SQLite database contains the public merged response exactly as
+returned, plus raw successful and failed engine outcomes keyed by the same
+`search_id`. Total engine failures are archived too, even though they have no
+client response.
+
+Archival happens after `search()` resolves and a write failure is swallowed;
+it must never delay or alter the search response. `drain()` waits for queued
+archive writes as well as browser sessions, and `close()` closes the database
+after draining. The archive contains queries, result text and URLs, and engine
+failure messages, so treat the local database as sensitive data. Set
+`SEARCHICUS_STORE=false` to disable it.
 
 ## Rate limiting
 

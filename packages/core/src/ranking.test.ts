@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EngineSearchOutcome } from "./registry.js";
+import type { EngineSearchOutcome } from "./types.js";
 import {
   canonicalizeUrl,
   DEFAULT_RANKED_LIMIT,
@@ -25,6 +25,7 @@ function outcome(engineId: string, results: SearchResult[]): EngineSearchOutcome
   return {
     engineId,
     ok: true,
+    tookMs: 1,
     response: { engine: engineId, query: { query: "cats" }, results, tookMs: 1 },
   };
 }
@@ -145,7 +146,7 @@ describe("rankResults", () => {
         "bing",
         Array.from({ length: DEFAULT_RANKED_LIMIT + 1 }, (_, index) => result(`https://${index}.example/cats`)),
       ),
-      { engineId: "brave", ok: false, error: "blocked" },
+      { engineId: "brave", ok: false, tookMs: 1, errorKind: "unknown", error: "blocked" },
     ]);
 
     expect(results).toHaveLength(DEFAULT_RANKED_LIMIT);
