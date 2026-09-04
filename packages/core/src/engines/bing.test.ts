@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Browser, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { assessRelevance } from "../relevance.js";
-import { decodeBingUrl, parseResults } from "./bing.js";
+import { decodeBingUrl, parseBingResults } from "./bing.js";
 
 const FIXTURE = readFileSync(new URL("../__fixtures__/bing-serp.html", import.meta.url), "utf8");
 /** The query the fixture was captured for. */
@@ -77,7 +77,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
+describe.skipIf(!browser)("parseBingResults (against a captured SERP)", () => {
   let page: Page;
 
   beforeAll(async () => {
@@ -94,7 +94,7 @@ describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
   });
 
   it("returns every block that is a usable result", async () => {
-    const parsed = await parseResults(results());
+    const parsed = await parseBingResults(results());
 
     // All six are real results, including the one whose heading is hidden by
     // CSS — reading innerText instead of textContent drops that one.
@@ -104,7 +104,7 @@ describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
   });
 
   it("decodes every URL out of the tracking redirect", async () => {
-    const parsed = await parseResults(results());
+    const parsed = await parseBingResults(results());
 
     expect(parsed.map((r) => r.url)).toEqual([
       "https://chicagobound.com/best-water-parks-in-chicago",
@@ -118,14 +118,14 @@ describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
   });
 
   it("reads titles and snippets", async () => {
-    const [first] = await parseResults(results());
+    const [first] = await parseBingResults(results());
 
     expect(first?.title).toBe("The Absolute Best Water Parks in Chicago");
     expect(first?.snippet).toContain("water parks");
   });
 
   it("leaves the snippet undefined when a result has none", async () => {
-    const parsed = await parseResults(results());
+    const parsed = await parseBingResults(results());
     const noSnippet = parsed.find((r) => r.url.includes("thechicagotraveler"));
 
     expect(noSnippet).toBeDefined();
@@ -135,7 +135,7 @@ describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
   it("recovers a result whose heading the page hides with CSS", async () => {
     // innerText returns "" for this heading, so an innerText-based parser
     // silently discards a perfectly good result.
-    const parsed = await parseResults(results());
+    const parsed = await parseBingResults(results());
     const hidden = parsed.at(-1);
 
     expect(hidden?.title).toBe("TOP 10 BEST Water Parks in Chicago, IL - Updated 2026 - Yelp");
@@ -143,8 +143,8 @@ describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
   });
 
   it("honours the requested limit", async () => {
-    expect(await parseResults(results(), 3)).toHaveLength(3);
-    expect(await parseResults(results(), 1)).toHaveLength(1);
+    expect(await parseBingResults(results(), 3)).toHaveLength(3);
+    expect(await parseBingResults(results(), 1)).toHaveLength(1);
   });
 
   it("does not stall on a result that is missing an element", { timeout: 20_000 }, async () => {
@@ -153,12 +153,12 @@ describe.skipIf(!browser)("parseResults (against a captured SERP)", () => {
     // 30s default timeout before the catch ran — one missing snippet in a
     // SERP was enough to blow the registry's entire 30s results budget.
     const started = Date.now();
-    await parseResults(results());
+    await parseBingResults(results());
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
   it("produces results the relevance gate accepts for the query they answer", async () => {
-    const parsed = await parseResults(results());
+    const parsed = await parseBingResults(results());
     const report = assessRelevance(FIXTURE_QUERY, parsed);
 
     expect(report.offTarget).toBe(false);

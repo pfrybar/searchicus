@@ -4,12 +4,24 @@ import { humanPause } from "./human.js";
 /** Fraction of searches that click through an organic result after dwelling. */
 export const CLICK_THROUGH_RATE = 0.4;
 
+/**
+ * Selects the destination link inside one result block, when the engine does
+ * not say. Result markup is engine-specific — Bing's title link is `h2 a`,
+ * Brave's is an anchor wrapping a `div.title` and has no heading element at
+ * all — so an engine whose results differ passes its own selector. A wrong
+ * selector here is silent: the count guard below reads zero and the search
+ * simply never clicks through.
+ */
+const DEFAULT_LINK_SELECTOR = "h2 a";
+
 /** The top ranks considered for a click, weighted toward the first result. */
 const RANK_WEIGHTS = [0.45, 0.25, 0.15, 0.09, 0.06] as const;
 
 export interface ClickThroughOptions {
   /** Fraction of searches that click through; defaults to CLICK_THROUGH_RATE. */
   rate?: number;
+  /** How to find a result's destination link; defaults to Bing's `h2 a`. */
+  linkSelector?: string;
   /** Injectable for deterministic tests. */
   random?: () => number;
 }
@@ -68,9 +80,12 @@ export async function clickThroughResult(
     const index = chooseClickThroughIndex(await resultEls.count(), random);
     if (index === undefined) return;
 
-    const link = resultEls.nth(index).locator("h2 a").first();
+    const link = resultEls
+      .nth(index)
+      .locator(options.linkSelector ?? DEFAULT_LINK_SELECTOR)
+      .first();
     // Locator actions auto-wait, so checking count first keeps layout variants
-    // without a linked heading from consuming the default action timeout.
+    // without a linked title from consuming the default action timeout.
     if ((await link.count()) === 0) return;
 
     // Register before clicking so a target=_blank result cannot race past the

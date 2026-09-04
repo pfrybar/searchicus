@@ -14,9 +14,9 @@ architecture picture.
 Backend engines drive a real headless browser. `core` owns a single
 long-lived Chromium instance (Playwright `launchPersistentContext`) and
 hands each search a page from it; engines parse results out of that page.
-The `bing` engine is registered by default and drives the real site. Tests
-inject deterministic test doubles where they need browser-free adapter
-coverage.
+The `bing` and `brave` engines are both registered by default and drive the
+real sites, so an unfiltered search fans out to both. Tests inject
+deterministic test doubles where they need browser-free adapter coverage.
 
 ## Repo layout
 
@@ -130,6 +130,20 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   field that isn't there blocks for the full default timeout (30s) before any
   `catch` runs, which is enough to exhaust the registry's whole results
   budget. `count()` never waits.
+- **Result markup belongs to the engine; behaviour belongs to the shared
+  helpers.** Each engine owns its own selectors and passes them to anything
+  shared — `clickThroughResult` takes the engine's `linkSelector` because Bing
+  links from `h2 a` and Brave has no heading element at all, and a wrong
+  selector there fails silently rather than loudly. Prefer selectors the site
+  means (ids, `data-*`, semantic class fragments) over ones its build emits:
+  Brave's UI is compiled from Svelte and every styled element carries a hash
+  like `svelte-jmfu5f` that changes whenever they ship CSS. Where a site mixes
+  units into one class, name the organic one positively (`data-type="web"`)
+  instead of enumerating what to exclude, so a new unit type is ignored by
+  default rather than returned as a result.
+- **Content-level failures are shared.** `NoResultsError` and
+  `OffTargetResultsError` live in `engines/errors.ts` and carry the engine
+  name; don't redeclare them per engine, or core's star exports collide.
 - **Check that results answer the query that was asked.** `relevance.ts`
   scores token coverage, because a search engine can return HTTP 200 with
   valid markup and real results that are answers to a different question —
