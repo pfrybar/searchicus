@@ -71,8 +71,26 @@ export function createProgram(registry: SearchEngineRegistry = createDefaultRegi
   return program;
 }
 
+/**
+ * Hides the "SQLite is an experimental feature" warning Node 22 emits the
+ * first time the archive opens — which is just after a search has printed its
+ * results, so it lands in the middle of the output a user is reading. Only
+ * that one warning is dropped, and only for the CLI: the API server keeps
+ * every warning, where a line on startup is a log entry rather than noise.
+ */
+function silenceSqliteExperimentalWarning(): void {
+  const listeners = process.listeners("warning");
+  process.removeAllListeners("warning");
+  process.on("warning", (warning) => {
+    if (warning.name === "ExperimentalWarning" && warning.message.startsWith("SQLite")) return;
+    for (const listener of listeners) listener(warning);
+  });
+}
+
 const entryPoint = process.argv[1];
 if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
+  silenceSqliteExperimentalWarning();
+
   // Imported dynamically so that merely importing createProgram() — as the
   // tests do — never pulls Playwright into the module graph.
   const { createBrowserRegistry } = await import("@searchicus/core/browser");
