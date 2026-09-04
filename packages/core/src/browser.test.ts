@@ -141,6 +141,83 @@ describe.skipIf(!available)("BrowserSession (live Chromium)", () => {
   });
 });
 
+describe("launchOptions as a factory", () => {
+  it("is not called until something actually needs a browser", async () => {
+    // The laziness the whole design rests on: an engine that never calls
+    // acquireBrowser() must cause no browser work, and resolving the options
+    // means shelling out to the binary for its version.
+    let calls = 0;
+    const session = new BrowserSession({
+      profileDir: tempProfile(),
+      launchOptions: () => {
+        calls++;
+        return { headless: true };
+      },
+    });
+
+    expect(calls).toBe(0);
+
+    await session.close();
+    expect(calls).toBe(0);
+  });
+
+  it.skipIf(!available)("resolves an async factory before launching", async () => {
+    let calls = 0;
+    const session = new BrowserSession({
+      profileDir: tempProfile(),
+      launchOptions: async () => {
+        calls++;
+        return { headless: true, userAgent: "searchicus-factory-probe" };
+      },
+    });
+
+    const handle = await session.acquire();
+    await serveStubOrigin(handle.lease.page);
+    await handle.lease.page.goto("https://example.invalid/");
+
+    expect(calls).toBe(1);
+    await expect(handle.lease.page.evaluate<string>("navigator.userAgent")).resolves.toBe("searchicus-factory-probe");
+
+    await handle.release();
+    await session.close();
+  });
+});
+
+describe.skipIf(!available)("initScript", () => {
+  it("runs in the document before page scripts do", async () => {
+    const session = new BrowserSession({
+      profileDir: tempProfile(),
+      initScript: `window.__searchicusInitRan = true;`,
+    });
+
+    const handle = await session.acquire();
+    await serveStubOrigin(handle.lease.page);
+    await handle.lease.page.goto("https://example.invalid/");
+
+    await expect(handle.lease.page.evaluate<boolean>("window.__searchicusInitRan === true")).resolves.toBe(true);
+
+    await handle.release();
+    await session.close();
+  });
+
+  it("applies to additional pages opened from the same lease", async () => {
+    const session = new BrowserSession({
+      profileDir: tempProfile(),
+      initScript: `window.__searchicusInitRan = true;`,
+    });
+
+    const handle = await session.acquire();
+    const extra = await handle.lease.newPage();
+    await serveStubOrigin(extra);
+    await extra.goto("https://example.invalid/");
+
+    await expect(extra.evaluate<boolean>("window.__searchicusInitRan === true")).resolves.toBe(true);
+
+    await handle.release();
+    await session.close();
+  });
+});
+
 describe.skipIf(available)("BrowserSession (Chromium unavailable)", () => {
   it("reports a diagnosable error rather than a bare launch failure", async () => {
     const session = new BrowserSession({ profileDir: tempProfile() });
