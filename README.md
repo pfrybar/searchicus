@@ -112,6 +112,11 @@ opt into them rather than reimplementing any of it:
 - **`dwell.ts`** — the post-load "read the page" phase. It is handed back as
   `SearchSession.completed`, so it runs _after_ results are returned and
   costs the caller nothing.
+- **`click-through.ts`** — after the dwell, clicks an organic result on 40%
+  of searches, weighted toward higher ranks. A short decision pause precedes
+  the click and a short landing pause follows it; there is no full dwell or
+  further interaction on the destination. It uses a real link click so normal
+  Bing click and referrer behavior are preserved.
 
 Results are also checked against the query before being believed. A search
 engine can answer with HTTP 200, valid markup and real results that have

@@ -24,7 +24,7 @@ coverage.
 packages/
   core/   shared types + SearchEngine interface + registry + engines
           + browser session (Playwright) + rate-limit throttle
-          + browser realism (stealth/human/dwell) + relevance gate
+          + browser realism (stealth/human/dwell/click-through) + relevance gate
   cli/    `searchicus` CLI (commander)
   api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
   ui/     web UI (vite + react)
@@ -99,11 +99,12 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   type-imports from core, so a value import of Playwright there would drag
   browser binaries into a Vite bundle. The registry depends on the
   `BrowserProvider` interface, never on the `BrowserSession` class.
-  `human.ts`, `dwell.ts` and `relevance.ts` import Playwright for **types
-  only**, which is why an engine in the main entry may use them; `stealth.ts`
-  reads the browser binary with `node:child_process` and so is reachable only
-  from `browser.ts`. Check with: import `core/dist/index.js` and confirm
-  nothing matching `playwright` lands in the module cache.
+  `human.ts`, `dwell.ts`, `click-through.ts` and `relevance.ts` import
+  Playwright for **types only**, which is why an engine in the main entry may
+  use them; `stealth.ts` reads the browser binary with `node:child_process`
+  and so is reachable only from `browser.ts`. Check with: import
+  `core/dist/index.js` and confirm nothing matching `playwright` lands in the
+  module cache.
 - **Browser identity lives in `stealth.ts`, not in engines.** Context options
   and one init script, applied by `createDefaultBrowserSession()`. The
   init script is installed inside the launch path, so it survives a crash
@@ -114,6 +115,11 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   load-bearing — Playwright's default headless is a different, much barer
   binary. Timezone and locale must stay plausible for the egress IP;
   `SEARCHICUS_TIMEZONE` / `SEARCHICUS_LOCALE` override them.
+- **Click through only after dwelling.** `click-through.ts` runs after the
+  passive SERP dwell, considers only organic linked results, and samples 40%
+  of searches with a weighted preference for higher ranks. Its decision and
+  landing pauses are deliberately lighter than `extractDwell()`; it must stay
+  best-effort and never turn ready results into a failed search.
 - **Parse with `textContent`, not `innerText`, and guard every read with
   `count()`.** Both were learned from the live site. `innerText` is a
   function of CSS, and a real SERP hid an organic result's heading with a

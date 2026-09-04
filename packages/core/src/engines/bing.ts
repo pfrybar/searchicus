@@ -1,5 +1,6 @@
 import type { Locator, Page } from "playwright";
 import type { SearchContext } from "../context.js";
+import { clickThroughResult } from "../browser/click-through.js";
 import { searchDwell } from "../browser/dwell.js";
 import { humanPause, humanType } from "../browser/human.js";
 import { assessRelevance, type RelevanceReport } from "../relevance.js";
@@ -14,10 +15,11 @@ import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../
  *   is one request with no referer and no interaction history. Loading the
  *   homepage, focusing the box and typing produces both, and costs one extra
  *   page load. The URL is never constructed at all — the form builds it.
- * - **The dwell runs after parsing, not before.** It is handed back as
- *   `SearchSession.completed`, so the caller has results while the page is
- *   still being "read". Awaiting it first would add its full 5-10s to every
- *   search before any output appeared.
+ * - **The dwell and optional click-through run after parsing, not before.**
+ *   They are handed back as `SearchSession.completed`, so the caller has
+ *   results while the page is still being read and occasionally clicked.
+ *   Awaiting them first would add their full delay to every search before any
+ *   output appeared.
  * - **Results are checked for relevance before they are believed.** See
  *   relevance.ts: Bing sometimes answers a multi-word query with results for
  *   only its first term, and that arrives as a valid, parseable, entirely
@@ -119,12 +121,18 @@ export class BingSearchEngine implements SearchEngine {
         engine: this.id,
         tookMs: Date.now() - start,
       },
-      // Results are ready; the page keeps being read in the background. The
-      // registry holds the browser lease until this settles, and a dwell
-      // never rejects.
-      completed: searchDwell(page, results, ctx.signal),
+      // Results are ready; the page is dwelled on and then occasionally
+      // clicked through in the background. The registry holds the browser
+      // lease until this settles; both phases are best-effort and never reject.
+      completed: completeSearchSession(page, results, ctx.signal),
     };
   }
+}
+
+/** Finishes the background browser behavior after results have been returned. */
+async function completeSearchSession(page: Page, results: Locator, signal: AbortSignal): Promise<void> {
+  await searchDwell(page, results, signal);
+  await clickThroughResult(results, signal);
 }
 
 /**
