@@ -25,15 +25,16 @@ export function randInt(lo: number, hi: number, random: () => number = Math.rand
 }
 
 /**
- * A "human" pause: 80% short, 15% medium (220-600ms), 5% a longer
- * hesitation (600-1400ms). One uniform draw has a detectably flat profile;
- * this mixture has the heavy tail real people produce.
+ * A "human" pause: 80% a short beat in the caller's own range, 15% a medium
+ * one (220-420ms), 5% a longer hesitation (420-1000ms). One uniform draw has
+ * a detectably flat profile; this mixture has the heavy tail real people
+ * produce.
  *
- * Takes an AbortSignal rather than a Page (which the reference version used
- * solely for `page.waitForTimeout`). That makes every pause cancellable, so
- * shutdown and the registry's session deadline interrupt a dwell promptly
- * instead of waiting it out. Rejects with ThrottleAbortError when aborted —
- * callers that must not fail (see dwell.ts) swallow it.
+ * Pausing is driven by an AbortSignal rather than `page.waitForTimeout`, so
+ * every pause is cancellable and shutdown or the registry's session deadline
+ * interrupts a dwell promptly instead of waiting it out. Rejects with
+ * ThrottleAbortError when aborted — callers that must not fail (see dwell.ts)
+ * swallow it.
  */
 export async function humanPause(
   baseLo = 40,
@@ -54,11 +55,23 @@ export async function humanPause(
  * The locator is resolved once by the caller and reused, rather than
  * re-queried per character: a per-character lookup is both slow and, on a
  * page whose search box is A/B tested, fragile.
+ *
+ * `timeoutMs` bounds each keystroke. Without it `pressSequentially` uses
+ * Playwright's 30s default, so typing into a box that has been renamed or has
+ * detached mid-gesture blocks long enough to consume the registry's entire
+ * results budget before anything reports a problem — the same auto-wait trap
+ * the parsers guard against with `count()`, on the input side.
  */
-export async function humanType(locator: Locator, text: string, signal?: AbortSignal): Promise<void> {
+export async function humanType(
+  locator: Locator,
+  text: string,
+  signal?: AbortSignal,
+  timeoutMs = 5_000,
+  random: () => number = Math.random,
+): Promise<void> {
   for (const char of text) {
-    await humanPause(40, 130, signal);
-    await locator.pressSequentially(char);
+    await humanPause(40, 130, signal, random);
+    await locator.pressSequentially(char, { timeout: timeoutMs });
   }
 }
 
@@ -71,17 +84,22 @@ export async function humanType(locator: Locator, text: string, signal?: AbortSi
  * live cursor position that STEALTH_INIT tracks; falls back to a plausible
  * resting spot when the page has not reported one yet.
  */
-export async function humanWander(page: Page, moves = 4, signal?: AbortSignal): Promise<void> {
-  let { x, y } = await cursorPos(page);
+export async function humanWander(
+  page: Page,
+  moves = 4,
+  signal?: AbortSignal,
+  random: () => number = Math.random,
+): Promise<void> {
+  let { x, y } = await cursorPos(page, random);
 
   for (let i = 0; i < moves; i++) {
-    await humanPause(200, 900, signal);
-    if (Math.random() < 0.15) continue; // rest: no movement this beat
-    x = clamp(x + randInt(-180, 180), 10, 1500);
-    y = clamp(y + randInt(-130, 130), 10, 840);
+    await humanPause(200, 900, signal, random);
+    if (random() < 0.15) continue; // rest: no movement this beat
+    x = clamp(x + randInt(-180, 180, random), 10, 1500);
+    y = clamp(y + randInt(-130, 130, random), 10, 840);
     // A mouse move failing (navigation mid-gesture, detached page) is not a
     // reason to fail the search that owns this page.
-    await page.mouse.move(x, y, { steps: randInt(4, 12) }).catch(() => undefined);
+    await page.mouse.move(x, y, { steps: randInt(4, 12, random) }).catch(() => undefined);
   }
 }
 
@@ -97,7 +115,7 @@ function clamp(value: number, lo: number, hi: number): number {
  * it runs in the browser realm: core's tsconfig has no DOM lib, so a closure
  * referencing `window` would not typecheck.
  */
-async function cursorPos(page: Page): Promise<{ x: number; y: number }> {
+async function cursorPos(page: Page, random: () => number = Math.random): Promise<{ x: number; y: number }> {
   try {
     const pos = await page.evaluate<{ x: number; y: number }>(
       `({ x: window.__mouseX ?? -1, y: window.__mouseY ?? -1 })`,
@@ -107,5 +125,5 @@ async function cursorPos(page: Page): Promise<{ x: number; y: number }> {
     // No page context to ask (navigating, closed). The fallback is fine.
   }
 
-  return { x: randInt(700, 1200), y: randInt(400, 700) };
+  return { x: randInt(700, 1200, random), y: randInt(400, 700, random) };
 }

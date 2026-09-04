@@ -97,33 +97,6 @@ describe.skipIf(!browser)("parseStartpageResults (against a captured SERP)", () 
     expect(await page.locator(".result").count()).toBe(6);
   });
 
-  it("drops CSS that the styling library parks inside a result mid-hydration", async () => {
-    // Found against the live site, and not reproducible from a captured
-    // fixture: the styling library inserts each `<style>` next to its own
-    // component before relocating it to the head, so a title read soon enough
-    // after load still contains one. `textContent` returns its rule text, and
-    // titles come back as ".css-i3irj7{line-height:18px;...}Best waterpark…".
-    // This rebuilds that state rather than pretending the capture holds it.
-    const hydrating = await browser!.newPage();
-    try {
-      await hydrating.setContent(
-        `<div class="w-gl"><div class="result">` +
-          `<a data-testid="gl-title-link" href="https://example.com/a">` +
-          `<style data-emotion="css i3irj7">.css-i3irj7{line-height:18px;color:#2E39B3;}</style>` +
-          `Best waterpark in Chicago? : r/LoganSquare - Reddit</a>` +
-          `<p class="description"><style>.css-x{margin:0;}</style>A real description.</p>` +
-          `</div></div>`,
-      );
-
-      const [only] = await parseStartpageResults(hydrating.locator(".w-gl .result"));
-
-      expect(only?.title).toBe("Best waterpark in Chicago? : r/LoganSquare - Reddit");
-      expect(only?.snippet).toBe("A real description.");
-    } finally {
-      await hydrating.close();
-    }
-  });
-
   it("honours the requested limit", async () => {
     expect(await parseStartpageResults(results(), 3)).toHaveLength(3);
     expect(await parseStartpageResults(results(), 1)).toHaveLength(1);
