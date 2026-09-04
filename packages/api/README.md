@@ -74,7 +74,8 @@ keep the original contract.
 ```json
 [
   { "id": "bing", "name": "Bing" },
-  { "id": "brave", "name": "Brave" }
+  { "id": "brave", "name": "Brave" },
+  { "id": "startpage", "name": "Startpage" }
 ]
 ```
 

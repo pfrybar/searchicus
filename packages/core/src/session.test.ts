@@ -304,10 +304,10 @@ describe("browser-backed engines (registration and wiring)", () => {
     const ids = createDefaultRegistry({ throttle: null })
       .list()
       .map((engine) => engine.id);
-    expect(ids).toEqual(["bing", "brave"]);
+    expect(ids).toEqual(["bing", "brave", "startpage"]);
   });
 
-  it.each(["bing", "brave"])("fails with a diagnosable error when %s has no browser", async (engineId) => {
+  it.each(["bing", "brave", "startpage"])("fails with a diagnosable error when %s has no browser", async (engineId) => {
     const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats" }, [engineId]);
 
     expect(outcomes[0]?.ok).toBe(false);
