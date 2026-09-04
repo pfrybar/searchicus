@@ -84,6 +84,34 @@ describe("SearchEngineRegistry", () => {
     expect(response.results).not.toHaveLength(0);
   });
 
+  it("rejects an unregistered engine id instead of reporting it as a failure", async () => {
+    const archive = new RecordingArchive();
+    const registry = new SearchEngineRegistry({ throttle: null, archive }).register(new TestSearchEngine());
+
+    // Alone, a typo would otherwise fail the whole fan-out and be reported as
+    // AllEnginesFailedError — indistinguishable from every backend being down.
+    await expect(registry.search({ query: "cats", engines: ["nope"] })).rejects.toBeInstanceOf(UnknownEngineError);
+    // Alongside a good engine it would be worse still: a silent degraded:true.
+    await expect(registry.search({ query: "cats", engines: ["test", "nope"] })).rejects.toBeInstanceOf(
+      UnknownEngineError,
+    );
+
+    // Nothing ran, so there is no fan-out to archive.
+    await registry.drain();
+    expect(archive.records).toEqual([]);
+  });
+
+  it("still reports an unregistered engine as one outcome in the raw fan-out", async () => {
+    const registry = new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine());
+
+    const outcomes = await registry.searchAll({ query: "cats" }, ["test", "nope"]);
+
+    expect(outcomes.map((outcome) => [outcome.engineId, outcome.ok])).toEqual([
+      ["test", true],
+      ["nope", false],
+    ]);
+  });
+
   it("archives complete raw outcomes after returning the merged response", async () => {
     const archive = new RecordingArchive();
     const registry = new SearchEngineRegistry({ throttle: null, archive }).register(new TestSearchEngine()).register({

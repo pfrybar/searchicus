@@ -122,7 +122,7 @@ Response body:
 }
 ```
 
-An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`.
+An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`. Naming an engine that isn't registered is a `400` too, with the unknown id in `details` — a caller's typo is not a backend failure, and `GET /engines` already lists every valid id.
 
 A single request fans out to every selected engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
@@ -160,9 +160,11 @@ or session to tear down.
 - **`list_engines`** — lists the engines currently registered.
 
 Partial engine failure sets `degraded: true` on the merged result without
-naming the engine. A total engine failure returns a generic tool error. Errors
-at the endpoint itself use JSON-RPC error objects, including `-32700` for a
-malformed request body.
+naming the engine. A total engine failure returns a generic tool error, while
+an unregistered engine id returns a tool error naming it, so an agent that
+mistyped an id from `list_engines` can correct itself. Errors at the endpoint
+itself use JSON-RPC error objects, including `-32700` for a malformed request
+body.
 
 ```bash
 curl -s localhost:3000/mcp \
