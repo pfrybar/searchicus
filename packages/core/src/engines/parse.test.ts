@@ -34,6 +34,20 @@ describe.skipIf(!browser)("readText", () => {
     page = await browser!.newPage();
   });
 
+  it("survives the style being relocated while the element is read", async () => {
+    await page.setContent(`<a id="t"><style>.css-x{color:red}</style>Reciprocal rank fusion</a>`);
+    const link = page.locator("#t");
+
+    // The regression this replaced a two-read implementation for. That one
+    // captured textContent, then looked for `<style>` descendants to subtract
+    // — and hydration had already moved the style to `<head>` by then, so it
+    // found none and shipped the CSS inside the title. Removing the style
+    // between "load" and the read reproduces exactly that ordering.
+    await page.locator("#t style").evaluate((node) => (node as { remove(): void }).remove());
+
+    expect(await readText(link)).toBe("Reciprocal rank fusion");
+  });
+
   it("drops CSS that a styling library parks inside the element mid-hydration", async () => {
     // Found against Startpage's live site, and not reproducible from a
     // captured fixture: the styling library inserts each `<style>` next to
