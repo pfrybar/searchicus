@@ -88,11 +88,6 @@ describe.skipIf(!browser)("parseDuckDuckGoResults (against a captured SERP)", ()
     expect(first?.snippet).toContain("water parks");
   });
 
-  it("honours the requested limit", async () => {
-    expect(await parseDuckDuckGoResults(results(), 3)).toHaveLength(3);
-    expect(await parseDuckDuckGoResults(results(), 1)).toHaveLength(1);
-  });
-
   it("does not stall on a result that is missing an element", { timeout: 20_000 }, async () => {
     // Playwright's text and attribute readers auto-wait, so an unguarded read
     // of an absent optional field blocks for the full 30s default timeout —

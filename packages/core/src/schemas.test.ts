@@ -7,16 +7,6 @@ describe("SearchQuerySchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts every optional field", () => {
-    const result = SearchQuerySchema.safeParse({
-      query: "cats",
-      limit: 5,
-      page: 2,
-      filters: { lang: "en" },
-    });
-    expect(result.success).toBe(true);
-  });
-
   it("trims a query and rejects an empty or whitespace-only string", () => {
     expect(SearchQuerySchema.parse({ query: "  cats  " }).query).toBe("cats");
     expect(SearchQuerySchema.safeParse({ query: "" }).success).toBe(false);
@@ -24,12 +14,7 @@ describe("SearchQuerySchema", () => {
   });
 
   it("rejects a missing query field", () => {
-    const result = SearchQuerySchema.safeParse({ limit: 5 });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects an out-of-range limit", () => {
-    const result = SearchQuerySchema.safeParse({ query: "cats", limit: 1000 });
+    const result = SearchQuerySchema.safeParse({});
     expect(result.success).toBe(false);
   });
 });

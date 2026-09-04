@@ -2,14 +2,8 @@ import type { SearchContext } from "./context.js";
 
 /** A search request, independent of which engine(s) it's sent to. */
 export interface SearchQuery {
-  /** The normalized search text. */
+  /** The normalized search text entered into an engine's ordinary search box. */
   query: string;
-  /** Maximum number of results to return per engine. Defaults to 10. */
-  limit?: number;
-  /** 1-based page number, for engines that support pagination. Defaults to 1. */
-  page?: number;
-  /** Free-form filters an engine may use to narrow results (e.g. site, lang). */
-  filters?: Record<string, string>;
 }
 
 /** A query plus an optional, explicit set of engines to search. */

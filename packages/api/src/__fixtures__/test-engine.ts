@@ -6,8 +6,7 @@ export class TestSearchEngine implements SearchEngine {
   readonly name = "Test Search Engine";
 
   async search(query: SearchQuery): Promise<SearchResponse> {
-    const limit = query.limit ?? 10;
-    const results: SearchResult[] = Array.from({ length: limit }, (_, index) => ({
+    const results: SearchResult[] = Array.from({ length: 10 }, (_, index) => ({
       title: `Test result ${index + 1}`,
       url: `https://example.test/${index + 1}`,
       source: this.id,

@@ -44,13 +44,13 @@ describe("tools/list", () => {
 describe("search tool", () => {
   it("returns results from the test engine", async () => {
     const client = await connectedClient();
-    const result = await callTool(client, "search", { query: "cats", limit: 2 });
+    const result = await callTool(client, "search", { query: "cats" });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(textOf(result));
     expect(parsed.outcomes).toHaveLength(1);
     expect(parsed.outcomes[0].engineId).toBe("test");
-    expect(parsed.outcomes[0].response.results).toHaveLength(2);
+    expect(parsed.outcomes[0].response.results).toHaveLength(10);
   });
 
   it("can target a specific subset of engines", async () => {

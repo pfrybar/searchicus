@@ -64,9 +64,9 @@ function spec(homepage: string, overrides: Partial<BrowserSearchSpec> = {}): Bro
     linkSelector: "a.t",
     searchBox: (page: Page) => page.locator("input[name='q']"),
     results: (page: Page) => page.locator("#out li.r"),
-    parse: async (results: Locator, limit: number): Promise<SearchResult[]> => {
+    parse: async (results: Locator): Promise<SearchResult[]> => {
       const out: SearchResult[] = [];
-      for (let i = 0; i < Math.min(await results.count(), limit); i++) {
+      for (let i = 0, count = await results.count(); i < count; i++) {
         const link = results.nth(i).locator("a.t");
         // Guarded like the real parsers, and for the real reason: without
         // this, reading a result block that has no link auto-waits for
@@ -105,15 +105,6 @@ describe.skipIf(!browser)("runBrowserSearch", () => {
     expect(session.response.results.map((r) => r.title)).toEqual(["Raging Waves waterpark", "Chicago waterpark guide"]);
     expect(session.response.tookMs).toBeGreaterThan(0);
     await expect(session.completed).resolves.toBeUndefined();
-  }, 30_000);
-
-  it("honours the query's limit", async () => {
-    const site = miniSite(["Chicago waterpark one", "Chicago waterpark two", "Chicago waterpark three"]);
-
-    const session = await runBrowserSearch(spec(site), { query: "chicago waterpark", limit: 2 }, ctx, fast);
-
-    expect(session.response.results).toHaveLength(2);
-    await session.completed;
   }, 30_000);
 
   it("fails fast and by name when the search box has moved", async () => {

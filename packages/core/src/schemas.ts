@@ -9,9 +9,6 @@ import type { SearchQuery, SearchRequest } from "./types.js";
  */
 export const SearchQuerySchema = z.object({
   query: z.string().trim().min(1, "query must not be empty"),
-  limit: z.number().int().positive().max(100).optional(),
-  page: z.number().int().positive().optional(),
-  filters: z.record(z.string(), z.string()).optional(),
 }) satisfies z.ZodType<SearchQuery>;
 
 /**

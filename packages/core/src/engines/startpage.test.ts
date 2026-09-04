@@ -97,11 +97,6 @@ describe.skipIf(!browser)("parseStartpageResults (against a captured SERP)", () 
     expect(await page.locator(".result").count()).toBe(6);
   });
 
-  it("honours the requested limit", async () => {
-    expect(await parseStartpageResults(results(), 3)).toHaveLength(3);
-    expect(await parseStartpageResults(results(), 1)).toHaveLength(1);
-  });
-
   it("does not stall on a result that is missing an element", { timeout: 20_000 }, async () => {
     // Playwright's text and attribute readers auto-wait, so an unguarded read
     // of an absent optional field blocks for the full 30s default timeout —

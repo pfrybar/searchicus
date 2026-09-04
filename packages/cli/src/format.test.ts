@@ -1,6 +1,6 @@
 import { SearchEngineRegistry } from "@searchicus/core";
 import { describe, expect, it, vi } from "vitest";
-import { createProgram, parseLimit } from "./index.js";
+import { createProgram } from "./index.js";
 import { formatOutcome } from "./format.js";
 
 describe("formatOutcome", () => {
@@ -40,14 +40,6 @@ describe("formatOutcome", () => {
 });
 
 describe("CLI argument handling", () => {
-  it("accepts only limits allowed by the shared query schema", () => {
-    expect(parseLimit("1")).toBe(1);
-    expect(parseLimit("100")).toBe(100);
-    expect(() => parseLimit("2results")).toThrow();
-    expect(() => parseLimit("0")).toThrow();
-    expect(() => parseLimit("101")).toThrow();
-  });
-
   it("normalizes a valid query before searching", async () => {
     const write = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const program = createProgram(

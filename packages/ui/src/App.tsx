@@ -25,7 +25,7 @@ export function App() {
     setError(null);
     setResult(null);
     try {
-      const response = await search({ query, limit: 10 });
+      const response = await search({ query });
       setResult(response);
       setStatus("idle");
     } catch (err) {

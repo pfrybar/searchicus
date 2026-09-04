@@ -142,11 +142,6 @@ describe.skipIf(!browser)("parseBingResults (against a captured SERP)", () => {
     expect(hidden?.url).toContain("yelp.com");
   });
 
-  it("honours the requested limit", async () => {
-    expect(await parseBingResults(results(), 3)).toHaveLength(3);
-    expect(await parseBingResults(results(), 1)).toHaveLength(1);
-  });
-
   it("does not stall on a result that is missing an element", { timeout: 20_000 }, async () => {
     // Regression test with real teeth. Playwright's innerText() auto-waits,
     // so reading a snippet that isn't there used to block for the full

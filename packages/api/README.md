@@ -85,14 +85,11 @@ keep the original contract.
 Request body:
 
 ```json
-{ "query": "typescript generics", "limit": 5, "engines": ["bing", "brave"] }
+{ "query": "typescript generics", "engines": ["bing", "brave"] }
 ```
 
 - `query` (required string containing non-whitespace text; surrounding
   whitespace is trimmed)
-- `limit` (optional integer, 1–100; defaults to each engine's own default)
-- `page` (optional positive integer)
-- `filters` (optional string→string map)
 - `engines` (optional non-empty, duplicate-free array of engine-id strings;
   defaults to every registered engine)
 
@@ -100,7 +97,7 @@ Response body:
 
 ```json
 {
-  "query": { "query": "typescript generics", "limit": 5 },
+  "query": { "query": "typescript generics" },
   "outcomes": [{ "engineId": "bing", "ok": true, "response": { "...": "..." } }]
 }
 ```
@@ -115,11 +112,11 @@ failures are outcomes, not HTTP errors.
 
 ```bash
 curl -s localhost:3000/search -H 'content-type: application/json' \
-  -d '{"query":"typescript generics","limit":3}' | jq
+  -d '{"query":"typescript generics"}' | jq
 
 # identical, via the path the UI uses
 curl -s localhost:3000/api/search -H 'content-type: application/json' \
-  -d '{"query":"typescript generics","limit":3}' | jq
+  -d '{"query":"typescript generics"}' | jq
 ```
 
 ## MCP endpoint
@@ -130,7 +127,7 @@ or session to tear down.
 
 ### Tools
 
-- **`search`** — `{ query, limit?, page?, filters?, engines? }` → fans the
+- **`search`** — `{ query, engines? }` → fans the
   query out across the requested (or every) registered engine. Query and
   engine-selection validation is shared with the HTTP API: query text is
   trimmed and non-whitespace, and a supplied `engines` list is non-empty and
@@ -149,7 +146,7 @@ curl -s localhost:3000/mcp \
     "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/call",
-    "params": { "name": "search", "arguments": { "query": "typescript generics", "limit": 2 } }
+    "params": { "name": "search", "arguments": { "query": "typescript generics" } }
   }'
 ```
 

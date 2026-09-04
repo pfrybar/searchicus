@@ -34,12 +34,12 @@ describe("GET /engines", () => {
 
 describe("POST /search", () => {
   it("returns results from every registered engine by default", async () => {
-    const res = await request(testApp()).post("/search").send({ query: "cats", limit: 2 });
+    const res = await request(testApp()).post("/search").send({ query: "cats" });
 
     expect(res.status).toBe(200);
     expect(res.body.outcomes).toHaveLength(1);
     expect(res.body.outcomes[0].engineId).toBe("test");
-    expect(res.body.outcomes[0].response.results).toHaveLength(2);
+    expect(res.body.outcomes[0].response.results).toHaveLength(10);
   });
 
   it("can target a specific subset of engines", async () => {
@@ -52,7 +52,7 @@ describe("POST /search", () => {
   });
 
   it("rejects an invalid request body", async () => {
-    const missingQuery = await request(testApp()).post("/search").send({ limit: 5 });
+    const missingQuery = await request(testApp()).post("/search").send({});
     const whitespaceQuery = await request(testApp()).post("/search").send({ query: "   " });
     const malformedEngines = await request(testApp())
       .post("/search")
