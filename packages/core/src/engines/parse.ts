@@ -48,26 +48,38 @@ export const EXTRACT_TIMEOUT_MS = 2_000;
  * hydration, not a fixed property of the site, so "this engine doesn't need
  * it" is a statement with a shelf life.
  *
- * Done through locators rather than `evaluate`, because core is compiled
- * without the DOM lib and so cannot type a page-side callback, and a string
- * expression is not an option: Playwright only passes the element to a real
- * function, so `locator.evaluate("el => …")` silently resolves undefined.
- * The `count()` guard keeps the extra round trip off the ordinary path, where
- * there is no style element to subtract.
+ * The removal happens **in the page, on a clone, in one call**, and it has to.
+ * An earlier version read `textContent` and then subtracted the text of any
+ * `<style>` descendants it could still find, which is a time-of-check race
+ * against the very hydration that causes the problem: by the time the second
+ * read ran, Startpage had already relocated the style to `<head>`, the
+ * selector matched nothing, and the CSS stayed in the title. Live archives
+ * show it — `.css-i3irj7{line-height:18px;...}` shipped as a result title.
+ * Two reads cannot be made safe here, because the DOM is changing underneath
+ * them; one read can.
+ *
+ * The callback is a real function rather than a string, because Playwright
+ * only passes the element to a real one — `locator.evaluate("el => …")`
+ * silently resolves undefined. Core is compiled without the DOM lib, so the
+ * node is cast to the minimum shape this needs rather than typed as an
+ * element; that compiles cleanly and keeps the DOM lib out of the package.
+ * Cloning leaves the live page untouched.
  */
 export async function readText(el: Locator, timeout = EXTRACT_TIMEOUT_MS): Promise<string | null> {
-  const raw = await el.textContent({ timeout }).catch(() => null);
-  if (raw === null) return null;
-
-  const noise = el.locator("style, script");
-  if ((await noise.count()) === 0) return raw;
-
-  let text = raw;
-  for (const chunk of await noise.allTextContents()) {
-    // Each style's text is a literal substring of its parent's textContent.
-    if (chunk) text = text.replace(chunk, "");
-  }
-  return text;
+  return el
+    .evaluate(
+      (node) => {
+        const clone = (node as { cloneNode(deep: boolean): unknown }).cloneNode(true) as {
+          querySelectorAll(selector: string): Iterable<{ remove(): void }>;
+          textContent: string | null;
+        };
+        for (const noise of clone.querySelectorAll("style, script")) noise.remove();
+        return clone.textContent;
+      },
+      undefined,
+      { timeout },
+    )
+    .catch(() => null);
 }
 
 /**
