@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SearchEngineRegistry, UnknownEngineError } from "./registry.js";
+import { createDefaultRegistry, SearchEngineRegistry, UnknownEngineError } from "./registry.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchResult } from "./types.js";
 
 class TestSearchEngine implements SearchEngine {
@@ -27,6 +27,16 @@ describe("SearchEngineRegistry", () => {
     expect(registry.has("test")).toBe(true);
     expect(registry.get("test")).toBe(engine);
     expect(registry.list()).toEqual([engine]);
+  });
+
+  it("declares the index families used by merged ranking", () => {
+    const families = Object.fromEntries(
+      createDefaultRegistry()
+        .list()
+        .map((engine) => [engine.id, engine.indexFamily]),
+    );
+
+    expect(families).toEqual({ bing: "bing", brave: "brave", duckduckgo: "bing", startpage: "google" });
   });
 
   it("throws UnknownEngineError for an unregistered engine", async () => {

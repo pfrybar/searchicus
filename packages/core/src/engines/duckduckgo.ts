@@ -55,6 +55,7 @@ const SNIPPET_SELECTOR = '[data-result="snippet"]';
 export class DuckDuckGoSearchEngine implements SearchEngine, BrowserSearchSpec {
   readonly id = "duckduckgo";
   readonly name = "DuckDuckGo";
+  readonly indexFamily = "bing";
   readonly homepage = HOMEPAGE;
   readonly linkSelector = LINK_SELECTOR;
 

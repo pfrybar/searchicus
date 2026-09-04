@@ -64,6 +64,7 @@ const SNIPPET_SELECTOR = "p.description";
 export class StartpageSearchEngine implements SearchEngine, BrowserSearchSpec {
   readonly id = "startpage";
   readonly name = "Startpage";
+  readonly indexFamily = "google";
   readonly homepage = HOMEPAGE;
   readonly linkSelector = LINK_SELECTOR;
 

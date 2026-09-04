@@ -35,6 +35,7 @@ const SNIPPET_SELECTOR = "p.b_lineclamp2, p.b_lineclamp3, p.b_lineclamp4, .b_cap
 export class BingSearchEngine implements SearchEngine, BrowserSearchSpec {
   readonly id = "bing";
   readonly name = "Bing";
+  readonly indexFamily = "bing";
   readonly homepage = HOMEPAGE;
   readonly linkSelector = LINK_SELECTOR;
 

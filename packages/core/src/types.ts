@@ -65,6 +65,11 @@ export interface SearchEngine {
   /** Human-readable name for display in the UI/CLI. */
   readonly name: string;
   /**
+   * Underlying index family used for result aggregation. Omit this when the
+   * engine is independent; ranking then uses the engine id as its family.
+   */
+  readonly indexFamily?: string;
+  /**
    * Runs one search. Return a bare SearchResponse when the engine is done
    * the moment it has results; return a SearchSession when browser work
    * continues past them. The registry normalizes both, so engines that need

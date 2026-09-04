@@ -91,8 +91,10 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - Engines are registered once, in core's `createDefaultRegistry()`
   (`packages/core/src/registry.ts`) — every front door defaults to calling
   it rather than building its own registry. Add a new engine there, not per
-  package. It's a factory (fresh instance per call), not a shared singleton,
-  so `createApp`/`createProgram`/`createMcpServer` can keep accepting an
+  package. An engine's optional `indexFamily` names a correlated underlying
+  corpus for merged ranking (DuckDuckGo shares Bing's family); omit it for an
+  independent engine. It's a factory (fresh instance per call), not a shared
+  singleton, so `createApp`/`createProgram`/`createMcpServer` can keep accepting an
   injectable `registry` parameter for tests.
 - **Playwright must never reach core's main entry.** `createDefaultRegistry()`
   has no browser attached on purpose; `browser.ts` is published separately as
