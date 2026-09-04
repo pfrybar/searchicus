@@ -8,8 +8,7 @@ class TestSearchEngine implements SearchEngine {
   constructor(readonly id = "test") {}
 
   async search(query: SearchQuery): Promise<SearchResponse> {
-    const limit = query.limit ?? 10;
-    const results: SearchResult[] = Array.from({ length: limit }, (_, index) => ({
+    const results: SearchResult[] = Array.from({ length: 10 }, (_, index) => ({
       title: `Test result ${index + 1}`,
       url: `https://example.test/${index + 1}`,
       source: this.id,
@@ -39,13 +38,13 @@ describe("SearchEngineRegistry", () => {
     const registry = new SearchEngineRegistry({ throttle: null });
     registry.register(new TestSearchEngine());
 
-    const outcomes = await registry.searchAll({ query: "typescript", limit: 3 }, ["test", "missing"]);
+    const outcomes = await registry.searchAll({ query: "typescript" }, ["test", "missing"]);
 
     expect(outcomes).toHaveLength(2);
     const testOutcome = outcomes.find((outcome) => outcome.engineId === "test");
     const missingOutcome = outcomes.find((outcome) => outcome.engineId === "missing");
     expect(testOutcome?.ok).toBe(true);
-    if (testOutcome?.ok) expect(testOutcome.response.results).toHaveLength(3);
+    if (testOutcome?.ok) expect(testOutcome.response.results).toHaveLength(10);
     expect(missingOutcome?.ok).toBe(false);
   });
 

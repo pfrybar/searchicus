@@ -2,7 +2,7 @@ import type { Locator, Page } from "playwright";
 import type { SearchContext } from "../context.js";
 import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../types.js";
 import { type BrowserSearchSpec, runBrowserSearch } from "./flow.js";
-import { DEFAULT_LIMIT, EXTRACT_TIMEOUT_MS, collapse, readCollapsed, readSnippet } from "./parse.js";
+import { EXTRACT_TIMEOUT_MS, collapse, readCollapsed, readSnippet } from "./parse.js";
 
 /**
  * Startpage, driven through a real browser the way a person would drive it.
@@ -84,8 +84,8 @@ export class StartpageSearchEngine implements SearchEngine, BrowserSearchSpec {
     return page.locator(RESULT_SELECTOR);
   }
 
-  parse(results: Locator, limit: number): Promise<SearchResult[]> {
-    return parseStartpageResults(results, limit);
+  parse(results: Locator): Promise<SearchResult[]> {
+    return parseStartpageResults(results);
   }
 
   search(query: SearchQuery, ctx: SearchContext): Promise<SearchSession> {
@@ -93,12 +93,12 @@ export class StartpageSearchEngine implements SearchEngine, BrowserSearchSpec {
   }
 }
 
-/** Reads up to `limit` organic results out of an already-loaded SERP. */
-export async function parseStartpageResults(results: Locator, limit = DEFAULT_LIMIT): Promise<SearchResult[]> {
+/** Reads every eligible organic result out of an already-loaded SERP. */
+export async function parseStartpageResults(results: Locator): Promise<SearchResult[]> {
   const available = await results.count();
   const parsed: SearchResult[] = [];
 
-  for (let i = 0; i < available && parsed.length < limit; i++) {
+  for (let i = 0; i < available; i++) {
     const item = results.nth(i);
 
     const link = item.locator(LINK_SELECTOR).first();

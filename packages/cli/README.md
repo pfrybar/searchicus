@@ -15,7 +15,6 @@ process may stay alive briefly after printing results.
 ```bash
 npm run build -w @searchicus/cli
 
-node packages/cli/dist/index.js search "typescript generics" --limit 3
 node packages/cli/dist/index.js search "typescript generics" --json
 node packages/cli/dist/index.js engines
 ```
@@ -28,12 +27,11 @@ Once published/linked, the same binary is available as `searchicus`
 | Option                 | Description                                                 |
 | ---------------------- | ----------------------------------------------------------- |
 | `-e, --engine <id...>` | Engine id(s) to search; defaults to every registered engine |
-| `-l, --limit <n>`      | Max results per engine (`1`–`100`, default `10`)            |
 | `--json`               | Print raw JSON instead of a formatted list                  |
 
-The query is trimmed and must contain non-whitespace text. Invalid limits,
-queries, or engine selections (including duplicate ids) make the command exit
-non-zero before any engine is called.
+The query is trimmed and must contain non-whitespace text. Invalid queries or
+engine selections (including duplicate ids) make the command exit non-zero
+before any engine is called.
 
 Rate limiting is in-memory, so it does **not** survive across invocations: a
 shell loop calling the CLI repeatedly gets no spacing between searches.

@@ -29,9 +29,6 @@ import type { Locator } from "playwright";
  */
 export const EXTRACT_TIMEOUT_MS = 2_000;
 
-/** Default result count, roughly one page on every engine here. */
-export const DEFAULT_LIMIT = 10;
-
 /**
  * Reads an element's text, without the contents of any `<style>` or
  * `<script>` it happens to contain.

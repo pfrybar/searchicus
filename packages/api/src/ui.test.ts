@@ -58,7 +58,7 @@ describe("search API mount points", () => {
     expect((await request(app).get("/api/health")).body).toEqual({ status: "ok" });
     expect((await request(app).get("/api/engines")).body).toEqual([{ id: "test", name: "Test Search Engine" }]);
 
-    const search = await request(app).post("/api/search").send({ query: "cats", limit: 1 });
+    const search = await request(app).post("/api/search").send({ query: "cats" });
     expect(search.status).toBe(200);
     expect(search.body.outcomes[0].engineId).toBe("test");
   });
@@ -67,7 +67,7 @@ describe("search API mount points", () => {
     const app = withUi();
 
     expect((await request(app).get("/health")).body).toEqual({ status: "ok" });
-    const search = await request(app).post("/search").send({ query: "cats", limit: 1 });
+    const search = await request(app).post("/search").send({ query: "cats" });
     expect(search.status).toBe(200);
   });
 

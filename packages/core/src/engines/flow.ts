@@ -6,7 +6,6 @@ import { humanPause, humanType } from "../browser/human.js";
 import { assessRelevance } from "../relevance.js";
 import type { SearchQuery, SearchResult, SearchSession } from "../types.js";
 import { NoResultsError, OffTargetResultsError, SearchBoxUnavailableError } from "./errors.js";
-import { DEFAULT_LIMIT } from "./parse.js";
 
 /**
  * The interaction every engine here performs, in one place.
@@ -82,8 +81,8 @@ export interface BrowserSearchSpec {
   searchBox(page: Page): Locator;
   /** The organic results, in page order. */
   results(page: Page): Locator;
-  /** Reads up to `limit` results out of an already-loaded SERP. */
-  parse(results: Locator, limit: number): Promise<SearchResult[]>;
+  /** Reads every eligible result from an already-loaded SERP. */
+  parse(results: Locator): Promise<SearchResult[]>;
 }
 
 /** The background phase: what keeps happening after results are returned. */
@@ -126,7 +125,6 @@ export async function runBrowserSearch(
   // Timed from here so tookMs covers acquiring the browser and the whole
   // interaction, which is the number worth knowing.
   const start = Date.now();
-  const limit = query.limit ?? DEFAULT_LIMIT;
 
   const { page } = await ctx.acquireBrowser();
 
@@ -155,7 +153,7 @@ export async function runBrowserSearch(
     throw new NoResultsError(spec.name, page.url(), err);
   }
 
-  const parsed = await spec.parse(results, limit);
+  const parsed = await spec.parse(results);
   if (parsed.length === 0) throw new NoResultsError(spec.name, page.url());
 
   const report = assessRelevance(query.query, parsed);
