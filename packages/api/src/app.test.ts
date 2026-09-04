@@ -86,6 +86,21 @@ describe("POST /search", () => {
     expect(res.body).toEqual({ error: "Search unavailable" });
   });
 
+  it("rejects an unknown engine id as a request error, not a backend outage", async () => {
+    const alone = await request(testApp())
+      .post("/search")
+      .send({ query: "cats", engines: ["nope"] });
+    const mixed = await request(testApp())
+      .post("/search")
+      .send({ query: "cats", engines: ["test", "nope"] });
+
+    for (const res of [alone, mixed]) {
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid search request");
+      expect(String(res.body.details)).toContain("nope");
+    }
+  });
+
   it("rejects an invalid request body", async () => {
     const missingQuery = await request(testApp()).post("/search").send({});
     const invalidLimit = await request(testApp()).post("/search").send({ query: "cats", limit: 0 });

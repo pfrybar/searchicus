@@ -3,6 +3,7 @@ import {
   createDefaultRegistry,
   SearchEngineRegistry,
   SearchRequestSchema,
+  UnknownEngineError,
 } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -31,6 +32,11 @@ export function createMcpServer(registry: SearchEngineRegistry = createDefaultRe
           content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
         };
       } catch (err) {
+        // Name the bad id: an agent that picked it from list_engines can
+        // correct itself, where a generic failure invites a blind retry.
+        if (err instanceof UnknownEngineError) {
+          return { isError: true, content: [{ type: "text", text: err.message }] };
+        }
         if (err instanceof AllEnginesFailedError) {
           return { isError: true, content: [{ type: "text", text: "Search unavailable" }] };
         }

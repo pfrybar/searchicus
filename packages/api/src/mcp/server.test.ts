@@ -92,6 +92,17 @@ describe("search tool", () => {
     expect(textOf(result)).toBe("Search unavailable");
   });
 
+  it("names an unknown engine id rather than reporting a generic failure", async () => {
+    const client = await connectedClient();
+
+    const result = await callTool(client, "search", { query: "cats", engines: ["nope"] });
+
+    expect(result.isError).toBe(true);
+    // An agent that mistyped an id from list_engines can correct itself; the
+    // generic "Search unavailable" would only invite a blind retry.
+    expect(textOf(result)).toMatch(/nope/);
+  });
+
   it("reports an isError result for an invalid query instead of throwing", async () => {
     const client = await connectedClient();
     const result = await callTool(client, "search", { query: "" });

@@ -140,9 +140,20 @@ export class SearchEngineRegistry {
    * only the ranked list to ordinary callers. A partial engine failure sets
    * `degraded`; total failure throws AllEnginesFailedError instead of making
    * an empty result list ambiguous.
+   *
+   * Naming an unregistered engine throws UnknownEngineError before anything
+   * runs. The fan-out beneath this reports one as an ordinary failed outcome,
+   * which is right for `searchAll()`'s diagnostic contract but wrong here: it
+   * would make a caller's typo indistinguishable from a backend outage —
+   * AllEnginesFailedError when the bad id was the only one named, and a
+   * silent `degraded: true` when it wasn't.
    */
   async search(request: SearchRequest): Promise<MergedSearchResponse> {
     const { engines: requestedEngineIds, limit, ...query } = request;
+    for (const engineId of requestedEngineIds ?? []) {
+      if (!this.engines.has(engineId)) throw new UnknownEngineError(engineId);
+    }
+
     const started = Date.now();
     const searchId = createSearchId();
     const engineIds = requestedEngineIds ?? this.list().map((engine) => engine.id);

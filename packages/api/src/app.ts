@@ -3,6 +3,7 @@ import {
   createDefaultRegistry,
   SearchEngineRegistry,
   SearchRequestSchema,
+  UnknownEngineError,
 } from "@searchicus/core";
 import express, { Router, type Express, type NextFunction, type Request, type Response } from "express";
 import { fileURLToPath } from "node:url";
@@ -137,6 +138,13 @@ function createSearchRouter(registry: SearchEngineRegistry): Router {
     try {
       res.json(await registry.search(parsed.data));
     } catch (err) {
+      // A bad engine id is the caller's mistake, so it must not share the 502
+      // that means "the backends are down". GET /engines already lists every
+      // id, so naming the unknown one discloses nothing.
+      if (err instanceof UnknownEngineError) {
+        res.status(400).json({ error: "Invalid search request", details: [err.message] });
+        return;
+      }
       if (err instanceof AllEnginesFailedError) {
         res.status(502).json({ error: "Search unavailable" });
         return;
