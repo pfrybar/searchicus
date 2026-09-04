@@ -1,4 +1,9 @@
-import { createDefaultRegistry, SearchEngineRegistry, SearchRequestSchema } from "@searchicus/core";
+import {
+  AllEnginesFailedError,
+  createDefaultRegistry,
+  SearchEngineRegistry,
+  SearchRequestSchema,
+} from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /**
@@ -19,11 +24,18 @@ export function createMcpServer(registry: SearchEngineRegistry = createDefaultRe
       description: "Search one or more backend search engines and return matching results.",
       inputSchema: SearchRequestSchema.shape,
     },
-    async ({ engines, ...query }) => {
-      const outcomes = await registry.searchAll(query, engines);
-      return {
-        content: [{ type: "text", text: JSON.stringify({ query, outcomes }, null, 2) }],
-      };
+    async (request) => {
+      try {
+        const response = await registry.search(request);
+        return {
+          content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+        };
+      } catch (err) {
+        if (err instanceof AllEnginesFailedError) {
+          return { isError: true, content: [{ type: "text", text: "Search unavailable" }] };
+        }
+        throw err;
+      }
     },
   );
 

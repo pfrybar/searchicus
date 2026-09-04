@@ -33,13 +33,22 @@ describe("GET /engines", () => {
 });
 
 describe("POST /search", () => {
-  it("returns results from every registered engine by default", async () => {
+  it("returns one ranked response by default", async () => {
     const res = await request(testApp()).post("/search").send({ query: "cats" });
 
     expect(res.status).toBe(200);
-    expect(res.body.outcomes).toHaveLength(1);
-    expect(res.body.outcomes[0].engineId).toBe("test");
-    expect(res.body.outcomes[0].response.results).toHaveLength(10);
+    expect(res.body).toMatchObject({ query: { query: "cats" }, degraded: false });
+    expect(res.body.searchId).toMatch(/^[0-9a-z]{13}$/);
+    expect(res.body.results).toHaveLength(8);
+    expect(res.body.results[0].ref).toBe(`${res.body.searchId}-1`);
+    expect(res.body).not.toHaveProperty("outcomes");
+  });
+
+  it("applies the requested final result limit", async () => {
+    const res = await request(testApp()).post("/search").send({ query: "cats", limit: 2 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.results).toHaveLength(2);
   });
 
   it("can target a specific subset of engines", async () => {
@@ -48,17 +57,44 @@ describe("POST /search", () => {
       .send({ query: "cats", engines: ["test"] });
 
     expect(res.status).toBe(200);
-    expect(res.body.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["test"]);
+    expect(res.body.results[0].found).toEqual([{ engineId: "test", rank: 1 }]);
+  });
+
+  it("marks partial results as degraded without revealing the failed engine", async () => {
+    const registry = new SearchEngineRegistry({ throttle: null })
+      .register(new TestSearchEngine())
+      .register({ id: "broken", name: "Broken", search: async () => Promise.reject(new Error("blocked")) });
+
+    const res = await request(createApp(registry)).post("/search").send({ query: "cats" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.degraded).toBe(true);
+    expect(res.body).not.toHaveProperty("outcomes");
+    expect(JSON.stringify(res.body)).not.toContain("broken");
+  });
+
+  it("reports total engine failure without exposing backend details", async () => {
+    const registry = new SearchEngineRegistry({ throttle: null }).register({
+      id: "broken",
+      name: "Broken",
+      search: async () => Promise.reject(new Error("blocked")),
+    });
+
+    const res = await request(createApp(registry)).post("/search").send({ query: "cats" });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: "Search unavailable" });
   });
 
   it("rejects an invalid request body", async () => {
     const missingQuery = await request(testApp()).post("/search").send({});
+    const invalidLimit = await request(testApp()).post("/search").send({ query: "cats", limit: 0 });
     const whitespaceQuery = await request(testApp()).post("/search").send({ query: "   " });
     const malformedEngines = await request(testApp())
       .post("/search")
       .send({ query: "cats", engines: ["test", 1] });
 
-    for (const res of [missingQuery, whitespaceQuery, malformedEngines]) {
+    for (const res of [missingQuery, invalidLimit, whitespaceQuery, malformedEngines]) {
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Invalid search request");
       expect(res.body.details).toBeInstanceOf(Array);

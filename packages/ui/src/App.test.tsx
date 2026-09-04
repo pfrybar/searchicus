@@ -17,34 +17,36 @@ function mockFetchSequence(responses: Array<{ url: string; status?: number; body
   );
 }
 
+function searchResponse() {
+  return {
+    searchId: "abc123",
+    query: { query: "cats" },
+    tookMs: 1,
+    degraded: false,
+    results: [
+      {
+        ref: "abc123-1",
+        title: "Cats 101",
+        url: "https://example.com/cats",
+        snippet: "All about cats",
+        score: 0.1,
+        bestSource: "test",
+        found: [{ engineId: "test", rank: 1 }],
+        families: ["test"],
+      },
+    ],
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("App", () => {
-  it("loads engines, then renders search results on submit", async () => {
+  it("loads engines, then renders merged search results on submit", async () => {
     mockFetchSequence([
       { url: "/api/engines", body: [{ id: "test", name: "Test Search Engine" }] },
-      {
-        url: "/api/search",
-        body: {
-          query: { query: "cats" },
-          outcomes: [
-            {
-              engineId: "test",
-              ok: true,
-              response: {
-                engine: "test",
-                query: { query: "cats" },
-                tookMs: 1,
-                results: [
-                  { title: "Cats 101", url: "https://example.com/cats", source: "test", snippet: "All about cats" },
-                ],
-              },
-            },
-          ],
-        },
-      },
+      { url: "/api/search", body: searchResponse() },
     ]);
 
     render(<App />);
@@ -55,30 +57,15 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /search/i }));
 
     expect(await screen.findByText("Cats 101")).toBeInTheDocument();
+    expect(screen.getByText("Ref: abc123-1")).toBeInTheDocument();
+    expect(screen.getByText("Found by: test")).toBeInTheDocument();
   });
 
   it("clears stale results when a subsequent search fails", async () => {
     mockFetchSequence([
       { url: "/api/engines", body: [] },
-      {
-        url: "/api/search",
-        body: {
-          query: { query: "cats" },
-          outcomes: [
-            {
-              engineId: "test",
-              ok: true,
-              response: {
-                engine: "test",
-                query: { query: "cats" },
-                tookMs: 1,
-                results: [{ title: "Cats 101", url: "https://example.com/cats", source: "test" }],
-              },
-            },
-          ],
-        },
-      },
-      { url: "/api/search", status: 500, body: { error: "boom" } },
+      { url: "/api/search", body: searchResponse() },
+      { url: "/api/search", status: 502, body: { error: "Search unavailable" } },
     ]);
 
     render(<App />);
@@ -90,7 +77,7 @@ describe("App", () => {
 
     fireEvent.change(input, { target: { value: "dogs" } });
     fireEvent.click(screen.getByRole("button", { name: /search/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Search unavailable");
     expect(screen.queryByText("Cats 101")).not.toBeInTheDocument();
   });
 

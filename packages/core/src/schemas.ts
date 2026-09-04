@@ -17,6 +17,8 @@ export const SearchQuerySchema = z.object({
  * same validation rather than inspecting untrusted input themselves.
  */
 export const SearchRequestSchema = SearchQuerySchema.extend({
+  /** Final merged output count; never forwarded to an individual engine. */
+  limit: z.number().int().positive().max(100).optional(),
   engines: z
     .array(z.string().min(1, "engine id must not be empty"))
     .min(1, "engines must contain at least one engine id")

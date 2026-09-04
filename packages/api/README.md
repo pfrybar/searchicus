@@ -85,11 +85,12 @@ keep the original contract.
 Request body:
 
 ```json
-{ "query": "typescript generics", "engines": ["bing", "brave"] }
+{ "query": "typescript generics", "limit": 5, "engines": ["bing", "brave"] }
 ```
 
 - `query` (required string containing non-whitespace text; surrounding
   whitespace is trimmed)
+- `limit` (optional final merged-result count, integer 1–100; defaults to 8)
 - `engines` (optional non-empty, duplicate-free array of engine-id strings;
   defaults to every registered engine)
 
@@ -97,8 +98,24 @@ Response body:
 
 ```json
 {
+  "searchId": "00m2ebw9mbyib",
   "query": { "query": "typescript generics" },
-  "outcomes": [{ "engineId": "bing", "ok": true, "response": { "...": "..." } }]
+  "results": [
+    {
+      "ref": "00m2ebw9mbyib-1",
+      "title": "TypeScript: JavaScript With Syntax For Types.",
+      "url": "https://www.typescriptlang.org/",
+      "score": 0.0325,
+      "bestSource": "bing",
+      "found": [
+        { "engineId": "bing", "rank": 1 },
+        { "engineId": "brave", "rank": 2 }
+      ],
+      "families": ["bing", "brave"]
+    }
+  ],
+  "tookMs": 7123,
+  "degraded": false
 }
 ```
 
@@ -106,17 +123,18 @@ An invalid request returns `400` with `{ "error": "Invalid search request", "det
 
 A single request fans out to every selected engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
-default). A request that waits out its budget without getting a slot still
-returns `200`, with every engine reporting `ok: false` — engine-level
-failures are outcomes, not HTTP errors.
+default). A partial engine failure still returns `200` with `degraded: true`;
+the response deliberately does not identify the failed engine. If every
+selected engine fails before producing results, the endpoint returns `502`
+with `{ "error": "Search unavailable" }`.
 
 ```bash
 curl -s localhost:3000/search -H 'content-type: application/json' \
-  -d '{"query":"typescript generics"}' | jq
+  -d '{"query":"typescript generics","limit":3}' | jq
 
 # identical, via the path the UI uses
 curl -s localhost:3000/api/search -H 'content-type: application/json' \
-  -d '{"query":"typescript generics"}' | jq
+  -d '{"query":"typescript generics","limit":3}' | jq
 ```
 
 ## MCP endpoint
@@ -127,16 +145,19 @@ or session to tear down.
 
 ### Tools
 
-- **`search`** — `{ query, engines? }` → fans the
-  query out across the requested (or every) registered engine. Query and
-  engine-selection validation is shared with the HTTP API: query text is
+- **`search`** — `{ query, limit?, engines? }` → fans the
+  query out across the requested (or every) registered engine, merges the
+  results, and returns one attributed ranked list. `limit` caps that final
+  list, not an individual engine's page. Query and engine-selection validation
+  is shared with the HTTP API: query text is
   trimmed and non-whitespace, and a supplied `engines` list is non-empty and
   duplicate-free.
 - **`list_engines`** — lists the engines currently registered.
 
-Per-engine failures come back inside the result payload rather than as tool
-errors. Errors at the endpoint itself use JSON-RPC error objects, including
-`-32700` for a malformed request body.
+Partial engine failure sets `degraded: true` on the merged result without
+naming the engine. A total engine failure returns a generic tool error. Errors
+at the endpoint itself use JSON-RPC error objects, including `-32700` for a
+malformed request body.
 
 ```bash
 curl -s localhost:3000/mcp \
@@ -146,7 +167,7 @@ curl -s localhost:3000/mcp \
     "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/call",
-    "params": { "name": "search", "arguments": { "query": "typescript generics" } }
+    "params": { "name": "search", "arguments": { "query": "typescript generics", "limit": 2 } }
   }'
 ```
 

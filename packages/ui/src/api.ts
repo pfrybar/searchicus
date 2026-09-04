@@ -1,4 +1,4 @@
-import type { EngineSearchOutcome, SearchQuery } from "@searchicus/core";
+import type { MergedSearchResponse, SearchRequest } from "@searchicus/core";
 
 // Defaults to the dev-server proxy (see vite.config.ts); override for a
 // standalone production build by setting VITE_API_URL.
@@ -9,10 +9,7 @@ export interface EngineInfo {
   name: string;
 }
 
-export interface SearchResponseBody {
-  query: SearchQuery;
-  outcomes: EngineSearchOutcome[];
-}
+export type SearchResponseBody = MergedSearchResponse;
 
 async function readError(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -25,11 +22,11 @@ export async function listEngines(): Promise<EngineInfo[]> {
   return res.json() as Promise<EngineInfo[]>;
 }
 
-export async function search(query: SearchQuery, engines?: string[]): Promise<SearchResponseBody> {
+export async function search(request: SearchRequest): Promise<SearchResponseBody> {
   const res = await fetch(`${API_BASE}/search`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...query, engines }),
+    body: JSON.stringify(request),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<SearchResponseBody>;

@@ -1,45 +1,52 @@
 import { SearchEngineRegistry } from "@searchicus/core";
 import { describe, expect, it, vi } from "vitest";
-import { createProgram } from "./index.js";
-import { formatOutcome } from "./format.js";
+import { formatSearch } from "./format.js";
+import { createProgram, parseLimit } from "./index.js";
 
-describe("formatOutcome", () => {
-  it("lists each result under the engine heading", () => {
-    const lines = formatOutcome({
-      engineId: "test",
-      ok: true,
-      response: {
-        engine: "test",
-        query: { query: "cats" },
-        tookMs: 1,
-        results: [{ title: "Cats 101", url: "https://example.com/cats", source: "test", snippet: "All about cats" }],
-      },
+describe("formatSearch", () => {
+  it("lists ranked results with their refs and attribution", () => {
+    const lines = formatSearch({
+      searchId: "abc123",
+      query: { query: "cats" },
+      tookMs: 1,
+      degraded: false,
+      results: [
+        {
+          ref: "abc123-1",
+          title: "Cats 101",
+          url: "https://example.com/cats",
+          snippet: "All about cats",
+          score: 0.1,
+          bestSource: "test",
+          found: [{ engineId: "test", rank: 1 }],
+          families: ["test"],
+        },
+      ],
     });
 
-    expect(lines[0]).toBe("== test ==");
-    expect(lines).toContain("  1. Cats 101");
-    expect(lines).toContain("     https://example.com/cats");
-    expect(lines).toContain("     All about cats");
+    expect(lines).toContain("1. Cats 101");
+    expect(lines).toContain("   https://example.com/cats");
+    expect(lines).toContain("   ref: abc123-1");
+    expect(lines).toContain("   found: test #1");
+    expect(lines).toContain("   All about cats");
   });
 
-  it("notes when an engine returned no results", () => {
-    const lines = formatOutcome({
-      engineId: "test",
-      ok: true,
-      response: { engine: "test", query: { query: "cats" }, tookMs: 1, results: [] },
-    });
+  it("marks partial results without exposing failed engines", () => {
+    const lines = formatSearch({ searchId: "abc", query: { query: "cats" }, tookMs: 1, degraded: true, results: [] });
 
-    expect(lines).toContain("  (no results)");
-  });
-
-  it("surfaces a failed engine's error instead of results", () => {
-    const lines = formatOutcome({ engineId: "broken", ok: false, error: "boom" });
-
-    expect(lines).toEqual(["== broken ==", "  error: boom"]);
+    expect(lines).toEqual(["(partial results: one or more engines failed)", "(no results)"]);
   });
 });
 
 describe("CLI argument handling", () => {
+  it("accepts only final result limits allowed by the shared request schema", () => {
+    expect(parseLimit("1")).toBe(1);
+    expect(parseLimit("100")).toBe(100);
+    expect(() => parseLimit("2results")).toThrow();
+    expect(() => parseLimit("0")).toThrow();
+    expect(() => parseLimit("101")).toThrow();
+  });
+
   it("normalizes a valid query before searching", async () => {
     const write = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const program = createProgram(
@@ -52,8 +59,9 @@ describe("CLI argument handling", () => {
 
     await program.parseAsync(["node", "searchicus", "search", "  cats  ", "--json"]);
 
-    const outcomes = JSON.parse(write.mock.calls[0]?.[0] as string);
-    expect(outcomes[0].response.query.query).toBe("cats");
+    const response = JSON.parse(write.mock.calls[0]?.[0] as string);
+    expect(response.query.query).toBe("cats");
+    expect(response).not.toHaveProperty("outcomes");
     write.mockRestore();
   });
 

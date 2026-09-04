@@ -47,11 +47,13 @@ describe("Streamable HTTP endpoint", () => {
       await client.connect(transport);
       const result = (await client.callTool({
         name: "search",
-        arguments: { query: "cats" },
+        arguments: { query: "cats", limit: 1 },
       })) as CallToolResult;
 
       expect(result.isError).toBeFalsy();
-      expect(JSON.parse(textOf(result)).outcomes[0].response.results).toHaveLength(10);
+      const response = JSON.parse(textOf(result));
+      expect(response.results).toHaveLength(1);
+      expect(response).not.toHaveProperty("outcomes");
     } finally {
       await transport.close();
       await stopServer(server);

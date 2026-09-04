@@ -1,23 +1,19 @@
-import type { EngineSearchOutcome } from "@searchicus/core";
+import type { MergedSearchResponse } from "@searchicus/core";
 
-/** Render one engine's search outcome as human-readable lines. */
-export function formatOutcome(outcome: EngineSearchOutcome): string[] {
-  const lines = [`== ${outcome.engineId} ==`];
-
-  if (!outcome.ok) {
-    lines.push(`  error: ${outcome.error}`);
+/** Render one merged search response as a compact, attributable result list. */
+export function formatSearch(response: MergedSearchResponse): string[] {
+  const lines = response.degraded ? ["(partial results: one or more engines failed)"] : [];
+  if (response.results.length === 0) {
+    lines.push("(no results)");
     return lines;
   }
 
-  if (outcome.response.results.length === 0) {
-    lines.push("  (no results)");
-    return lines;
-  }
-
-  outcome.response.results.forEach((result, i) => {
-    lines.push(`  ${i + 1}. ${result.title}`);
-    lines.push(`     ${result.url}`);
-    if (result.snippet) lines.push(`     ${result.snippet}`);
+  response.results.forEach((result, index) => {
+    lines.push(`${index + 1}. ${result.title}`);
+    lines.push(`   ${result.url}`);
+    lines.push(`   ref: ${result.ref}`);
+    lines.push(`   found: ${result.found.map(({ engineId, rank }) => `${engineId} #${rank}`).join(", ")}`);
+    if (result.snippet) lines.push(`   ${result.snippet}`);
   });
 
   return lines;

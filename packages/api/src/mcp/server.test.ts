@@ -42,23 +42,54 @@ describe("tools/list", () => {
 });
 
 describe("search tool", () => {
-  it("returns results from the test engine", async () => {
+  it("returns one ranked response from the test engine", async () => {
     const client = await connectedClient();
     const result = await callTool(client, "search", { query: "cats" });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(textOf(result));
-    expect(parsed.outcomes).toHaveLength(1);
-    expect(parsed.outcomes[0].engineId).toBe("test");
-    expect(parsed.outcomes[0].response.results).toHaveLength(10);
+    expect(parsed.results).toHaveLength(8);
+    expect(parsed.degraded).toBe(false);
+    expect(parsed).not.toHaveProperty("outcomes");
   });
 
-  it("can target a specific subset of engines", async () => {
+  it("accepts the final result limit and selected engine ids", async () => {
     const client = await connectedClient();
-    const result = await callTool(client, "search", { query: "cats", engines: ["test"] });
+    const result = await callTool(client, "search", { query: "cats", limit: 1, engines: ["test"] });
 
     const parsed = JSON.parse(textOf(result));
-    expect(parsed.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["test"]);
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].found).toEqual([{ engineId: "test", rank: 1 }]);
+  });
+
+  it("reports partial results without exposing failed engine details", async () => {
+    const client = await connectedClient(
+      new SearchEngineRegistry({ throttle: null })
+        .register(new TestSearchEngine())
+        .register({ id: "broken", name: "Broken", search: async () => Promise.reject(new Error("blocked")) }),
+    );
+
+    const result = await callTool(client, "search", { query: "cats" });
+
+    expect(result.isError).toBeFalsy();
+    const text = textOf(result);
+    expect(JSON.parse(text).degraded).toBe(true);
+    expect(text).not.toContain("broken");
+  });
+
+  it("returns a generic tool error when every engine fails", async () => {
+    const client = await connectedClient(
+      new SearchEngineRegistry({ throttle: null }).register({
+        id: "broken",
+        name: "Broken",
+        search: async () => Promise.reject(new Error("blocked")),
+      }),
+    );
+
+    const result = await callTool(client, "search", { query: "cats" });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toBe("Search unavailable");
   });
 
   it("reports an isError result for an invalid query instead of throwing", async () => {

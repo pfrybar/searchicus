@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultRegistry, SearchEngineRegistry, UnknownEngineError } from "./registry.js";
+import { AllEnginesFailedError, createDefaultRegistry, SearchEngineRegistry, UnknownEngineError } from "./registry.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchResult } from "./types.js";
 
 class TestSearchEngine implements SearchEngine {
@@ -39,9 +39,44 @@ describe("SearchEngineRegistry", () => {
     expect(families).toEqual({ bing: "bing", brave: "brave", duckduckgo: "bing", startpage: "google" });
   });
 
-  it("throws UnknownEngineError for an unregistered engine", async () => {
+  it("throws UnknownEngineError for an unregistered single-engine search", async () => {
     const registry = new SearchEngineRegistry();
-    await expect(registry.search("nope", { query: "x" })).rejects.toBeInstanceOf(UnknownEngineError);
+    await expect(registry.searchOne("nope", { query: "x" })).rejects.toBeInstanceOf(UnknownEngineError);
+  });
+
+  it("returns one ranked response from the fan-out", async () => {
+    const registry = new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine());
+
+    const response = await registry.search({ query: "cats", limit: 1 });
+
+    expect(response).toMatchObject({ query: { query: "cats" }, degraded: false });
+    expect(response.searchId).toMatch(/^[0-9a-z]{13}$/);
+    expect(response.results).toHaveLength(1);
+    expect(response.results[0]?.ref).toBe(`${response.searchId}-1`);
+  });
+
+  it("marks a partial fan-out as degraded without exposing its outcomes", async () => {
+    const registry = new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine()).register({
+      id: "broken",
+      name: "Broken",
+      search: async () => Promise.reject(new Error("blocked")),
+    });
+
+    const response = await registry.search({ query: "cats" });
+
+    expect(response.degraded).toBe(true);
+    expect(response).not.toHaveProperty("outcomes");
+    expect(response.results).not.toHaveLength(0);
+  });
+
+  it("fails a merged search when every selected engine fails", async () => {
+    const registry = new SearchEngineRegistry({ throttle: null }).register({
+      id: "broken",
+      name: "Broken",
+      search: async () => Promise.reject(new Error("blocked")),
+    });
+
+    await expect(registry.search({ query: "cats" })).rejects.toBeInstanceOf(AllEnginesFailedError);
   });
 
   it("searchAll fans a query out across engines and reports failures individually", async () => {
