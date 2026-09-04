@@ -1,5 +1,5 @@
 import type { Locator, Page } from "playwright";
-import { sleep } from "./throttle.js";
+import { sleep } from "../throttle.js";
 
 /**
  * Human-like interaction primitives: jittered pauses, wandering cursor

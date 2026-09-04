@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PersistentContextOptions } from "./browser.js";
+import type { PersistentContextOptions } from "./session.js";
 
 const execFileAsync = promisify(execFile);
 

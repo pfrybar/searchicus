@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Page } from "playwright";
 import { afterAll, describe, expect, it } from "vitest";
-import { BrowserSession } from "./browser.js";
+import { BrowserSession } from "./session.js";
 
 /**
  * Chromium needs both its downloaded binary and a pile of system libraries
