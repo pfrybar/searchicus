@@ -304,13 +304,16 @@ describe("browser-backed engines (registration and wiring)", () => {
     const ids = createDefaultRegistry({ throttle: null })
       .list()
       .map((engine) => engine.id);
-    expect(ids).toEqual(["bing", "brave", "startpage"]);
+    expect(ids).toEqual(["bing", "brave", "duckduckgo", "startpage"]);
   });
 
-  it.each(["bing", "brave", "startpage"])("fails with a diagnosable error when %s has no browser", async (engineId) => {
-    const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats" }, [engineId]);
+  it.each(["bing", "brave", "duckduckgo", "startpage"])(
+    "fails with a diagnosable error when %s has no browser",
+    async (engineId) => {
+      const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats" }, [engineId]);
 
-    expect(outcomes[0]?.ok).toBe(false);
-    if (!outcomes[0]?.ok) expect(outcomes[0]?.error).toMatch(/createBrowserRegistry|browser session/i);
-  });
+      expect(outcomes[0]?.ok).toBe(false);
+      if (!outcomes[0]?.ok) expect(outcomes[0]?.error).toMatch(/createBrowserRegistry|browser session/i);
+    },
+  );
 });

@@ -75,6 +75,7 @@ keep the original contract.
 [
   { "id": "bing", "name": "Bing" },
   { "id": "brave", "name": "Brave" },
+  { "id": "duckduckgo", "name": "DuckDuckGo" },
   { "id": "startpage", "name": "Startpage" }
 ]
 ```
