@@ -1,4 +1,11 @@
-import { ExtractFailedError, SearchEngineRegistry, type PageRenderer } from "@searchicus/core";
+import {
+  ExtractFailedError,
+  SearchEngineRegistry,
+  type ArchiveInsights,
+  type EngineMetricsReport,
+  type PageRenderer,
+  type SearchSummary,
+} from "@searchicus/core";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { testExtraction } from "./__fixtures__/test-extraction.js";
@@ -23,7 +30,7 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     // `extract` reports whether this deployment will actually render pages,
     // so the UI can hide an action that would otherwise only ever fail.
-    expect(res.body).toEqual({ status: "ok", extract: false });
+    expect(res.body).toEqual({ status: "ok", extract: false, insights: false });
   });
 });
 
@@ -220,6 +227,131 @@ describe("POST /extract", () => {
   it("reports enabled extraction on the health endpoint", async () => {
     const res = await request(extractApp()).get("/health");
 
-    expect(res.body).toEqual({ status: "ok", extract: true });
+    expect(res.body).toEqual({ status: "ok", extract: true, insights: false });
+  });
+});
+
+describe("dashboard endpoints", () => {
+  const metrics: EngineMetricsReport = {
+    window: 2,
+    totalSearches: 2,
+    since: "2026-09-04T16:00:00.000Z",
+    engines: [
+      {
+        engineId: "bing",
+        searches: 2,
+        succeeded: 2,
+        failed: 0,
+        failures: [],
+        medianTookMs: 100,
+        p95TookMs: 120,
+        meanResultCount: 8,
+        meanCoverage: 1,
+        meanMatch: 0.9,
+        returned: 5,
+        bestSource: 3,
+        soleFinder: 1,
+        extracted: 2,
+      },
+    ],
+  };
+  const summary: SearchSummary = {
+    searchId: "abc123",
+    query: "cats",
+    startedAt: "2026-09-04T16:00:00.000Z",
+    status: "completed",
+    degraded: false,
+    tookMs: 320,
+    engineIds: ["bing"],
+    resultCount: 5,
+    engines: [],
+    extractions: 0,
+  };
+
+  function insightsApp(overrides: Partial<ArchiveInsights> = {}) {
+    const insights = {
+      engineMetrics: async () => metrics,
+      recentSearches: async () => [summary],
+      searchDetail: async (searchId: string) => (searchId === "abc123" ? { ...summary, merged: null } : undefined),
+      ...overrides,
+    } as unknown as ArchiveInsights;
+    return createApp(testRegistry(), { insights });
+  }
+
+  it("serves per-engine metrics", async () => {
+    const res = await request(insightsApp()).get("/metrics/engines");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ window: 2, totalSearches: 2 });
+    expect(res.body.engines[0].engineId).toBe("bing");
+  });
+
+  it("passes a window through and ignores an unusable one", async () => {
+    const windows: Array<number | undefined> = [];
+    const app = insightsApp({
+      engineMetrics: async (options) => {
+        windows.push(options?.window);
+        return metrics;
+      },
+    });
+
+    await request(app).get("/metrics/engines?window=10");
+    await request(app).get("/metrics/engines?window=banana");
+    await request(app).get("/metrics/engines");
+
+    // Bounds are the insights layer's job; the adapter only forwards what
+    // could be a number at all.
+    expect(windows).toEqual([10, undefined, undefined]);
+  });
+
+  it("lists searches and pages with a keyset cursor", async () => {
+    const cursors: Array<string | undefined> = [];
+    const app = insightsApp({
+      recentSearches: async (options) => {
+        cursors.push(options?.before);
+        return [summary];
+      },
+    });
+
+    const res = await request(app).get("/searches?limit=5&before=xyz789");
+
+    expect(res.status).toBe(200);
+    expect(res.body.searches).toHaveLength(1);
+    expect(cursors).toEqual(["xyz789"]);
+  });
+
+  it("serves one search's detail, and 404s for one that was never archived", async () => {
+    const found = await request(insightsApp()).get("/searches/abc123");
+    const missing = await request(insightsApp()).get("/searches/nope");
+
+    expect(found.status).toBe(200);
+    expect(found.body.searchId).toBe("abc123");
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ error: "No such search" });
+  });
+
+  it("answers 503 when no archive is configured, rather than an empty dashboard", async () => {
+    const app = createApp(testRegistry());
+
+    for (const path of ["/metrics/engines", "/searches", "/searches/abc123"]) {
+      const res = await request(app).get(path);
+      // An empty response would read as "you have never searched", which is a
+      // different and much more confusing statement than "archiving is off".
+      expect(res.status, path).toBe(503);
+      expect(res.body.error).toMatch(/no search archive/i);
+    }
+  });
+
+  it("reports archive availability on the health endpoint", async () => {
+    expect((await request(insightsApp()).get("/health")).body).toEqual({
+      status: "ok",
+      extract: false,
+      insights: true,
+    });
+  });
+
+  it("answers under /api too, which is what the UI calls", async () => {
+    expect((await request(insightsApp()).get("/api/metrics/engines")).status).toBe(200);
+    expect((await request(insightsApp()).get("/api/searches")).status).toBe(200);
   });
 });

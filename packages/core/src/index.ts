@@ -7,6 +7,7 @@ export * from "./schemas.js";
 export * from "./throttle.js";
 export * from "./relevance.js";
 export * from "./ranking.js";
+export * from "./insights.js";
 export * from "./registry.js";
 export * from "./extract/types.js";
 export * from "./extract/errors.js";

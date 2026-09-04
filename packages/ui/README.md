@@ -1,7 +1,30 @@
 # @searchicus/ui
 
-A minimal web UI: a search box that calls the HTTP API and renders results
-grouped by engine.
+A small web UI over the HTTP API: a search page, and two dashboard pages over
+the local archive.
+
+## Pages
+
+| Route             | Shows                                                                  |
+| ----------------- | ---------------------------------------------------------------------- |
+| `#/`              | Search, with an Extract action on each result when extraction is on.   |
+| `#/metrics`       | Per-engine reliability, latency, and what each engine contributed.     |
+| `#/searches`      | Archived searches, newest first.                                       |
+| `#/searches/<id>` | One search: every engine's own results side by side, plus the ranking. |
+
+Routing is hash-based and hand-rolled in `router.ts` — no router dependency.
+The API and this UI share one origin and one Express app, so real paths would
+need a history fallback there, and `app.ts` explains why a catch-all is a trap:
+it turns genuine API 404s into HTML. A hash keeps deep links working with no
+server change, which for a local dashboard is all routing has to do.
+
+The shell reads `GET /api/health` once on load and hides what the deployment
+cannot do — the Extract action without `SEARCHICUS_EXTRACT_ENABLED`, the
+dashboard links without an archive. A control that can only fail is worse than
+no control.
+
+Extracted page content is rendered as preformatted text, never as HTML: it is
+Markdown a stranger's website wrote.
 
 ## Running
 

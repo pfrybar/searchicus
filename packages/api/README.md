@@ -69,11 +69,12 @@ keep the original contract.
 ### `GET /health`
 
 ```json
-{ "status": "ok", "extract": false }
+{ "status": "ok", "extract": false, "insights": true }
 ```
 
-`extract` reports whether this deployment will actually render pages. The UI
-asks before showing its Extract action, so an operator's toggle is visible
+`extract` reports whether this deployment will actually render pages, and
+`insights` whether an archive is configured. The UI reads both once on load
+and hides the actions it cannot offer, so an operator's toggles are visible
 without making a request that renders anything.
 
 ### `GET /engines`
@@ -195,6 +196,33 @@ probing.
 curl -s localhost:3000/extract -H 'content-type: application/json' \
   -d '{"url":"https://example.com/","maxChars":500}' | jq
 ```
+
+### Dashboard endpoints
+
+Read-only views over the local archive, serving the UI's Metrics and History
+pages. They answer `503` when archiving is disabled, since an empty response
+would read as "nothing has ever been searched for" rather than "this is
+switched off".
+
+These return accumulated search history and the API has no authentication —
+see the root README's warning before exposing this beyond localhost.
+
+| Endpoint                  | Returns                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `GET /metrics/engines`    | Per-engine metrics over the recent window. `?window=N` (default 500, max 2000).                       |
+| `GET /searches`           | Recent searches, newest first. `?limit=N&before=<searchId>` pages with a keyset.                      |
+| `GET /searches/:searchId` | One search: every engine's own results, the merged ranking, and any extractions. `404` if unarchived. |
+
+```bash
+curl -s localhost:3000/metrics/engines?window=50 | jq '.engines[] | {engineId, returned, soleFinder}'
+curl -s localhost:3000/searches | jq '.searches[0]'
+```
+
+Metrics are computed over a bounded window rather than the whole archive: a
+dashboard that slows down as history accumulates stops being opened, and "how
+is this engine doing" is a question about the recent past. The response
+reports `window`, `totalSearches` and `since` so a truncated view is visible
+as one.
 
 ## MCP endpoint
 
