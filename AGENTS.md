@@ -118,8 +118,10 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - **Click through only after dwelling.** `click-through.ts` runs after the
   passive SERP dwell, considers only organic linked results, and samples 40%
   of searches with a weighted preference for higher ranks. Its decision and
-  landing pauses are deliberately lighter than `extractDwell()`; it must stay
-  best-effort and never turn ready results into a failed search.
+  landing pauses are deliberately lighter than `extractDwell()`. A popup must
+  be scoped to its originating SERP page and closed after that landing pause;
+  click-through must stay best-effort and never turn ready results into a
+  failed search.
 - **Parse with `textContent`, not `innerText`, and guard every read with
   `count()`.** Both were learned from the live site. `innerText` is a
   function of CSS, and a real SERP hid an organic result's heading with a

@@ -1,6 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { chooseClickThroughIndex, clickThroughResult } from "./click-through.js";
 
+function fakePage(popup?: { close: () => Promise<void> }) {
+  const events: string[] = [];
+  return {
+    events,
+    page: {
+      waitForEvent: async (event: string) => {
+        events.push(event);
+        return popup;
+      },
+    },
+  };
+}
+
 function fakeResults(count: number, linkedRanks: ReadonlySet<number> = new Set([0, 1, 2, 3, 4])) {
   const clicks: number[] = [];
   const clickOptions: unknown[] = [];
@@ -40,22 +53,25 @@ describe("chooseClickThroughIndex", () => {
 
 describe("clickThroughResult", () => {
   it("does not click when the random draw falls outside the configured rate", async () => {
+    const { page } = fakePage();
     const { locator, clicks } = fakeResults(5);
 
     await expect(
-      clickThroughResult(locator as never, undefined, { rate: 0.4, random: () => 0.4 }),
+      clickThroughResult(page as never, locator as never, undefined, { rate: 0.4, random: () => 0.4 }),
     ).resolves.toBeUndefined();
 
     expect(clicks).toEqual([]);
   });
 
-  it("clicks a weighted organic result when selected", async () => {
+  it("clicks a weighted organic result and closes its popup", async () => {
     vi.useFakeTimers();
     try {
       const controller = new AbortController();
+      let closed = false;
+      const { page, events } = fakePage({ close: async () => void (closed = true) });
       const { locator, clicks, clickOptions } = fakeResults(5);
       const draws = [0, 0.5]; // Click, then choose the second-ranked result.
-      const clickThrough = clickThroughResult(locator as never, controller.signal, {
+      const clickThrough = clickThroughResult(page as never, locator as never, controller.signal, {
         rate: 0.4,
         random: () => draws.shift() ?? 0,
       });
@@ -63,18 +79,21 @@ describe("clickThroughResult", () => {
       await vi.runAllTimersAsync();
       await expect(clickThrough).resolves.toBeUndefined();
 
+      expect(events).toEqual(["popup"]);
       expect(clicks).toEqual([1]);
       expect(clickOptions).toEqual([{ timeout: 5_000, signal: controller.signal }]);
+      expect(closed).toBe(true);
     } finally {
       vi.useRealTimers();
     }
   });
 
   it("does not click a result without a linked heading", async () => {
+    const { page } = fakePage();
     const { locator, clicks } = fakeResults(1, new Set());
 
     await expect(
-      clickThroughResult(locator as never, undefined, { rate: 1, random: () => 0 }),
+      clickThroughResult(page as never, locator as never, undefined, { rate: 1, random: () => 0 }),
     ).resolves.toBeUndefined();
 
     expect(clicks).toEqual([]);
@@ -83,16 +102,20 @@ describe("clickThroughResult", () => {
   it("settles without clicking when aborted", async () => {
     const controller = new AbortController();
     controller.abort();
+    const { page } = fakePage();
     const { locator, clicks } = fakeResults(1);
 
-    await expect(clickThroughResult(locator as never, controller.signal, { rate: 1 })).resolves.toBeUndefined();
+    await expect(
+      clickThroughResult(page as never, locator as never, controller.signal, { rate: 1 }),
+    ).resolves.toBeUndefined();
 
     expect(clicks).toEqual([]);
   });
 
   it("settles when the result locator fails", async () => {
+    const { page } = fakePage();
     const locator = { count: () => Promise.reject(new Error("page closed")) };
 
-    await expect(clickThroughResult(locator as never, undefined, { rate: 1 })).resolves.toBeUndefined();
+    await expect(clickThroughResult(page as never, locator as never, undefined, { rate: 1 })).resolves.toBeUndefined();
   });
 });
