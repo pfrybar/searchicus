@@ -19,8 +19,12 @@ server, UI):
 - `BingSearchEngine` / `BraveSearchEngine` / `DuckDuckGoSearchEngine` /
   `StartpageSearchEngine` — drive their search engines through a real browser:
   homepage, type, submit, parse. All need a browser-backed registry.
-- `NoResultsError` / `OffTargetResultsError` — the two content-level failures
-  any engine can hit, shared by all of them.
+- `NoResultsError` / `OffTargetResultsError` / `SearchBoxUnavailableError` —
+  the content-level failures any engine can hit, shared by all of them.
+- `runBrowserSearch()` / `BrowserSearchSpec` — the interaction every engine
+  performs, so an engine supplies only its homepage, selectors and parser.
+- `readText()` / `readCollapsed()` / `readSnippet()` / `collapse()` — how a
+  field is read off a SERP, guarded and style-stripped.
 - `assessRelevance()` — scores a result set against its query, to catch a
   results page that parses cleanly but answers a different question.
 - `createDefaultRegistry()` — the registry every front door uses by default.

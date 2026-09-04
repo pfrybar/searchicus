@@ -3,15 +3,20 @@ import type { SearchResult } from "./types.js";
 /**
  * Guards against a results page that parses perfectly and means nothing.
  *
- * The failure this exists for is not a block. Bing sometimes answers a
+ * The failure this exists for is not a block. A search engine can answer a
  * multi-word query with results for only its *first* term — "best waterpark
- * in chicago" comes back full of "Best Buy". HTTP 200, valid markup, the
- * parser is happy, and every result is real; they are simply answers to a
- * question nobody asked. It is the worst shape of failure because nothing
- * looks wrong, so it has to be detected from the content rather than the
- * transport. (Not unique to automation — searx/searxng#4964 reports the same
- * "results matching only 1 word or 2 words" behaviour — but it shows up more
- * on traffic a search engine is suspicious of.)
+ * in chicago" comes back full of "Best Buy", which is what Bing did and what
+ * named this module. HTTP 200, valid markup, the parser is happy, and every
+ * result is real; they are simply answers to a question nobody asked. It is
+ * the worst shape of failure because nothing looks wrong, so it has to be
+ * detected from the content rather than the transport. (Not unique to
+ * automation — searx/searxng#4964 reports the same "results matching only 1
+ * word or 2 words" behaviour — but it shows up more on traffic a search
+ * engine is suspicious of.)
+ *
+ * Every engine runs this gate, and it is deliberately engine-agnostic: it
+ * scores a result set against the query it claims to answer, with no
+ * knowledge of who produced it.
  *
  * The signal is token coverage: how much of what was asked for appears
  * anywhere in what came back. A first-term-only page scores about 1/n and is

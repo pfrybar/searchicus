@@ -82,9 +82,7 @@ describe.skipIf(!browser)("parseBraveResults (against a captured SERP)", () => {
     expect(parsed.some((r) => r.url.includes("search.brave.com"))).toBe(false);
   });
 
-  it("reads a title that the page's own CSS clamps", async () => {
-    // Every Brave title carries `line-clamp-1`, so innerText would return
-    // whatever happened to fit the rendered width.
+  it("reads the full title", async () => {
     const [first] = await parseBraveResults(results());
 
     expect(first?.title).toBe("r/LoganSquare on Reddit: Best waterpark in Chicago?");

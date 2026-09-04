@@ -130,15 +130,37 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   result. And Playwright's text/attribute readers _auto-wait_: reading a
   field that isn't there blocks for the full default timeout (30s) before any
   `catch` runs, which is enough to exhaust the registry's whole results
-  budget. `count()` never waits. `textContent` has one cost to know about: it
-  also returns the text of `<style>` and `<script>` nodes, so an engine whose
-  site parks styles inline (Startpage does, mid-hydration) has to subtract
-  them — reaching for `innerText` to fix that brings the CSS problem back.
-- **Result markup belongs to the engine; behaviour belongs to the shared
-  helpers.** Each engine owns its own selectors and passes them to anything
-  shared — `clickThroughResult` takes the engine's `linkSelector` because Bing
-  links from `h2 a` and Brave has no heading element at all, and a wrong
-  selector there fails silently rather than loudly. Prefer selectors the site
+  budget. `count()` never waits. Both rules live in `engines/parse.ts` now —
+  use `readText`/`readCollapsed`/`readSnippet` rather than calling
+  `textContent` directly. `textContent` has one cost they handle: it also
+  returns the text of `<style>` and `<script>` nodes, so a site that parks
+  styles inline (Startpage does, mid-hydration) yields titles with CSS in
+  them. Reaching for `innerText` to fix that brings the hiding problem back —
+  and note the trigger is `visibility:hidden`, not `display:none`, which
+  `innerText` falls back to `textContent` for (pinned in parse.test.ts).
+- **Auto-wait bites on input too, not just reads.** `pressSequentially` waits
+  with Playwright's 30s default, so a renamed search box used to burn the
+  registry's whole results budget and fail with a raw locator timeout. The
+  flow confirms the box first and bounds typing, raising
+  `SearchBoxUnavailableError` in ~5s naming the engine.
+- **The interaction is shared; the selectors are not.** `engines/flow.ts`
+  owns the sequence every engine performs (homepage, type, submit, wait,
+  parse, relevance-gate, then dwell and click-through as `completed`) and
+  `engines/parse.ts` owns how a field is read. An engine supplies only a
+  `BrowserSearchSpec`: its homepage, its selectors and its own parser. Put
+  behaviour in the flow and site knowledge in the engine — the selectors are
+  the part that rots, and each site rots differently.
+- **Hand back a union of search-box candidates, never `.first()` of one.** A
+  comma selector is matched in _document order_, not in the order its
+  alternatives are written, so `.first()` means "whichever is first in the
+  DOM", not "the preferred one". Startpage's homepage puts four
+  `<input type="hidden" name="query">` ahead of its real `#q`. The flow
+  filters to visible before choosing; an engine that narrows first defeats it.
+- **Result markup belongs to the engine.** Each engine owns its own selectors
+  and passes them to anything shared — `clickThroughResult` takes the engine's
+  `linkSelector` because Bing links from `h2 a` and Brave has no heading
+  element at all, and a wrong selector there fails silently rather than
+  loudly. Prefer selectors the site
   means (ids, `data-*`, semantic class fragments) over ones its build emits:
   Brave's UI is compiled from Svelte and every styled element carries a hash
   like `svelte-jmfu5f` that changes whenever they ship CSS. Where a site mixes

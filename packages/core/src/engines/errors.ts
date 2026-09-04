@@ -28,6 +28,28 @@ export class OffTargetResultsError extends Error {
   }
 }
 
+/**
+ * Raised when an engine's search box could not be found.
+ *
+ * Separate from "no results" because it fails before a query is ever sent,
+ * and because it means one specific thing: the site moved its input and this
+ * engine's selector needs updating.
+ */
+export class SearchBoxUnavailableError extends Error {
+  constructor(
+    readonly engine: string,
+    url: string,
+    cause?: unknown,
+  ) {
+    super(
+      `${engine} did not present a usable search box (at ${url}). The page loaded, so this is ` +
+        `most likely a changed input element rather than a block — check the engine's searchBox().`,
+    );
+    this.name = "SearchBoxUnavailableError";
+    if (cause !== undefined) this.cause = cause;
+  }
+}
+
 /** Raised when the results page never appeared, or held no organic results. */
 export class NoResultsError extends Error {
   constructor(

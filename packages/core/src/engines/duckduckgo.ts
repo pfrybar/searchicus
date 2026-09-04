@@ -1,11 +1,8 @@
 import type { Locator, Page } from "playwright";
 import type { SearchContext } from "../context.js";
-import { clickThroughResult } from "../browser/click-through.js";
-import { searchDwell } from "../browser/dwell.js";
-import { humanPause, humanType } from "../browser/human.js";
-import { assessRelevance } from "../relevance.js";
 import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../types.js";
-import { NoResultsError, OffTargetResultsError } from "./errors.js";
+import { type BrowserSearchSpec, runBrowserSearch } from "./flow.js";
+import { DEFAULT_LIMIT, EXTRACT_TIMEOUT_MS, collapse, readCollapsed, readSnippet } from "./parse.js";
 
 /**
  * DuckDuckGo, driven through a real browser the way a person would drive it.
@@ -16,10 +13,8 @@ import { NoResultsError, OffTargetResultsError } from "./errors.js";
  * `ad_provider=bingv7aa`. What it adds is DuckDuckGo's own ranking and the
  * portion of the corpus it crawls itself.
  *
- * Same interaction as the other engines — homepage first, type, submit, parse,
- * check relevance, then dwell and occasionally click through as
- * `SearchSession.completed`. See bing.ts for why the shape is that way; below
- * is only what DuckDuckGo does differently.
+ * See flow.ts for the interaction every engine performs and why. What is
+ * specific to DuckDuckGo:
  *
  * - **Ads are siblings of the organic results, and look identical.** They are
  *   `<li>` elements in the same `ol.react-results--main` list, and each one
@@ -57,97 +52,35 @@ const LINK_SELECTOR = '[data-testid="result-title-a"]';
 /** The result description. */
 const SNIPPET_SELECTOR = '[data-result="snippet"]';
 
-/** Shorter than the registry's 30s results budget, so failures are specific. */
-const NAVIGATION_TIMEOUT_MS = 15_000;
-/** How long to wait for a results page after submitting the query. */
-const RESULTS_TIMEOUT_MS = 10_000;
-/**
- * Per-field read budget once the SERP is loaded. Nothing here should ever
- * wait — the page is already rendered — so this only bounds a pathological
- * case rather than being part of normal operation.
- */
-const EXTRACT_TIMEOUT_MS = 2_000;
-
-/** Default result count, matching one DuckDuckGo page. */
-const DEFAULT_LIMIT = 10;
-
-export class DuckDuckGoSearchEngine implements SearchEngine {
+export class DuckDuckGoSearchEngine implements SearchEngine, BrowserSearchSpec {
   readonly id = "duckduckgo";
   readonly name = "DuckDuckGo";
+  readonly homepage = HOMEPAGE;
+  readonly linkSelector = LINK_SELECTOR;
 
-  async search(query: SearchQuery, ctx: SearchContext): Promise<SearchSession> {
-    // Timed from here so tookMs covers acquiring the browser and the whole
-    // interaction, which is the number worth knowing.
-    const start = Date.now();
-    const limit = query.limit ?? DEFAULT_LIMIT;
+  /**
+   * The search box. A `textarea`, not an input, and it carries no id — the
+   * class is a CSS-module hash, so `[name="q"]` is the only durable handle.
+   * The input fallback is listed for the day they change the element back.
+   */
+  searchBox(page: Page): Locator {
+    return page.locator("textarea[name='q'], input[name='q']");
+  }
 
-    const { page } = await ctx.acquireBrowser();
+  results(page: Page): Locator {
+    return page.locator(RESULT_SELECTOR);
+  }
 
-    await page.goto(HOMEPAGE, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
+  parse(results: Locator, limit: number): Promise<SearchResult[]> {
+    return parseDuckDuckGoResults(results, limit);
+  }
 
-    const box = searchBox(page);
-    // Read the page before starting to type, as a person would.
-    await humanPause(400, 1200, ctx.signal);
-    await humanType(box, query.query, ctx.signal);
-    await humanPause(400, 1000, ctx.signal);
-    await box.press("Enter");
-
-    const results = page.locator(RESULT_SELECTOR);
-    try {
-      await results.first().waitFor({ state: "attached", timeout: RESULTS_TIMEOUT_MS });
-    } catch (err) {
-      throw new NoResultsError(this.name, page.url(), err);
-    }
-
-    const parsed = await parseDuckDuckGoResults(results, limit);
-    if (parsed.length === 0) throw new NoResultsError(this.name, page.url());
-
-    const report = assessRelevance(query.query, parsed);
-    if (report.offTarget) throw new OffTargetResultsError(this.name, query.query, report);
-
-    return {
-      response: {
-        query,
-        results: parsed,
-        engine: this.id,
-        tookMs: Date.now() - start,
-      },
-      // Results are ready; the page is dwelled on and then occasionally
-      // clicked through in the background. The registry holds the browser
-      // lease until this settles; both phases are best-effort and never reject.
-      completed: completeSearchSession(page, results, ctx.signal),
-    };
+  search(query: SearchQuery, ctx: SearchContext): Promise<SearchSession> {
+    return runBrowserSearch(this, query, ctx);
   }
 }
 
-/** Finishes the background browser behavior after results have been returned. */
-async function completeSearchSession(page: Page, results: Locator, signal: AbortSignal): Promise<void> {
-  await searchDwell(page, results, signal);
-  await clickThroughResult(page, results, signal, { linkSelector: LINK_SELECTOR });
-}
-
-/**
- * The search box.
- *
- * A `textarea`, not an input, and it carries no id — the class is a CSS-module
- * hash, so `[name="q"]` is the only durable handle. The input fallback is
- * listed for the day they change the element back. Resolved once and reused,
- * rather than re-queried per keystroke.
- */
-function searchBox(page: Page): Locator {
-  return page.locator("textarea[name='q'], input[name='q']").first();
-}
-
-/**
- * Reads up to `limit` organic results out of an already-loaded SERP.
- *
- * The same two rules as the other parsers apply, for the same reasons: every
- * read is guarded by `count()` first, because Playwright's text and attribute
- * readers *auto-wait* and would otherwise spend the full 30s default timeout
- * discovering that an optional field is absent; and text comes from
- * `textContent` rather than `innerText`, so a title the page's own CSS clips
- * still yields its full text.
- */
+/** Reads up to `limit` organic results out of an already-loaded SERP. */
 export async function parseDuckDuckGoResults(results: Locator, limit = DEFAULT_LIMIT): Promise<SearchResult[]> {
   const available = await results.count();
   const parsed: SearchResult[] = [];
@@ -162,7 +95,7 @@ export async function parseDuckDuckGoResults(results: Locator, limit = DEFAULT_L
 
     const [href, rawTitle] = await Promise.all([
       link.getAttribute("href", { timeout: EXTRACT_TIMEOUT_MS }).catch(() => null),
-      link.textContent({ timeout: EXTRACT_TIMEOUT_MS }).catch(() => null),
+      readCollapsed(link),
     ]);
 
     const title = collapse(rawTitle);
@@ -170,24 +103,13 @@ export async function parseDuckDuckGoResults(results: Locator, limit = DEFAULT_L
     // the guard against a half-decoded redirect that Bing's parser needs.
     if (!href?.startsWith("http") || !title) continue;
 
-    const snippetEl = item.locator(SNIPPET_SELECTOR).first();
-    const snippet =
-      (await snippetEl.count()) > 0
-        ? collapse(await snippetEl.textContent({ timeout: EXTRACT_TIMEOUT_MS }).catch(() => null))
-        : "";
-
     parsed.push({
       title,
       url: href,
-      snippet: snippet || undefined,
+      snippet: await readSnippet(item.locator(SNIPPET_SELECTOR).first()),
       source: "duckduckgo",
     });
   }
 
   return parsed;
-}
-
-/** Collapses runs of whitespace, since textContent preserves the markup's. */
-function collapse(text: string | null): string {
-  return (text ?? "").replace(/\s+/g, " ").trim();
 }

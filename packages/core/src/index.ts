@@ -5,6 +5,8 @@ export * from "./throttle.js";
 export * from "./relevance.js";
 export * from "./registry.js";
 export * from "./engines/errors.js";
+export * from "./engines/flow.js";
+export * from "./engines/parse.js";
 export * from "./engines/bing.js";
 export * from "./engines/brave.js";
 export * from "./engines/duckduckgo.js";
