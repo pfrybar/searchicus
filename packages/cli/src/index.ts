@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createDefaultRegistry, SearchEngineRegistry, SearchQuerySchema } from "@searchicus/core";
+import { createDefaultRegistry, SearchEngineRegistry, SearchQuerySchema, SearchRequestSchema } from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
 import { formatOutcome } from "./format.js";
@@ -20,9 +20,9 @@ export function parseLimit(value: string): number {
 
 /**
  * Creates the CLI program. Supplying a registry makes command behavior easy
- * to exercise in tests without relying on module-level state. Defaults to
- * core's shared default registry — see AGENTS.md for how to wire up real
- * backends.
+ * to exercise in tests without relying on module-level state. Its default is
+ * core's browser-free registry, which can list registered engines but cannot
+ * run browser-backed ones; executable CLI usage injects createBrowserRegistry().
  */
 export function createProgram(registry: SearchEngineRegistry = createDefaultRegistry()): Command {
   const program = new Command();
@@ -36,13 +36,13 @@ export function createProgram(registry: SearchEngineRegistry = createDefaultRegi
     .option("-l, --limit <n>", "max results per engine (1–100)", parseLimit, 10)
     .option("--json", "print raw JSON instead of a formatted list")
     .action(async (query: string, opts: { engine?: string[]; limit: number; json?: boolean }) => {
-      const parsed = SearchQuerySchema.safeParse({ query, limit: opts.limit });
+      const parsed = SearchRequestSchema.safeParse({ query, limit: opts.limit, engines: opts.engine });
       if (!parsed.success) {
-        throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid search query");
+        throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid search request");
       }
 
-      const engineIds = opts.engine ?? registry.list().map((engine) => engine.id);
-      const outcomes = await registry.searchAll(parsed.data, engineIds);
+      const { engines: engineIds, ...searchQuery } = parsed.data;
+      const outcomes = await registry.searchAll(searchQuery, engineIds);
 
       if (opts.json) {
         console.log(JSON.stringify(outcomes, null, 2));

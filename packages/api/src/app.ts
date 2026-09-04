@@ -40,9 +40,10 @@ export interface CreateAppOptions {
 
 /**
  * Builds the Express app. Takes a registry so tests can inject their own
- * (see app.test.ts) instead of depending on module-level state. Defaults to
- * core's shared default registry — see AGENTS.md for how to wire up real
- * backends.
+ * (see app.test.ts) instead of depending on module-level state. Its default
+ * is core's browser-free registry, which can list engines but returns a
+ * diagnosable per-engine failure for browser-backed searches. The executable
+ * server entry point injects createBrowserRegistry("api").
  */
 export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),

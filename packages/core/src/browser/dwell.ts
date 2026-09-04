@@ -40,8 +40,8 @@ import { humanPause, randInt } from "./human.js";
  * Pass `signal` so a shutdown or an expired session deadline cuts the dwell
  * short instead of the registry having to force it.
  */
-export function searchDwell(page: Page, resultEls?: Locator, signal?: AbortSignal): Promise<void> {
-  const run = async (): Promise<void> => {
+export async function searchDwell(page: Page, resultEls?: Locator, signal?: AbortSignal): Promise<void> {
+  try {
     // 1. settle: the read-before-scroll beat
     await humanPause(1000, 2500, signal);
 
@@ -68,17 +68,18 @@ export function searchDwell(page: Page, resultEls?: Locator, signal?: AbortSigna
       await page.mouse.wheel(0, -randInt(150, 300)).catch(() => undefined);
       await humanPause(400, 1000, signal);
     }
-  };
-
-  return run().catch(() => undefined);
+  } catch {
+    // A dwell is decorative: it must always settle, even when aborted or its
+    // page disappears during shutdown.
+  }
 }
 
 /**
  * The lighter dwell for reading a single extracted page: settle while lazy
  * content renders, one or two short scrolls, then stop (~1-4s).
  */
-export function extractDwell(page: Page, signal?: AbortSignal): Promise<void> {
-  const run = async (): Promise<void> => {
+export async function extractDwell(page: Page, signal?: AbortSignal): Promise<void> {
+  try {
     await humanPause(1000, 2000, signal);
 
     for (let i = 0, steps = randInt(1, 2); i < steps; i++) {
@@ -87,7 +88,8 @@ export function extractDwell(page: Page, signal?: AbortSignal): Promise<void> {
     }
 
     await humanPause(200, 600, signal);
-  };
-
-  return run().catch(() => undefined);
+  } catch {
+    // A dwell is decorative: it must always settle, even when aborted or its
+    // page disappears during shutdown.
+  }
 }
