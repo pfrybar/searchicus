@@ -14,16 +14,17 @@ architecture picture.
 Backend engines drive a real headless browser. `core` owns a single
 long-lived Chromium instance (Playwright `launchPersistentContext`) and
 hands each search a page from it; engines parse results out of that page.
-A deterministic `MockSearchEngine` is still registered by default so the
-whole stack runs — and the whole test suite passes — with no browser
-installed at all.
+Two engines are registered by default: `bing`, which drives the real site,
+and a deterministic `MockSearchEngine`, so the whole stack runs — and the
+whole test suite passes — with no browser installed at all.
 
 ## Repo layout
 
 ```
 packages/
-  core/   shared types + SearchEngine interface + registry + mock engine
+  core/   shared types + SearchEngine interface + registry + engines
           + browser session (Playwright) + rate-limit throttle
+          + browser realism (stealth/human/dwell) + relevance gate
   cli/    `searchicus` CLI (commander)
   api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
   ui/     web UI (vite + react)
@@ -98,6 +99,34 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   type-imports from core, so a value import of Playwright there would drag
   browser binaries into a Vite bundle. The registry depends on the
   `BrowserProvider` interface, never on the `BrowserSession` class.
+  `human.ts`, `dwell.ts` and `relevance.ts` import Playwright for **types
+  only**, which is why an engine in the main entry may use them; `stealth.ts`
+  reads the browser binary with `node:child_process` and so is reachable only
+  from `browser.ts`. Check with: import `core/dist/index.js` and confirm
+  nothing matching `playwright` lands in the module cache.
+- **Browser identity lives in `stealth.ts`, not in engines.** Context options
+  and one init script, applied by `createDefaultBrowserSession()`. The
+  init script is installed inside the launch path, so it survives a crash
+  relaunch; `launchOptions` may be a factory, resolved on first launch, so
+  values that require asking the binary about itself (the UA has to name the
+  version the binary actually is) don't break the rule that an engine which
+  never calls `acquireBrowser()` starts no browser. `channel: "chromium"` is
+  load-bearing — Playwright's default headless is a different, much barer
+  binary. Timezone and locale must stay plausible for the egress IP;
+  `SEARCHICUS_TIMEZONE` / `SEARCHICUS_LOCALE` override them.
+- **Parse with `textContent`, not `innerText`, and guard every read with
+  `count()`.** Both were learned from the live site. `innerText` is a
+  function of CSS, and a real SERP hid an organic result's heading with a
+  style rule, so `innerText` returned `""` and the parser discarded a good
+  result. And Playwright's text/attribute readers _auto-wait_: reading a
+  field that isn't there blocks for the full default timeout (30s) before any
+  `catch` runs, which is enough to exhaust the registry's whole results
+  budget. `count()` never waits.
+- **Check that results answer the query that was asked.** `relevance.ts`
+  scores token coverage, because a search engine can return HTTP 200 with
+  valid markup and real results that are answers to a different question —
+  classically, only the query's first term. Nothing about the transport looks
+  wrong, so it has to be caught from the content.
 - **Results and sessions are separate signals.** `search()` resolving means
   results are ready; the returned `SearchSession.completed` settling means
   the browser work is done. An engine may return results and keep using its

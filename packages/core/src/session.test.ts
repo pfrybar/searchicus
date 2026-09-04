@@ -1,7 +1,7 @@
 import type { Page } from "playwright";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
-import { SearchEngineRegistry } from "./registry.js";
+import { createDefaultRegistry, SearchEngineRegistry } from "./registry.js";
 import { sleep } from "./throttle.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchSession } from "./types.js";
 
@@ -296,5 +296,31 @@ describe("close()", () => {
 
     const outcomes = await reg.searchAll({ query: "cats" });
     expect(outcomes[0]).toMatchObject({ ok: false });
+  });
+});
+
+describe("BingSearchEngine (registration and wiring)", () => {
+  it("is registered by default, alongside the mock engine", () => {
+    const ids = createDefaultRegistry({ throttle: null })
+      .list()
+      .map((engine) => engine.id);
+    expect(ids).toContain("bing");
+    expect(ids).toContain("mock");
+  });
+
+  it("fails with a diagnosable error when no browser is configured", async () => {
+    const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats" }, ["bing"]);
+
+    expect(outcomes[0]?.ok).toBe(false);
+    if (!outcomes[0]?.ok) expect(outcomes[0]?.error).toMatch(/createBrowserRegistry|browser session/i);
+  });
+
+  it("does not stop the mock engine from answering in the same fan-out", async () => {
+    const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats", limit: 2 });
+
+    const mock = outcomes.find((o) => o.engineId === "mock");
+    const bing = outcomes.find((o) => o.engineId === "bing");
+    expect(mock?.ok).toBe(true);
+    expect(bing?.ok).toBe(false);
   });
 });

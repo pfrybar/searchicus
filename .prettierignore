@@ -1,3 +1,7 @@
 dist/
 coverage/
 package-lock.json
+
+# Captured SERP markup used as a test fixture. Reformatting it would edit
+# evidence — the whitespace is part of what was actually served.
+packages/core/src/__fixtures__/
