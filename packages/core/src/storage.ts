@@ -143,15 +143,25 @@ export class SqliteSearchArchive implements SearchArchive {
   }
 
   #migrate(db: DatabaseSync): void {
-    const row = db.prepare("PRAGMA user_version").get();
-    const version = Number(row?.user_version ?? 0);
-    if (version > ARCHIVE_SCHEMA_VERSION) {
-      throw new Error(`Search archive schema ${version} is newer than supported version ${ARCHIVE_SCHEMA_VERSION}`);
-    }
-    if (version === ARCHIVE_SCHEMA_VERSION) return;
+    // Unlocked fast path: the overwhelming case is an already-migrated file,
+    // and taking a write lock to discover that would serialize every process
+    // start against the shared volume.
+    if (this.#schemaVersion(db) === ARCHIVE_SCHEMA_VERSION) return;
 
     db.exec("BEGIN IMMEDIATE");
     try {
+      // Re-read under the write lock. The API and CLI share one archive file,
+      // so they can reach a brand-new database together; the winner creates
+      // the schema and sets user_version in this same transaction. Trusting
+      // the unlocked read above would make every loser re-run the DDL and
+      // fail with "table searches already exists", silently dropping its
+      // record, because archive writes are best-effort.
+      const version = this.#schemaVersion(db);
+      if (version === ARCHIVE_SCHEMA_VERSION) {
+        db.exec("COMMIT");
+        return;
+      }
+
       if (version < 1) {
         db.exec(`
           CREATE TABLE searches (
@@ -204,6 +214,16 @@ export class SqliteSearchArchive implements SearchArchive {
       rollback(db);
       throw err;
     }
+  }
+
+  /** Reads the file's schema version, refusing one this build cannot read. */
+  #schemaVersion(db: DatabaseSync): number {
+    const row = db.prepare("PRAGMA user_version").get();
+    const version = Number(row?.user_version ?? 0);
+    if (version > ARCHIVE_SCHEMA_VERSION) {
+      throw new Error(`Search archive schema ${version} is newer than supported version ${ARCHIVE_SCHEMA_VERSION}`);
+    }
+    return version;
   }
 }
 

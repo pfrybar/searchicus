@@ -1,11 +1,15 @@
+import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchArchiveRecord } from "./archive.js";
 import { defaultDataDir, defaultProfileDir, defaultStorePath, searchArchiveEnabled } from "./paths.js";
 import { ARCHIVE_SCHEMA_VERSION, createDefaultSearchArchive, SqliteSearchArchive } from "./storage.js";
 
+const execFileAsync = promisify(execFile);
 const directories: string[] = [];
 
 function temporaryDatabase(): string {
@@ -173,6 +177,76 @@ describe("SqliteSearchArchive", () => {
         degraded: null,
       });
       expect(db.prepare("SELECT error_kind FROM engine_results").get()).toEqual({ error_kind: "browser_unavailable" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reuses an archive that already carries the current schema", async () => {
+    const filePath = temporaryDatabase();
+    const first = new SqliteSearchArchive(filePath);
+    await first.archive(record());
+    await first.close();
+
+    // Every other case here starts from an empty file, so nothing otherwise
+    // exercises the migration's early return on an existing database.
+    const second = new SqliteSearchArchive(filePath);
+    await second.archive(record({ searchId: "search-456" }));
+    await second.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(filePath);
+    try {
+      expect(db.prepare("SELECT search_id FROM searches ORDER BY search_id").all()).toEqual([
+        { search_id: "search-123" },
+        { search_id: "search-456" },
+      ]);
+      expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: ARCHIVE_SCHEMA_VERSION });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses an archive written by a newer schema rather than corrupting it", async () => {
+    const filePath = temporaryDatabase();
+    const { DatabaseSync } = await import("node:sqlite");
+    const seed = new DatabaseSync(filePath);
+    seed.exec(`PRAGMA user_version = ${ARCHIVE_SCHEMA_VERSION + 1}`);
+    seed.close();
+
+    const store = new SqliteSearchArchive(filePath);
+    await expect(store.archive(record())).rejects.toThrow(/newer than supported version/);
+    await store.close();
+  });
+
+  it("lets several processes race to create the same new archive", { timeout: 30_000 }, async () => {
+    const filePath = temporaryDatabase();
+    const racer = fileURLToPath(new URL("./__fixtures__/archive-racer.mjs", import.meta.url));
+
+    // The regression: the migration used to read user_version before taking
+    // the write lock, so every process but the winner re-ran the DDL and died
+    // on "table searches already exists" — losing its record silently,
+    // because archive writes are best-effort.
+    const outcomes = await Promise.allSettled(
+      ["one", "two", "three", "four"].map((searchId) =>
+        // --no-warnings keeps a failing racer's own message readable instead
+        // of buried in Node's experimental-SQLite notice.
+        execFileAsync(process.execPath, ["--no-warnings=ExperimentalWarning", racer, filePath, searchId]),
+      ),
+    );
+
+    const failures = outcomes.flatMap((outcome) =>
+      outcome.status === "rejected"
+        ? [String((outcome.reason as { stderr?: string }).stderr ?? outcome.reason).trim()]
+        : [],
+    );
+    expect(failures).toEqual([]);
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(filePath);
+    try {
+      expect(db.prepare("SELECT count(*) AS count FROM searches").get()).toEqual({ count: 4 });
+      expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally {
       db.close();
     }
