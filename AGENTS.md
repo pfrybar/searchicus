@@ -14,9 +14,9 @@ architecture picture.
 Backend engines drive a real headless browser. `core` owns a single
 long-lived Chromium instance (Playwright `launchPersistentContext`) and
 hands each search a page from it; engines parse results out of that page.
-Two engines are registered by default: `bing`, which drives the real site,
-and a deterministic `MockSearchEngine`, so the whole stack runs — and the
-whole test suite passes — with no browser installed at all.
+The `bing` engine is registered by default and drives the real site. Tests
+inject deterministic test doubles where they need browser-free adapter
+coverage.
 
 ## Repo layout
 
@@ -165,9 +165,9 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.
-- If you touch the plugin interface or shared request schemas, update the
-  mock engine and every adapter (CLI/API/MCP/UI) that assumes their current
-  shape, plus their tests and package README files.
+- If you touch the plugin interface or shared request schemas, update every
+  adapter (CLI/API/MCP/UI) that assumes their current shape, plus their tests
+  and package README files.
 - **The Dockerfile pins the Playwright base image to the `playwright`
   version in `packages/core/package.json`.** The image's bundled Chromium
   must match the client revision; bump both together or it fails at launch.

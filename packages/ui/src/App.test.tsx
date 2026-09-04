@@ -24,21 +24,21 @@ afterEach(() => {
 describe("App", () => {
   it("loads engines, then renders search results on submit", async () => {
     mockFetchSequence([
-      { url: "/api/engines", body: [{ id: "mock", name: "Mock Search Engine" }] },
+      { url: "/api/engines", body: [{ id: "test", name: "Test Search Engine" }] },
       {
         url: "/api/search",
         body: {
           query: { query: "cats" },
           outcomes: [
             {
-              engineId: "mock",
+              engineId: "test",
               ok: true,
               response: {
-                engine: "mock",
+                engine: "test",
                 query: { query: "cats" },
                 tookMs: 1,
                 results: [
-                  { title: "Cats 101", url: "https://example.com/cats", source: "mock", snippet: "All about cats" },
+                  { title: "Cats 101", url: "https://example.com/cats", source: "test", snippet: "All about cats" },
                 ],
               },
             },
@@ -49,7 +49,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText(/Mock Search Engine/);
+    await screen.findByText(/Test Search Engine/);
 
     fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
     fireEvent.click(screen.getByRole("button", { name: /search/i }));
@@ -66,13 +66,13 @@ describe("App", () => {
           query: { query: "cats" },
           outcomes: [
             {
-              engineId: "mock",
+              engineId: "test",
               ok: true,
               response: {
-                engine: "mock",
+                engine: "test",
                 query: { query: "cats" },
                 tookMs: 1,
-                results: [{ title: "Cats 101", url: "https://example.com/cats", source: "mock" }],
+                results: [{ title: "Cats 101", url: "https://example.com/cats", source: "test" }],
               },
             },
           ],

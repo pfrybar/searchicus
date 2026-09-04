@@ -1,20 +1,19 @@
-import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
+import { SearchEngineRegistry } from "@searchicus/core";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { TestSearchEngine } from "./__fixtures__/test-engine.js";
 import { createApp } from "./app.js";
 
 /**
- * A registry holding only the mock engine. These tests exercise the adapter
- * layer, not whichever engines happen to be registered by default — pinning
- * the roster here keeps them stable as engines are added, and browser-free
- * however those engines behave.
+ * A registry holding only a deterministic test double. These tests exercise
+ * the adapter layer, not whichever engines happen to be registered by default.
  */
-function mockOnlyRegistry(): SearchEngineRegistry {
-  return new SearchEngineRegistry({ throttle: null }).register(new MockSearchEngine());
+function testRegistry(): SearchEngineRegistry {
+  return new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine());
 }
 
 function testApp() {
-  return createApp(mockOnlyRegistry());
+  return createApp(testRegistry());
 }
 
 describe("GET /health", () => {
@@ -29,7 +28,7 @@ describe("GET /engines", () => {
   it("lists registered engines", async () => {
     const res = await request(testApp()).get("/engines");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: "mock", name: "Mock Search Engine" }]);
+    expect(res.body).toEqual([{ id: "test", name: "Test Search Engine" }]);
   });
 });
 
@@ -39,17 +38,17 @@ describe("POST /search", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.outcomes).toHaveLength(1);
-    expect(res.body.outcomes[0].engineId).toBe("mock");
+    expect(res.body.outcomes[0].engineId).toBe("test");
     expect(res.body.outcomes[0].response.results).toHaveLength(2);
   });
 
   it("can target a specific subset of engines", async () => {
     const res = await request(testApp())
       .post("/search")
-      .send({ query: "cats", engines: ["mock"] });
+      .send({ query: "cats", engines: ["test"] });
 
     expect(res.status).toBe(200);
-    expect(res.body.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["mock"]);
+    expect(res.body.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["test"]);
   });
 
   it("rejects an invalid request body", async () => {
@@ -57,7 +56,7 @@ describe("POST /search", () => {
     const whitespaceQuery = await request(testApp()).post("/search").send({ query: "   " });
     const malformedEngines = await request(testApp())
       .post("/search")
-      .send({ query: "cats", engines: ["mock", 1] });
+      .send({ query: "cats", engines: ["test", 1] });
 
     for (const res of [missingQuery, whitespaceQuery, malformedEngines]) {
       expect(res.status).toBe(400);

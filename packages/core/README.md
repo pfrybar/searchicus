@@ -16,7 +16,6 @@ server, UI):
   of them capturing per-engine failures, and owns rate limiting and session
   lifetime.
 - `Throttle` — spaces consecutive search fan-outs apart, with jitter.
-- `MockSearchEngine` — a deterministic, browser-free engine.
 - `BingSearchEngine` — drives Bing through a real browser: homepage, type,
   submit, parse. Needs a browser-backed registry.
 - `assessRelevance()` — scores a result set against its query, to catch a
@@ -35,10 +34,10 @@ Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 import { createDefaultRegistry } from "@searchicus/core";
 
 const registry = createDefaultRegistry();
+const engines = registry.list(); // [BingSearchEngine]
 
-const response = await registry.search("mock", { query: "typescript", limit: 5 });
-// or fan out across every registered engine:
-const outcomes = await registry.searchAll({ query: "typescript", limit: 5 });
+// This browser-free registry is useful for registration and dependency
+// injection. Run browser-backed engines through the /browser entry point.
 ```
 
 Each call to `createDefaultRegistry()` returns a fresh `SearchEngineRegistry`

@@ -1,22 +1,18 @@
-import { MockSearchEngine, SearchEngineRegistry } from "@searchicus/core";
+import { SearchEngineRegistry } from "@searchicus/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
+import { TestSearchEngine } from "../__fixtures__/test-engine.js";
 import { createMcpServer } from "./server.js";
 
-/**
- * A registry holding only the mock engine. These tests exercise the adapter
- * layer, not whichever engines happen to be registered by default — pinning
- * the roster here keeps them stable as engines are added, and browser-free
- * however those engines behave.
- */
-function mockOnlyRegistry(): SearchEngineRegistry {
-  return new SearchEngineRegistry({ throttle: null }).register(new MockSearchEngine());
+/** A registry holding a deterministic test double for adapter tests. */
+function testRegistry(): SearchEngineRegistry {
+  return new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine());
 }
 
 /** Connects an SDK Client to a fresh createMcpServer() over an in-process transport pair. */
-async function connectedClient(registry: SearchEngineRegistry = mockOnlyRegistry()): Promise<Client> {
+async function connectedClient(registry: SearchEngineRegistry = testRegistry()): Promise<Client> {
   const server = createMcpServer(registry);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.1.0" });
@@ -46,23 +42,23 @@ describe("tools/list", () => {
 });
 
 describe("search tool", () => {
-  it("returns results from the mock engine", async () => {
+  it("returns results from the test engine", async () => {
     const client = await connectedClient();
     const result = await callTool(client, "search", { query: "cats", limit: 2 });
 
     expect(result.isError).toBeFalsy();
     const parsed = JSON.parse(textOf(result));
     expect(parsed.outcomes).toHaveLength(1);
-    expect(parsed.outcomes[0].engineId).toBe("mock");
+    expect(parsed.outcomes[0].engineId).toBe("test");
     expect(parsed.outcomes[0].response.results).toHaveLength(2);
   });
 
   it("can target a specific subset of engines", async () => {
     const client = await connectedClient();
-    const result = await callTool(client, "search", { query: "cats", engines: ["mock"] });
+    const result = await callTool(client, "search", { query: "cats", engines: ["test"] });
 
     const parsed = JSON.parse(textOf(result));
-    expect(parsed.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["mock"]);
+    expect(parsed.outcomes.map((o: { engineId: string }) => o.engineId)).toEqual(["test"]);
   });
 
   it("reports an isError result for an invalid query instead of throwing", async () => {
@@ -79,6 +75,6 @@ describe("list_engines tool", () => {
     const client = await connectedClient();
     const result = await callTool(client, "list_engines", {});
 
-    expect(JSON.parse(textOf(result))).toEqual([{ id: "mock", name: "Mock Search Engine" }]);
+    expect(JSON.parse(textOf(result))).toEqual([{ id: "test", name: "Test Search Engine" }]);
   });
 });

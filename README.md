@@ -15,8 +15,6 @@ The set of backend search engines is **pluggable**: every engine implements
 one small interface and is registered with the core registry. Engines run
 against a real headless browser — core keeps a single long-lived Chromium
 instance with a persistent profile and hands each search a page from it.
-A deterministic mock engine is also registered, so every surface
-(CLI/API/MCP/UI) can be exercised end to end with no browser installed.
 
 ## Status
 
@@ -29,9 +27,9 @@ two-phase search sessions, and rate limiting — is in place in `core`, along
 with the browser-realism layer that makes automated sessions look like
 ordinary ones (`stealth`, `human`, `dwell`).
 
-Two engines ship: the deterministic `mock` engine, and `bing`, which drives
-a real browser through the Bing homepage the way a person would — typing the
-query, submitting the form, and reading the results page. See "Adding a new
+The `bing` engine drives a real browser through the Bing homepage the way a
+person would — typing the query, submitting the form, and reading the results
+page. See "Adding a new
 search engine backend" to add your own.
 
 ## Architecture
@@ -258,9 +256,8 @@ class ExampleEngine implements SearchEngine {
 ```
 
 `ctx.acquireBrowser()` is lazy — an engine that never calls it never causes
-Chromium to launch, which is what keeps the mock engine and the test suite
-browser-free. An engine with no work to do after returning results can just
-return a bare `SearchResponse`; the registry normalizes both shapes.
+Chromium to launch. An engine with no work to do after returning results can
+just return a bare `SearchResponse`; the registry normalizes both shapes.
 
 Running a browser-backed engine needs Playwright's Chromium **and** its
 system libraries:

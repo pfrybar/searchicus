@@ -300,12 +300,11 @@ describe("close()", () => {
 });
 
 describe("BingSearchEngine (registration and wiring)", () => {
-  it("is registered by default, alongside the mock engine", () => {
+  it("is the only engine registered by default", () => {
     const ids = createDefaultRegistry({ throttle: null })
       .list()
       .map((engine) => engine.id);
-    expect(ids).toContain("bing");
-    expect(ids).toContain("mock");
+    expect(ids).toEqual(["bing"]);
   });
 
   it("fails with a diagnosable error when no browser is configured", async () => {
@@ -313,14 +312,5 @@ describe("BingSearchEngine (registration and wiring)", () => {
 
     expect(outcomes[0]?.ok).toBe(false);
     if (!outcomes[0]?.ok) expect(outcomes[0]?.error).toMatch(/createBrowserRegistry|browser session/i);
-  });
-
-  it("does not stop the mock engine from answering in the same fan-out", async () => {
-    const outcomes = await createDefaultRegistry({ throttle: null }).searchAll({ query: "cats", limit: 2 });
-
-    const mock = outcomes.find((o) => o.engineId === "mock");
-    const bing = outcomes.find((o) => o.engineId === "bing");
-    expect(mock?.ok).toBe(true);
-    expect(bing?.ok).toBe(false);
   });
 });

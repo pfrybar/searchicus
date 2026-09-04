@@ -1,3 +1,4 @@
+import { SearchEngineRegistry } from "@searchicus/core";
 import { describe, expect, it, vi } from "vitest";
 import { createProgram, parseLimit } from "./index.js";
 import { formatOutcome } from "./format.js";
@@ -5,17 +6,17 @@ import { formatOutcome } from "./format.js";
 describe("formatOutcome", () => {
   it("lists each result under the engine heading", () => {
     const lines = formatOutcome({
-      engineId: "mock",
+      engineId: "test",
       ok: true,
       response: {
-        engine: "mock",
+        engine: "test",
         query: { query: "cats" },
         tookMs: 1,
-        results: [{ title: "Cats 101", url: "https://example.com/cats", source: "mock", snippet: "All about cats" }],
+        results: [{ title: "Cats 101", url: "https://example.com/cats", source: "test", snippet: "All about cats" }],
       },
     });
 
-    expect(lines[0]).toBe("== mock ==");
+    expect(lines[0]).toBe("== test ==");
     expect(lines).toContain("  1. Cats 101");
     expect(lines).toContain("     https://example.com/cats");
     expect(lines).toContain("     All about cats");
@@ -23,9 +24,9 @@ describe("formatOutcome", () => {
 
   it("notes when an engine returned no results", () => {
     const lines = formatOutcome({
-      engineId: "mock",
+      engineId: "test",
       ok: true,
-      response: { engine: "mock", query: { query: "cats" }, tookMs: 1, results: [] },
+      response: { engine: "test", query: { query: "cats" }, tookMs: 1, results: [] },
     });
 
     expect(lines).toContain("  (no results)");
@@ -49,7 +50,13 @@ describe("CLI argument handling", () => {
 
   it("normalizes a valid query before searching", async () => {
     const write = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    const program = createProgram();
+    const program = createProgram(
+      new SearchEngineRegistry({ throttle: null }).register({
+        id: "test",
+        name: "Test Search Engine",
+        search: async (query) => ({ query, results: [], engine: "test", tookMs: 0 }),
+      }),
+    );
 
     await program.parseAsync(["node", "searchicus", "search", "  cats  ", "--json"]);
 

@@ -1,5 +1,4 @@
 import type { BrowserLease, BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
-import { MockSearchEngine } from "./engines/mock.js";
 import { BingSearchEngine } from "./engines/bing.js";
 import { Throttle, type ThrottleOptions } from "./throttle.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchSession } from "./types.js";
@@ -292,5 +291,5 @@ async function withDeadline<T>(promise: Promise<T>, deadline: number, message: s
  * can mutate what it gets back without affecting anyone else.
  */
 export function createDefaultRegistry(options: SearchEngineRegistryOptions = {}): SearchEngineRegistry {
-  return new SearchEngineRegistry(options).register(new MockSearchEngine()).register(new BingSearchEngine());
+  return new SearchEngineRegistry(options).register(new BingSearchEngine());
 }

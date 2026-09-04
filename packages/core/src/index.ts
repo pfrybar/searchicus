@@ -5,4 +5,3 @@ export * from "./throttle.js";
 export * from "./relevance.js";
 export * from "./registry.js";
 export * from "./engines/bing.js";
-export * from "./engines/mock.js";

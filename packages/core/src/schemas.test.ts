@@ -36,13 +36,13 @@ describe("SearchQuerySchema", () => {
 
 describe("SearchRequestSchema", () => {
   it("accepts an optional list of engine ids", () => {
-    const result = SearchRequestSchema.safeParse({ query: "cats", engines: ["mock", "docs"] });
+    const result = SearchRequestSchema.safeParse({ query: "cats", engines: ["bing", "docs"] });
     expect(result.success).toBe(true);
   });
 
   it("rejects malformed, empty, and duplicate engine selections", () => {
-    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["mock", 1] }).success).toBe(false);
+    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["bing", 1] }).success).toBe(false);
     expect(SearchRequestSchema.safeParse({ query: "cats", engines: [] }).success).toBe(false);
-    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["mock", "mock"] }).success).toBe(false);
+    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["bing", "bing"] }).success).toBe(false);
   });
 });
