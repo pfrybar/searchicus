@@ -25,8 +25,14 @@ passing tests. The API, MCP tool server, CLI, and UI are covered at their
 adapter boundaries; the MCP suite also makes a real Streamable HTTP request.
 
 The browser layer — persistent Chromium session, page-per-search leases,
-two-phase search sessions, and rate limiting — is in place in `core`. Only
-the mock engine ships with it; see "Adding a new search engine backend".
+two-phase search sessions, and rate limiting — is in place in `core`, along
+with the browser-realism layer that makes automated sessions look like
+ordinary ones (`stealth`, `human`, `dwell`).
+
+Two engines ship: the deterministic `mock` engine, and `bing`, which drives
+a real browser through the Bing homepage the way a person would — typing the
+query, submitting the form, and reading the results page. See "Adding a new
+search engine backend" to add your own.
 
 ## Architecture
 
@@ -40,7 +46,7 @@ the mock engine ships with it; see "Adding a new search engine backend".
                           │  - throttle    │
                           │  - browser     │
                           │    session     │
-                          │  - mock engine │
+                          │  - engines     │
                           └───────┬────────┘
                                   │
              ┌────────────────┼────────────────┐
@@ -92,12 +98,36 @@ Each surface gets its own Chromium profile under `.searchicus/profile/`
 (override with `SEARCHICUS_PROFILE_DIR`), because a user-data directory is
 single-writer and `npm run dev` runs the API and MCP server side by side.
 
+The browser is also configured to behave like one a person is using, since
+a search engine that concludes otherwise stops returning useful results.
+That lives in three small modules beside the browser session, and engines
+opt into them rather than reimplementing any of it:
+
+- **`stealth.ts`** — context options and a single init script, chosen so the
+  browser's account of itself has no internal contradictions. The guiding
+  rule is that contradictions are what get noticed, not unusual values,
+  which is why some things are deliberately _not_ patched: the patch would
+  stand out more than the tell it hides. Time zone and locale should match
+  where your traffic actually leaves from (`SEARCHICUS_TIMEZONE`).
+- **`human.ts`** — jittered pauses, per-character typing, cursor drift. The
+  distributions are heavy-tailed on purpose; a flat one is its own signature.
+- **`dwell.ts`** — the post-load "read the page" phase. It is handed back as
+  `SearchSession.completed`, so it runs _after_ results are returned and
+  costs the caller nothing.
+
+Results are also checked against the query before being believed. A search
+engine can answer with HTTP 200, valid markup and real results that have
+nothing to do with what was asked — classically, results for only the
+query's first term. Nothing about the response looks wrong, so `relevance.ts`
+scores how much of the query actually appears in the results and the engine
+fails the search rather than returning plausible nonsense.
+
 ## Repository layout
 
 ```
 searchicus/
 ├── packages/
-│   ├── core/   # shared types, SearchEngine interface, registry, mock engine
+│   ├── core/   # types, SearchEngine interface, registry, engines, browser
 │   ├── cli/    # `searchicus` command-line tool
 │   ├── api/    # HTTP API server + MCP endpoint (Streamable HTTP)
 │   └── ui/     # web UI
@@ -188,6 +218,8 @@ one platform's Chromium also isn't valid for another's.
 | ------------------------ | ---------------------------- | ------------------------------------------------------ |
 | `PORT`                   | `3000`                       | Port to listen on.                                     |
 | `SEARCHICUS_PROFILE_DIR` | `/profiles/api` in the image | Chromium user-data directory. One per process.         |
+| `SEARCHICUS_TIMEZONE`    | `America/Chicago`            | IANA time zone the browser reports.                    |
+| `SEARCHICUS_LOCALE`      | `en-US`                      | Locale the browser reports.                            |
 | `MCP_ENABLED`            | on                           | `false` serves the search API alone; `/mcp` then 404s. |
 | `SERVE_UI`               | on when a build exists       | `false` skips the static UI.                           |
 | `UI_DIST_DIR`            | `packages/ui/dist`           | Alternate UI build directory.                          |

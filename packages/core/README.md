@@ -17,6 +17,10 @@ server, UI):
   lifetime.
 - `Throttle` — spaces consecutive search fan-outs apart, with jitter.
 - `MockSearchEngine` — a deterministic, browser-free engine.
+- `BingSearchEngine` — drives Bing through a real browser: homepage, type,
+  submit, parse. Needs a browser-backed registry.
+- `assessRelevance()` — scores a result set against its query, to catch a
+  results page that parses cleanly but answers a different question.
 - `createDefaultRegistry()` — the registry every front door uses by default.
 
 Playwright lives behind a separate entry point, `@searchicus/core/browser`:
