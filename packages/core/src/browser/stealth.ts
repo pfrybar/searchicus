@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { BrowserContextOptions, LaunchOptions } from "playwright";
 import type { PersistentContextOptions } from "./session.js";
 
 const execFileAsync = promisify(execFile);
@@ -338,3 +339,20 @@ try {
   // advertise a software rasterizer to *everything* that looks.
 } catch (e) {}
 `;
+
+/**
+ * The same identity, split for a browser that has no persistent profile.
+ *
+ * `launchPersistentContext` takes launch and context options as one object;
+ * `chromium.launch()` plus `browser.newContext()` take them separately. Both
+ * halves are derived from the constants above rather than restated, so the
+ * search browser and the extraction browser cannot drift into telling
+ * different stories about the same machine.
+ */
+export function buildStealthBrowserOptions(options: StealthOptions = {}): {
+  launch: LaunchOptions;
+  context: BrowserContextOptions;
+} {
+  const { headless, channel, args, ...context } = buildStealthOptions(options);
+  return { launch: { headless, channel, args }, context };
+}

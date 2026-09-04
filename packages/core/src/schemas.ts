@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { MAX_EXTRACT_MAX_CHARS } from "./extract/config.js";
+import type { ExtractRequest } from "./extract/types.js";
 import type { SearchQuery, SearchRequest } from "./types.js";
 
 /**
@@ -26,3 +28,23 @@ export const SearchRequestSchema = SearchQuerySchema.extend({
     .optional()
     .describe("Specific engine ids to search; defaults to every registered engine."),
 }) satisfies z.ZodType<SearchRequest>;
+
+/**
+ * The complete request accepted by every extract front door.
+ *
+ * Shape only, deliberately. Whether `url` is a usable http(s) target — its
+ * scheme, credentials, port, and where it resolves — is decided by
+ * `parseExtractUrl` and the address policy, so one set of rules applies
+ * whether a URL arrived from a caller or from a redirect mid-render.
+ */
+export const ExtractRequestSchema = z.object({
+  url: z.string().trim().min(1, "url must not be empty"),
+  ref: z.string().trim().min(1, "ref must not be empty").optional(),
+  maxChars: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_EXTRACT_MAX_CHARS)
+    .optional()
+    .describe("Maximum characters of Markdown to return. Defaults to 20000."),
+}) satisfies z.ZodType<ExtractRequest>;

@@ -10,3 +10,4 @@ export * from "./browser/stealth.js";
 export * from "./browser/human.js";
 export * from "./browser/dwell.js";
 export * from "./browser/click-through.js";
+export * from "./browser/extract-browser.js";

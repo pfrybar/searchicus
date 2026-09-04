@@ -95,3 +95,43 @@ h1 {
 .empty {
   color: #777;
 }
+
+.extract {
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.extract:disabled {
+  color: #888;
+  cursor: default;
+}
+
+.extraction {
+  margin-top: 0.75rem;
+  border-left: 3px solid #ddd;
+  padding-left: 0.75rem;
+}
+
+.extraction .untrusted {
+  color: #777;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.extraction pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fafafa;
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}

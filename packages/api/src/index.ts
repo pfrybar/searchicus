@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { createBrowserRegistry } from "@searchicus/core/browser";
+import { createDefaultSearchArchive } from "@searchicus/core";
+import { createBrowserExtraction, createBrowserRegistry } from "@searchicus/core/browser";
 import { createApp, defaultUiDir } from "./app.js";
 import { shutdownOn } from "./shutdown.js";
 
@@ -21,12 +22,27 @@ const mcp = enabled(process.env.MCP_ENABLED);
 const uiDir = process.env.UI_DIST_DIR ?? defaultUiDir();
 const ui = enabled(process.env.SERVE_UI) && existsSync(path.join(uiDir, "index.html"));
 
-const registry = createBrowserRegistry("api");
-const server = createApp(registry, { mcp, ui: ui && uiDir }).listen(port, () => {
+// One archive, shared: search and extraction write to the same file, and one
+// connection in one process beats two. They deliberately do not share a
+// browser -- see createBrowserExtraction.
+const archive = createDefaultSearchArchive();
+const registry = createBrowserRegistry("api", { archive });
+const extraction = createBrowserExtraction({ archive });
+const server = createApp(registry, { mcp, ui: ui && uiDir, extraction }).listen(port, () => {
   console.log(`searchicus API listening on http://localhost:${port}`);
   console.log(`  search API at /api (also at the root, for compatibility)`);
   console.log(mcp ? `  MCP (Streamable HTTP) at /mcp` : "  MCP endpoint disabled");
+  console.log(
+    extraction.enabled ? "  extraction enabled at /api/extract" : "  extraction disabled (SEARCHICUS_EXTRACT_ENABLED)",
+  );
   console.log(ui ? `  UI served from ${uiDir}` : "  UI not served (no build found)");
 });
 
-shutdownOn(server, registry);
+shutdownOn(server, {
+  // Extraction closes first: that stops new renders starting, and the
+  // registry owns the archive both of them write to.
+  close: async () => {
+    await extraction.close();
+    await registry.close();
+  },
+});

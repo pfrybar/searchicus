@@ -19,6 +19,12 @@ by default and drive the real sites, so an unfiltered search fans out to all of
 them. Tests inject deterministic test doubles where they need browser-free
 adapter coverage.
 
+Extraction renders caller-supplied URLs in a **second, non-persistent**
+browser and must never reach the search profile. It is disabled by default;
+before touching it, read the "Extraction" section of `README.md`, especially
+the note that application-side address checks are defense in depth and the
+operator's outbound network restriction is the actual control.
+
 ## Repo layout
 
 ```
@@ -26,6 +32,7 @@ packages/
   core/   shared types + SearchEngine interface + registry + engines
           + browser session (Playwright) + rate-limit throttle
           + browser realism (stealth/human/dwell/click-through) + relevance gate
+          + ranking/fusion + SQLite archive + rendered extraction (src/extract/)
   cli/    `searchicus` CLI (commander)
   api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
   ui/     web UI (vite + react)

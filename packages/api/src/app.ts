@@ -1,6 +1,11 @@
 import {
   AllEnginesFailedError,
   createDefaultRegistry,
+  ExtractFailedError,
+  ExtractionDisabledError,
+  ExtractionService,
+  ExtractRequestError,
+  ExtractRequestSchema,
   SearchEngineRegistry,
   SearchRequestSchema,
   UnknownEngineError,
@@ -42,6 +47,13 @@ export interface CreateAppOptions {
    * into HTML. Add one (scoped to non-API paths) if routing arrives.
    */
   ui?: boolean | string;
+  /**
+   * Serves POST /extract. Defaults to a service with no renderer, which
+   * exists and always refuses — the endpoint is deliberately present in every
+   * deployment so a caller learns extraction is switched off rather than
+   * meeting a bare 404 they cannot interpret.
+   */
+  extraction?: ExtractionService;
 }
 
 /**
@@ -55,19 +67,19 @@ export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   options: CreateAppOptions = {},
 ): Express {
-  const { mcp = true, ui = false } = options;
+  const { mcp = true, ui = false, extraction = new ExtractionService() } = options;
   const app = express();
   app.use(express.json());
 
   // Must be mounted before the catch-all 404 below, which would otherwise
   // swallow every MCP request.
-  if (mcp) app.use(MCP_PATH, createMcpRouter(registry));
+  if (mcp) app.use(MCP_PATH, createMcpRouter(registry, extraction));
 
   // Mounted twice on purpose. The UI calls /api/* so that it works
   // same-origin in production without a build-time API URL baked in, while
   // the root paths keep the existing contract (README curl examples, every
   // existing test) working unchanged.
-  const search = createSearchRouter(registry);
+  const search = createSearchRouter(registry, extraction);
   app.use("/api", search);
   app.use(search);
 
@@ -116,12 +128,15 @@ export function createApp(
   return app;
 }
 
-/** The search endpoints, mounted at both / and /api. */
-function createSearchRouter(registry: SearchEngineRegistry): Router {
+/** The search and extract endpoints, mounted at both / and /api. */
+function createSearchRouter(registry: SearchEngineRegistry, extraction: ExtractionService): Router {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    res.json({ status: "ok" });
+    // `extract` is here so the UI can hide an action that would only ever
+    // fail, and so an operator can confirm the toggle took effect without
+    // making a request that renders something.
+    res.json({ status: "ok", extract: extraction.enabled });
   });
 
   router.get("/engines", (_req, res) => {
@@ -147,6 +162,35 @@ function createSearchRouter(registry: SearchEngineRegistry): Router {
       }
       if (err instanceof AllEnginesFailedError) {
         res.status(502).json({ error: "Search unavailable" });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  router.post("/extract", async (req, res, next) => {
+    const parsed = ExtractRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid extract request", details: parsed.error.issues });
+      return;
+    }
+
+    try {
+      res.json(await extraction.extract(parsed.data));
+    } catch (err) {
+      // Three distinct answers, because they call for three different
+      // reactions: fix the request, ask an operator, or try again later.
+      if (err instanceof ExtractRequestError) {
+        res.status(400).json({ error: "Invalid extract request", details: [err.message] });
+        return;
+      }
+      if (err instanceof ExtractionDisabledError) {
+        res.status(503).json({ error: err.message });
+        return;
+      }
+      // Already written to be safe to return verbatim; see ExtractFailedError.
+      if (err instanceof ExtractFailedError) {
+        res.status(502).json({ error: err.message });
         return;
       }
       next(err);

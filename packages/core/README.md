@@ -129,6 +129,45 @@ after draining. The archive contains queries, result text and URLs, and engine
 failure messages, so treat the local database as sensitive data. Set
 `SEARCHICUS_STORE=false` to disable it.
 
+## Extraction
+
+`createBrowserExtraction()` builds an `ExtractionService`: it renders one
+caller-supplied URL and returns its main content as Markdown. It is the
+sibling of `createBrowserRegistry()` and deliberately not part of it.
+
+The two share an archive file and must never share a browser. Search drives a
+single long-lived persistent profile carrying cookies, cache, and history —
+exactly what should never be exposed to a URL a caller chose. Extraction gets
+its own non-persistent `chromium.launch()` with a fresh context per request,
+closed on every outcome. `launchPersistentContext` exposes no `Browser`, so
+there is no way to blur that line even by accident.
+
+```ts
+import { createDefaultSearchArchive } from "@searchicus/core";
+import { createBrowserExtraction, createBrowserRegistry } from "@searchicus/core/browser";
+
+const archive = createDefaultSearchArchive();
+const registry = createBrowserRegistry("api", { archive });
+const extraction = createBrowserExtraction({ archive });
+
+const page = await extraction.extract({ url: "https://example.com/", ref: "00m2ebw9mbyib-3" });
+```
+
+The pieces are separable. `ExtractionService` depends on a `PageRenderer`
+interface rather than Playwright, so the whole flow can be driven with no
+browser installed; the address policy in `extract/address.ts` is pure; and
+Defuddle runs in a memory-capped worker so a pathological document cannot take
+the host process with it.
+
+Extraction is disabled unless `SEARCHICUS_EXTRACT_ENABLED=true`, and every
+other limit is operator configuration rather than a request field. Read the
+root README's "Extraction" section — particularly its network warning — before
+enabling it.
+
+Each attempt is recorded as metadata only: status, timings, HTTP status,
+title, domain, sizes, and a digest of the Markdown. Page text is never stored,
+and the `extractions` table has nowhere to put it.
+
 ## Rate limiting
 
 One global `Throttle` gates entry to `searchAll()`, so a single incoming

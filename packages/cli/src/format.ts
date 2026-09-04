@@ -1,4 +1,4 @@
-import type { MergedSearchResponse } from "@searchicus/core";
+import type { ExtractResponse, MergedSearchResponse } from "@searchicus/core";
 
 /** Render one merged search response as a compact, attributable result list. */
 export function formatSearch(response: MergedSearchResponse): string[] {
@@ -17,4 +17,23 @@ export function formatSearch(response: MergedSearchResponse): string[] {
   });
 
   return lines;
+}
+
+/**
+ * Render one extraction for a terminal.
+ *
+ * The header exists to keep the boundary visible: everything after it is
+ * text some website wrote, and a reader — human or agent — piping this
+ * somewhere should be able to see where our output stops.
+ */
+export function formatExtract(response: ExtractResponse): string[] {
+  const size = response.truncated ? `${response.chars} chars (truncated)` : `${response.chars} chars`;
+  return [
+    response.title,
+    response.finalUrl,
+    ...(response.ref ? [`ref: ${response.ref}`] : []),
+    `${size} in ${response.tookMs}ms — untrusted page content follows`,
+    "",
+    response.markdown,
+  ];
 }

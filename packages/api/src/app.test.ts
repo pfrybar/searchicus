@@ -1,6 +1,7 @@
-import { SearchEngineRegistry } from "@searchicus/core";
+import { ExtractFailedError, SearchEngineRegistry, type PageRenderer } from "@searchicus/core";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { testExtraction } from "./__fixtures__/test-extraction.js";
 import { TestSearchEngine } from "./__fixtures__/test-engine.js";
 import { createApp } from "./app.js";
 
@@ -20,7 +21,9 @@ describe("GET /health", () => {
   it("reports ok", async () => {
     const res = await request(testApp()).get("/health");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "ok" });
+    // `extract` reports whether this deployment will actually render pages,
+    // so the UI can hide an action that would otherwise only ever fail.
+    expect(res.body).toEqual({ status: "ok", extract: false });
   });
 });
 
@@ -128,5 +131,95 @@ describe("unknown routes", () => {
   it("404s", async () => {
     const res = await request(testApp()).get("/nope");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /extract", () => {
+  function extractApp(renderer?: PageRenderer) {
+    return createApp(testRegistry(), { extraction: testExtraction({}, renderer) });
+  }
+
+  it("returns Markdown, marked untrusted", async () => {
+    const res = await request(extractApp()).post("/extract").send({ url: "https://example.test/article" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      url: "https://example.test/article",
+      finalUrl: "https://example.test/article",
+      title: "An article",
+      markdown: "# An article\n\nSome readable prose.",
+      truncated: false,
+      chars: 34,
+      untrusted: true,
+    });
+  });
+
+  it("answers under /api too, which is what the UI calls", async () => {
+    const res = await request(extractApp()).post("/api/extract").send({ url: "https://example.test/article" });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses with 503 when the operator has not enabled extraction", async () => {
+    // The route still exists. A caller learns extraction is switched off,
+    // rather than meeting a 404 they cannot interpret.
+    const res = await request(createApp(testRegistry())).post("/extract").send({ url: "https://example.test/a" });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/SEARCHICUS_EXTRACT_ENABLED/);
+  });
+
+  it("rejects a malformed body with 400", async () => {
+    const app = extractApp();
+    const noUrl = await request(app).post("/extract").send({});
+    const blankUrl = await request(app).post("/extract").send({ url: "   " });
+    const hugeBudget = await request(app).post("/extract").send({ url: "https://a.test/", maxChars: 1_000_000 });
+
+    for (const res of [noUrl, blankUrl, hugeBudget]) {
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid extract request");
+    }
+  });
+
+  it("rejects an unusable URL with 400 and says why", async () => {
+    const app = extractApp();
+    const scheme = await request(app).post("/extract").send({ url: "file:///etc/passwd" });
+    const port = await request(app).post("/extract").send({ url: "http://example.test:8080/" });
+
+    expect(scheme.status).toBe(400);
+    expect(String(scheme.body.details)).toMatch(/http or https/);
+    expect(port.status).toBe(400);
+    expect(String(port.body.details)).toMatch(/allowed port/);
+  });
+
+  it("rejects a ref it cannot verify with 400, not a server error", async () => {
+    const res = await request(extractApp())
+      .post("/extract")
+      .send({ url: "https://example.test/article", ref: "abc123-1" });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.details)).toMatch(/no search archive/);
+  });
+
+  it("reports a failed render as 502 without leaking the browser's error", async () => {
+    const broken: PageRenderer = {
+      render: () =>
+        Promise.reject(
+          new ExtractFailedError("navigation_failed", "That page could not be loaded.", new Error("net::ERR_FAILED")),
+        ),
+      close: async () => undefined,
+    };
+
+    const res = await request(extractApp(broken)).post("/extract").send({ url: "https://example.test/article" });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: "That page could not be loaded." });
+    expect(JSON.stringify(res.body)).not.toContain("ERR_FAILED");
+  });
+
+  it("reports enabled extraction on the health endpoint", async () => {
+    const res = await request(extractApp()).get("/health");
+
+    expect(res.body).toEqual({ status: "ok", extract: true });
   });
 });

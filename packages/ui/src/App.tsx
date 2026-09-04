@@ -1,20 +1,43 @@
 import { useEffect, useState, type FormEvent } from "react";
 import "./App.css";
-import { listEngines, search, type EngineInfo, type SearchResponseBody } from "./api";
+import {
+  extract,
+  extractEnabled,
+  listEngines,
+  search,
+  type EngineInfo,
+  type ExtractResponseBody,
+  type SearchResponseBody,
+} from "./api";
 
 type Status = "idle" | "loading" | "error";
 
+/** The extraction panel's state, keyed by the result ref it belongs to. */
+interface Extraction {
+  ref: string;
+  status: "loading" | "ready" | "error";
+  content?: ExtractResponseBody;
+  error?: string;
+}
+
 export function App() {
   const [engines, setEngines] = useState<EngineInfo[]>([]);
+  const [canExtract, setCanExtract] = useState(false);
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<SearchResponseBody | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [extraction, setExtraction] = useState<Extraction | null>(null);
 
   useEffect(() => {
     listEngines()
       .then(setEngines)
       .catch(() => setEngines([]));
+    // The endpoint always exists and always answers, so asking up front is
+    // how the button avoids being an action that can only fail.
+    extractEnabled()
+      .then(setCanExtract)
+      .catch(() => setCanExtract(false));
   }, []);
 
   async function handleSubmit(event: FormEvent) {
@@ -24,6 +47,7 @@ export function App() {
     setStatus("loading");
     setError(null);
     setResult(null);
+    setExtraction(null);
     try {
       const response = await search({ query });
       setResult(response);
@@ -31,6 +55,18 @@ export function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
       setStatus("error");
+    }
+  }
+
+  async function handleExtract(ref: string, url: string) {
+    setExtraction({ ref, status: "loading" });
+    try {
+      // The ref goes with the URL: it is what ties this read back to the
+      // ranking that offered it, which is the signal the server is collecting.
+      const content = await extract({ url, ref });
+      setExtraction({ ref, status: "ready", content });
+    } catch (err) {
+      setExtraction({ ref, status: "error", error: err instanceof Error ? err.message : "Extract failed" });
     }
   }
 
@@ -73,6 +109,35 @@ export function App() {
                   <p>Ref: {item.ref}</p>
                   <p>Found by: {item.found.map(({ engineId }) => engineId).join(", ")}</p>
                   {item.snippet && <p>{item.snippet}</p>}
+                  {canExtract && (
+                    <button
+                      type="button"
+                      className="extract"
+                      onClick={() => void handleExtract(item.ref, item.url)}
+                      disabled={extraction?.ref === item.ref && extraction.status === "loading"}
+                    >
+                      {extraction?.ref === item.ref && extraction.status === "loading" ? "Extracting…" : "Extract"}
+                    </button>
+                  )}
+                  {extraction?.ref === item.ref && extraction.status === "error" && (
+                    <p className="error" role="alert">
+                      {extraction.error}
+                    </p>
+                  )}
+                  {extraction?.ref === item.ref && extraction.status === "ready" && extraction.content && (
+                    <div className="extraction">
+                      <p className="untrusted">
+                        Untrusted page content
+                        {extraction.content.truncated ? " (truncated)" : ""} — {extraction.content.chars} characters
+                      </p>
+                      {/*
+                        Rendered as preformatted text on purpose. This is
+                        Markdown a stranger's website wrote; interpreting it as
+                        HTML would hand that page the run of this one.
+                      */}
+                      <pre>{extraction.content.markdown}</pre>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

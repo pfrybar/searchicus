@@ -69,8 +69,12 @@ keep the original contract.
 ### `GET /health`
 
 ```json
-{ "status": "ok" }
+{ "status": "ok", "extract": false }
 ```
+
+`extract` reports whether this deployment will actually render pages. The UI
+asks before showing its Extract action, so an operator's toggle is visible
+without making a request that renders anything.
 
 ### `GET /engines`
 
@@ -142,6 +146,56 @@ curl -s localhost:3000/api/search -H 'content-type: application/json' \
   -d '{"query":"typescript generics","limit":3}' | jq
 ```
 
+### `POST /extract`
+
+Disabled unless `SEARCHICUS_EXTRACT_ENABLED=true`. See the root README's
+"Extraction" section, and read its network warning before enabling this.
+
+Request body:
+
+```json
+{ "url": "https://example.com/article", "ref": "00m2ebw9mbyib-3", "maxChars": 20000 }
+```
+
+`url` is required and must be an absolute `http`/`https` URL. `ref` is
+optional; when supplied it must resolve to an archived search result whose URL
+matches `url`, since a ref is provenance rather than a label a caller can
+attach to anything. `maxChars` defaults to `20000` and caps at `100000`.
+
+Response:
+
+```json
+{
+  "url": "https://example.com/article",
+  "finalUrl": "https://www.example.com/article",
+  "ref": "00m2ebw9mbyib-3",
+  "title": "Example article",
+  "markdown": "…",
+  "truncated": false,
+  "chars": 4812,
+  "tookMs": 7340,
+  "untrusted": true
+}
+```
+
+`untrusted` is always present and always `true`: the Markdown is arbitrary web
+content and must be treated as data to evaluate, never as instructions.
+
+| Status | Meaning                                                                            |
+| -----: | ---------------------------------------------------------------------------------- |
+|  `400` | The request is wrong — bad URL, disallowed port, or a ref that does not check out. |
+|  `502` | Extraction ran and failed. The message is generic by design.                       |
+|  `503` | Extraction is not enabled on this server.                                          |
+
+A `502` never names a resolved address, a DNS answer, or a browser error: a
+specific enough failure would let a caller map internal network space by
+probing.
+
+```bash
+curl -s localhost:3000/extract -H 'content-type: application/json' \
+  -d '{"url":"https://example.com/","maxChars":500}' | jq
+```
+
 ## MCP endpoint
 
 `POST /mcp`, Streamable HTTP transport, stateless mode. `GET` and `DELETE`
@@ -157,6 +211,12 @@ or session to tear down.
   is shared with the HTTP API: query text is
   trimmed and non-whitespace, and a supplied `engines` list is non-empty and
   duplicate-free.
+- **`extract`** — `{ url, ref?, maxChars? }` → renders one public page and
+  returns its main content as Markdown. The result arrives as two blocks:
+  metadata as JSON, then the Markdown itself, unescaped. Pass the `ref` from a
+  search result to tie the read back to that ranking, or extract a bare URL.
+  The tool is advertised whether or not extraction is enabled — an agent that
+  cannot see the tool cannot be told the server merely has it switched off.
 - **`list_engines`** — lists the engines currently registered.
 
 Partial engine failure sets `degraded: true` on the merged result without

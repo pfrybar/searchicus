@@ -1,4 +1,4 @@
-import type { MergedSearchResponse, SearchRequest } from "@searchicus/core";
+import type { ExtractRequest, ExtractResponse, MergedSearchResponse, SearchRequest } from "@searchicus/core";
 
 // Defaults to the dev-server proxy (see vite.config.ts); override for a
 // standalone production build by setting VITE_API_URL.
@@ -30,4 +30,24 @@ export async function search(request: SearchRequest): Promise<SearchResponseBody
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<SearchResponseBody>;
+}
+
+export type ExtractResponseBody = ExtractResponse;
+
+export async function extract(request: ExtractRequest): Promise<ExtractResponseBody> {
+  const res = await fetch(`${API_BASE}/extract`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<ExtractResponseBody>;
+}
+
+/** Whether this server will actually extract, so the action can be hidden. */
+export async function extractEnabled(): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/health`);
+  if (!res.ok) return false;
+  const body = (await res.json().catch(() => null)) as { extract?: boolean } | null;
+  return body?.extract === true;
 }

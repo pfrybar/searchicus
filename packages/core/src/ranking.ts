@@ -135,6 +135,25 @@ export function rankResults(
   return selected.map(({ result }, index) => ({ ...result, ref: `${options.searchId}-${index + 1}` }));
 }
 
+/**
+ * Splits a result ref back into the search and 1-based rank it names.
+ *
+ * The counterpart to the refs built above, and the reason `createSearchId()`
+ * emits base36 — an id that could contain "-" would make this ambiguous.
+ * Returns undefined for anything malformed; a caller-supplied ref is
+ * untrusted input, not an invariant.
+ */
+export function parseResultRef(ref: string): { searchId: string; rank: number } | undefined {
+  const separator = ref.lastIndexOf("-");
+  if (separator <= 0) return undefined;
+
+  const searchId = ref.slice(0, separator);
+  const rank = Number(ref.slice(separator + 1));
+  if (!searchId || !Number.isSafeInteger(rank) || rank < 1) return undefined;
+
+  return { searchId, rank };
+}
+
 function rankOccurrences(query: SearchQuery, occurrences: Occurrence[]): RankedCandidate {
   const sorted = [...occurrences].sort(compareOccurrences);
   const best = sorted[0];

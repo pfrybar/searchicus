@@ -1,4 +1,4 @@
-import type { SearchEngineRegistry } from "@searchicus/core";
+import { ExtractionService, type SearchEngineRegistry } from "@searchicus/core";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { Router, type Request, type Response } from "express";
 import { createMcpServer } from "./server.js";
@@ -18,12 +18,15 @@ import { createMcpServer } from "./server.js";
  * Run as separate processes they would each throttle independently and hit
  * the backends at twice the configured rate.
  */
-export function createMcpRouter(registry: SearchEngineRegistry): Router {
+export function createMcpRouter(
+  registry: SearchEngineRegistry,
+  extraction: ExtractionService = new ExtractionService(),
+): Router {
   const router = Router();
 
   router.post("/", async (req: Request, res: Response) => {
     try {
-      const server = createMcpServer(registry);
+      const server = createMcpServer(registry, extraction);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
       res.on("close", () => {

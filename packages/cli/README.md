@@ -44,6 +44,31 @@ result ref and engine attribution; `--json` returns the same merged response.
 Rate limiting is in-memory, so it does **not** survive across invocations: a
 shell loop calling the CLI repeatedly gets no spacing between searches.
 
+### `extract <url>`
+
+Renders a page and prints its main content as Markdown. Disabled unless
+`SEARCHICUS_EXTRACT_ENABLED=true`; read the root README's "Extraction" section
+before enabling it.
+
+```bash
+SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
+
+# tie the read back to the search that offered it
+searchicus extract "https://example.com/a" --ref 00m2ebw9mbyib-3
+
+searchicus extract https://example.com/ --max-chars 500
+searchicus extract https://example.com/ --json
+```
+
+| Option            | Effect                                                            |
+| ----------------- | ----------------------------------------------------------------- |
+| `-r, --ref <ref>` | Result ref from an earlier search. Must match the URL being read. |
+| `-m, --max-chars` | Markdown budget, 1–100000. Defaults to 20000.                     |
+| `--json`          | Print the raw response instead of formatted Markdown.             |
+
+Text output prints the title, final URL, ref, and size, then a line marking
+where our output stops and the page's own untrusted text begins.
+
 ### `engines`
 
 Lists the engines currently registered, with `--json` for machine-readable output.
