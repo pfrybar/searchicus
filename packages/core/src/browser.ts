@@ -1,7 +1,17 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 import path from "node:path";
+
+// The browser-realism helpers ride this subpath rather than core's main
+// entry. They import Playwright for types only, so they would be safe in
+// either place, but stealth.ts reads the browser binary via node:child_process
+// and belongs with the rest of the Playwright-facing code.
+export * from "./stealth.js";
+export * from "./human.js";
+export * from "./dwell.js";
+
 import type { BrowserLeaseHandle, BrowserProvider } from "./context.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "./registry.js";
+import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
 
 /**
  * Ceiling on simultaneously-open pages. This is a memory safety valve, not
@@ -21,8 +31,24 @@ export interface BrowserSessionOptions {
   profileDir: string;
   /** Max simultaneously-open pages. See DEFAULT_MAX_PAGES. */
   maxPages?: number;
-  /** Passed straight through to launchPersistentContext. */
-  launchOptions?: PersistentContextOptions;
+  /**
+   * Passed straight through to launchPersistentContext.
+   *
+   * May be a factory, which is resolved on first launch rather than at
+   * construction. Some options can only be determined by asking the browser
+   * binary about itself (the user agent has to name the version the binary
+   * actually is), and doing that eagerly would break the laziness the rest
+   * of the design depends on: an engine that never calls `acquireBrowser()`
+   * must not cause any browser work at all. The factory also re-runs on a
+   * crash relaunch, so a replaced binary is picked up.
+   */
+  launchOptions?: PersistentContextOptions | (() => PersistentContextOptions | Promise<PersistentContextOptions>);
+  /**
+   * Script evaluated in every document before page scripts run. Applied
+   * inside the launch path, so it is reinstalled automatically when a
+   * crashed browser is relaunched — stealth survives recovery for free.
+   */
+  initScript?: string;
 }
 
 export class BrowserUnavailableError extends Error {
@@ -60,7 +86,8 @@ export class BrowserUnavailableError extends Error {
 export class BrowserSession implements BrowserProvider {
   readonly #profileDir: string;
   readonly #maxPages: number;
-  readonly #launchOptions: PersistentContextOptions;
+  readonly #launchOptions: NonNullable<BrowserSessionOptions["launchOptions"]>;
+  readonly #initScript: string | undefined;
 
   #context: BrowserContext | undefined;
   #launching: Promise<BrowserContext> | undefined;
@@ -72,6 +99,7 @@ export class BrowserSession implements BrowserProvider {
     this.#profileDir = options.profileDir;
     this.#maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
     this.#launchOptions = options.launchOptions ?? {};
+    this.#initScript = options.initScript;
   }
 
   /** True once Chromium has actually been launched. Nothing launches until first acquire. */
@@ -157,10 +185,16 @@ export class BrowserSession implements BrowserProvider {
 
     this.#launching = (async () => {
       try {
+        const launchOptions =
+          typeof this.#launchOptions === "function" ? await this.#launchOptions() : this.#launchOptions;
+
         const context = await chromium.launchPersistentContext(this.#profileDir, {
           headless: true,
-          ...this.#launchOptions,
+          ...launchOptions,
         });
+
+        // Before any page exists, so the very first navigation is covered.
+        if (this.#initScript) await context.addInitScript(this.#initScript);
 
         // A crashed or externally-killed browser must not be handed out
         // again; dropping the reference makes the next acquire relaunch.
@@ -226,20 +260,17 @@ export class BrowserSession implements BrowserProvider {
  * that they don't share cookies with each other — each builds its own
  * history. Override the location with SEARCHICUS_PROFILE_DIR.
  *
- * Fill in project-specific browser configuration below. Everything in
- * `launchOptions` is passed straight to `launchPersistentContext`, so it
- * accepts both launch-level and context-level settings.
+ * The browser identity comes from stealth.ts. `launchOptions` is a factory
+ * so the user agent can name the version of the binary that is actually
+ * about to launch, without interrogating it until something needs a browser.
  */
 export function createDefaultBrowserSession(surface: string): BrowserSession {
   const profileDir = process.env.SEARCHICUS_PROFILE_DIR ?? path.join(process.cwd(), DEFAULT_PROFILE_ROOT, surface);
 
   return new BrowserSession({
     profileDir,
-    launchOptions: {
-      headless: true,
-      // TODO: fill in — userAgent, viewport, locale, timezoneId, proxy,
-      // args, executablePath, permissions, extraHTTPHeaders, ...
-    },
+    launchOptions: async () => buildStealthOptions({ major: await resolveChromiumMajor(chromium.executablePath()) }),
+    initScript: STEALTH_INIT,
   });
 }
 
