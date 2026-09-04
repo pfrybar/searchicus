@@ -7,12 +7,11 @@
 #   docker build -t searchicus .
 #
 #   docker run --rm --init --shm-size=1g -p 3000:3000 \
-#     -v searchicus-api-profile:/profiles/api \
+#     -v searchicus-data:/data \
 #     searchicus
 #
 #   docker run --rm --init --shm-size=1g \
-#     -e SEARCHICUS_PROFILE_DIR=/profiles/cli \
-#     -v searchicus-cli-profile:/profiles/cli \
+#     -v searchicus-data:/data \
 #     searchicus node packages/cli/dist/index.js search "typescript generics"
 #
 # Three flags are not optional for a container that drives Chromium:
@@ -22,18 +21,17 @@
 #                   for days.
 #   --shm-size=1g   Docker's default /dev/shm is 64MB. Chromium leans on shared
 #                   memory and dies with opaque renderer crashes without this.
-#   -v ...:/profiles/...
-#                   The Chromium profile is the whole point of the browser
-#                   layer: it carries cookies, dismissed consent banners, and
-#                   cache between searches and across restarts. Without a
-#                   volume it lives in the container's writable layer and is
-#                   silently discarded — degrading to a cold profile on every
-#                   run, with no error to tell you.
+#   -v ...:/data
+#                   The persistent data root contains isolated Chromium
+#                   profiles and the shared search archive. Without a volume
+#                   both live in the container's writable layer and are
+#                   silently discarded on replacement — degrading to a cold
+#                   profile and losing search history.
 #
 # Also give it time to stop. The server drains live browser sessions for up to
 # 15s, but `docker stop` SIGKILLs after 10s: use `docker stop -t 30`.
 #
-# Never bind-mount a host directory for the profile. Chromium profiles are
+# Never bind-mount a host directory for the data root. Chromium profiles are
 # SQLite databases, and SQLite locking over virtiofs/9p (a macOS or Windows
 # bind mount) is unreliable; a profile written by one platform's Chromium is
 # not valid for another's. Use a named volume.
@@ -86,8 +84,8 @@ COPY --from=build --chown=pwuser:pwuser /app /app
 # Pre-created so a fresh named volume inherits pwuser ownership — Docker seeds
 # an empty volume from the image's directory, permissions included. Without
 # this the mount lands root-owned and the non-root process cannot write it.
-RUN mkdir -p /profiles/api /profiles/cli && chown -R pwuser:pwuser /profiles
-ENV SEARCHICUS_PROFILE_DIR=/profiles/api
+RUN mkdir -p /data/profile/api /data/profile/cli && chown -R pwuser:pwuser /data
+ENV SEARCHICUS_DATA_DIR=/data
 
 # Chromium's sandbox refuses to run as root, and --no-sandbox is a real
 # downgrade for a process that renders untrusted pages.

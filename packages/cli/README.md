@@ -5,10 +5,14 @@ package's `SearchEngineRegistry`. It uses the registered browser-backed
 engines; see the repo root `README.md` for adding another one.
 
 The CLI builds its registry with `createBrowserRegistry("cli")`, so it gets
-its own Chromium profile at `.searchicus/profile/cli/`. Because a search can
-return results while its browser session is still running, the CLI drains
-those sessions before exiting rather than killing them mid-flight — so the
-process may stay alive briefly after printing results.
+its own Chromium profile at `.searchicus/profile/cli/` and shares the local
+archive at `.searchicus/searches.sqlite` with other surfaces. Set
+`SEARCHICUS_DATA_DIR` to relocate both, or `SEARCHICUS_PROFILE_DIR` /
+`SEARCHICUS_STORE_PATH` to override one component; `SEARCHICUS_STORE=false`
+disables archival. Because a search can return results while its browser
+session is still running, the CLI drains sessions and queued archive writes
+before exiting rather than killing them mid-flight — so the process may stay
+alive briefly after printing results.
 
 ## Usage
 

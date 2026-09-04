@@ -1,12 +1,16 @@
 import { randomBytes } from "node:crypto";
 import type { BrowserLease, BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
+import type { SearchArchive, SearchArchiveRecord } from "./archive.js";
 import { BingSearchEngine } from "./engines/bing.js";
 import { BraveSearchEngine } from "./engines/brave.js";
 import { DuckDuckGoSearchEngine } from "./engines/duckduckgo.js";
+import { NoResultsError, OffTargetResultsError, SearchBoxUnavailableError } from "./engines/errors.js";
 import { StartpageSearchEngine } from "./engines/startpage.js";
 import { rankResults } from "./ranking.js";
-import { Throttle, type ThrottleOptions } from "./throttle.js";
+import { Throttle, ThrottleAbortError, type ThrottleOptions } from "./throttle.js";
 import type {
+  EngineFailureKind,
+  EngineSearchOutcome,
   MergedSearchResponse,
   SearchEngine,
   SearchQuery,
@@ -35,10 +39,6 @@ export class AllEnginesFailedError extends Error {
   }
 }
 
-/** One engine's outcome within a fan-out search. */
-export type EngineSearchOutcome =
-  { engineId: string; ok: true; response: SearchResponse } | { engineId: string; ok: false; error: string };
-
 export interface SearchEngineRegistryOptions {
   /**
    * Spaces out consecutive search fan-outs. Pass `null` to disable — useful
@@ -48,6 +48,8 @@ export interface SearchEngineRegistryOptions {
   throttle?: Throttle | ThrottleOptions | null;
   /** Shared browser, injected so core's main entry never imports Playwright. */
   browser?: BrowserProvider;
+  /** Optional asynchronous persistence for complete fan-outs. */
+  archive?: SearchArchive | null;
   resultsTimeoutMs?: number;
   sessionTimeoutMs?: number;
 }
@@ -78,13 +80,16 @@ export class SearchEngineRegistry {
   readonly #browser: BrowserProvider | undefined;
   readonly #resultsTimeoutMs: number;
   readonly #sessionTimeoutMs: number;
-  readonly #inFlight = new Set<Promise<void>>();
+  readonly #archive: SearchArchive | undefined;
+  readonly #inFlightSessions = new Set<Promise<void>>();
+  readonly #inFlightArchives = new Set<Promise<void>>();
   #closed = false;
 
   constructor(options: SearchEngineRegistryOptions = {}) {
     const { throttle = {} } = options;
     this.#throttle = throttle === null ? undefined : throttle instanceof Throttle ? throttle : new Throttle(throttle);
     this.#browser = options.browser;
+    this.#archive = options.archive ?? undefined;
     this.#resultsTimeoutMs = options.resultsTimeoutMs ?? DEFAULT_RESULTS_TIMEOUT_MS;
     this.#sessionTimeoutMs = options.sessionTimeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
   }
@@ -109,7 +114,12 @@ export class SearchEngineRegistry {
 
   /** Number of sessions still doing browser work after returning results. */
   get activeSessions(): number {
-    return this.#inFlight.size;
+    return this.#inFlightSessions.size;
+  }
+
+  /** Number of best-effort archive writes still pending. */
+  get activeArchives(): number {
+    return this.#inFlightArchives.size;
   }
 
   /**
@@ -132,20 +142,34 @@ export class SearchEngineRegistry {
    * an empty result list ambiguous.
    */
   async search(request: SearchRequest): Promise<MergedSearchResponse> {
-    const { engines: engineIds, limit, ...query } = request;
+    const { engines: requestedEngineIds, limit, ...query } = request;
     const started = Date.now();
     const searchId = createSearchId();
+    const engineIds = requestedEngineIds ?? this.list().map((engine) => engine.id);
     const outcomes = await this.searchAll(query, engineIds);
+    const tookMs = Date.now() - started;
+    const response = outcomes.some((outcome) => outcome.ok)
+      ? {
+          searchId,
+          query,
+          results: rankResults(query, outcomes, { searchId, engines: this.list(), limit }),
+          tookMs,
+          degraded: outcomes.some((outcome) => !outcome.ok),
+        }
+      : undefined;
 
-    if (!outcomes.some((outcome) => outcome.ok)) throw new AllEnginesFailedError();
-
-    return {
+    this.#queueArchive({
       searchId,
+      startedAt: new Date(started).toISOString(),
       query,
-      results: rankResults(query, outcomes, { searchId, engines: this.list(), limit }),
-      tookMs: Date.now() - started,
-      degraded: outcomes.some((outcome) => !outcome.ok),
-    };
+      engineIds,
+      outcomes,
+      response,
+      tookMs,
+    });
+
+    if (!response) throw new AllEnginesFailedError();
+    return response;
   }
 
   /**
@@ -161,22 +185,23 @@ export class SearchEngineRegistry {
     query: SearchQuery,
     engineIds: string[] = this.list().map((engine) => engine.id),
   ): Promise<EngineSearchOutcome[]> {
-    const deadline = Date.now() + this.#resultsTimeoutMs;
+    const started = Date.now();
+    const deadline = started + this.#resultsTimeoutMs;
 
     try {
       await this.#awaitSlot(deadline);
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      return engineIds.map((engineId) => ({ engineId, ok: false, error }));
+      return engineIds.map((engineId) => this.#failedOutcome(engineId, Date.now() - started, err));
     }
 
     return Promise.all(
       engineIds.map(async (engineId): Promise<EngineSearchOutcome> => {
+        const started = Date.now();
         try {
           const response = await this.#runEngine(engineId, query, deadline);
-          return { engineId, ok: true, response };
+          return { engineId, ok: true, tookMs: Date.now() - started, response };
         } catch (err) {
-          return { engineId, ok: false, error: err instanceof Error ? err.message : String(err) };
+          return this.#failedOutcome(engineId, Date.now() - started, err);
         }
       }),
     );
@@ -233,6 +258,7 @@ export class SearchEngineRegistry {
     }
 
     this.#track(
+      this.#inFlightSessions,
       outcome.completed
         .catch(() => undefined)
         .finally(() => {
@@ -244,28 +270,52 @@ export class SearchEngineRegistry {
     return outcome.response;
   }
 
-  #track(session: Promise<void>): void {
-    const tracked = session.finally(() => {
-      this.#inFlight.delete(tracked);
+  #failedOutcome(engineId: string, tookMs: number, err: unknown): EngineSearchOutcome {
+    return {
+      engineId,
+      ok: false,
+      tookMs: Math.max(0, tookMs),
+      errorKind: classifyFailure(err),
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  #queueArchive(record: SearchArchiveRecord): void {
+    const archive = this.#archive;
+    if (!archive) return;
+
+    // Let the result promise resume its caller before synchronous SQLite work
+    // begins inside an archive implementation. Archive failures are private
+    // best-effort diagnostics, never a change to search success or failure.
+    const scheduled = new Promise<void>((resolve) => setImmediate(resolve)).then(() => archive.archive(record));
+    this.#track(
+      this.#inFlightArchives,
+      scheduled.catch(() => undefined),
+    );
+  }
+
+  #track(set: Set<Promise<void>>, activity: Promise<void>): void {
+    const tracked = activity.finally(() => {
+      set.delete(tracked);
     });
-    this.#inFlight.add(tracked);
+    set.add(tracked);
   }
 
   /**
-   * Waits for every session still running after its results were returned.
-   * Short-lived processes must call this before exiting or they'll kill live
-   * browser work mid-flight.
+   * Waits for browser sessions and queued archive writes. Short-lived
+   * processes must call this before exiting or they can kill either mid-work.
    */
   async drain(): Promise<void> {
-    while (this.#inFlight.size > 0) {
-      await Promise.allSettled([...this.#inFlight]);
+    while (this.#inFlightSessions.size > 0 || this.#inFlightArchives.size > 0) {
+      await Promise.allSettled([...this.#inFlightSessions, ...this.#inFlightArchives]);
     }
   }
 
-  /** Drains in-flight sessions, then tears down the shared browser. */
+  /** Drains background work, closes the archive, then tears down the browser. */
   async close(): Promise<void> {
     this.#closed = true;
     await this.drain();
+    await this.#archive?.close?.().catch(() => undefined);
     await this.#browser?.close();
   }
 }
@@ -308,6 +358,21 @@ function isSearchSession(value: SearchResponse | SearchSession): value is Search
 /** 64-bit base36 id avoids '-' so result refs parse cleanly at the last dash. */
 function createSearchId(): string {
   return randomBytes(8).readBigUInt64BE().toString(36).padStart(13, "0");
+}
+
+/** Converts raw errors into stable archive metric categories. */
+function classifyFailure(err: unknown): EngineFailureKind {
+  if (err instanceof NoResultsError) return "no_results";
+  if (err instanceof OffTargetResultsError) return "off_target";
+  if (err instanceof SearchBoxUnavailableError) return "search_box_unavailable";
+  if (err instanceof UnknownEngineError) return "unknown_engine";
+  if (err instanceof ThrottleAbortError) return "timeout";
+
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof Error && err.name === "BrowserUnavailableError") return "browser_unavailable";
+  if (/timed out|timeout/i.test(message)) return "timeout";
+  if (/registry is closed/i.test(message)) return "closed";
+  return "unknown";
 }
 
 /** Rejects if `promise` hasn't settled by `deadline`. */

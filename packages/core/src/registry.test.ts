@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
+import type { SearchArchive, SearchArchiveRecord } from "./archive.js";
 import { AllEnginesFailedError, createDefaultRegistry, SearchEngineRegistry, UnknownEngineError } from "./registry.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchResult } from "./types.js";
+
+class RecordingArchive implements SearchArchive {
+  readonly records: SearchArchiveRecord[] = [];
+  fail = false;
+
+  async archive(record: SearchArchiveRecord): Promise<void> {
+    this.records.push(record);
+    if (this.fail) throw new Error("disk unavailable");
+  }
+}
+
+function afterImmediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 class TestSearchEngine implements SearchEngine {
   readonly name = "Test Search Engine";
@@ -69,14 +84,79 @@ describe("SearchEngineRegistry", () => {
     expect(response.results).not.toHaveLength(0);
   });
 
+  it("archives complete raw outcomes after returning the merged response", async () => {
+    const archive = new RecordingArchive();
+    const registry = new SearchEngineRegistry({ throttle: null, archive }).register(new TestSearchEngine()).register({
+      id: "broken",
+      name: "Broken",
+      search: async () => Promise.reject(new Error("blocked")),
+    });
+
+    const response = await registry.search({ query: "cats" });
+    expect(archive.records).toEqual([]);
+
+    await afterImmediate();
+    expect(registry.activeArchives).toBe(0);
+    expect(archive.records).toHaveLength(1);
+    expect(archive.records[0]).toMatchObject({
+      searchId: response.searchId,
+      query: { query: "cats" },
+      engineIds: ["test", "broken"],
+      response,
+      outcomes: [
+        { engineId: "test", ok: true },
+        { engineId: "broken", ok: false, errorKind: "unknown" },
+      ],
+    });
+  });
+
+  it("drains queued archival after returning results", async () => {
+    let finish!: () => void;
+    const archive: SearchArchive = {
+      archive: () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    };
+    const registry = new SearchEngineRegistry({ throttle: null, archive }).register(new TestSearchEngine());
+
+    await registry.search({ query: "cats" });
+    const draining = registry.drain();
+    await afterImmediate();
+    expect(registry.activeArchives).toBe(1);
+
+    finish();
+    await draining;
+    expect(registry.activeArchives).toBe(0);
+  });
+
+  it("never changes a successful search when archival fails", async () => {
+    const archive = new RecordingArchive();
+    archive.fail = true;
+    const registry = new SearchEngineRegistry({ throttle: null, archive }).register(new TestSearchEngine());
+
+    await expect(registry.search({ query: "cats" })).resolves.toMatchObject({ query: { query: "cats" } });
+    await registry.drain();
+    expect(registry.activeArchives).toBe(0);
+  });
+
   it("fails a merged search when every selected engine fails", async () => {
-    const registry = new SearchEngineRegistry({ throttle: null }).register({
+    const archive = new RecordingArchive();
+    const registry = new SearchEngineRegistry({ throttle: null, archive }).register({
       id: "broken",
       name: "Broken",
       search: async () => Promise.reject(new Error("blocked")),
     });
 
     await expect(registry.search({ query: "cats" })).rejects.toBeInstanceOf(AllEnginesFailedError);
+    await registry.drain();
+    expect(archive.records).toMatchObject([
+      {
+        engineIds: ["broken"],
+        response: undefined,
+        outcomes: [{ engineId: "broken", ok: false, errorKind: "unknown" }],
+      },
+    ]);
   });
 
   it("searchAll fans a query out across engines and reports failures individually", async () => {
