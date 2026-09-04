@@ -28,12 +28,15 @@ const ui = enabled(process.env.SERVE_UI) && existsSync(path.join(uiDir, "index.h
 const archive = createDefaultSearchArchive();
 const registry = createBrowserRegistry("api", { archive });
 const extraction = createBrowserExtraction({ archive });
-const server = createApp(registry, { mcp, ui: ui && uiDir, extraction }).listen(port, () => {
+const server = createApp(registry, { mcp, ui: ui && uiDir, extraction, insights: archive }).listen(port, () => {
   console.log(`searchicus API listening on http://localhost:${port}`);
   console.log(`  search API at /api (also at the root, for compatibility)`);
   console.log(mcp ? `  MCP (Streamable HTTP) at /mcp` : "  MCP endpoint disabled");
   console.log(
     extraction.enabled ? "  extraction enabled at /api/extract" : "  extraction disabled (SEARCHICUS_EXTRACT_ENABLED)",
+  );
+  console.log(
+    archive ? "  dashboard data at /api/metrics/engines and /api/searches" : "  archive disabled: no dashboard data",
   );
   console.log(ui ? `  UI served from ${uiDir}` : "  UI not served (no build found)");
 });

@@ -4,6 +4,13 @@
   padding: 3rem 1.5rem;
 }
 
+/* A search result list wants a narrow measure to stay readable; a metrics
+   table and four engines side by side want the opposite. The shell widens
+   for the dashboard rather than making every page compromise. */
+.page.wide {
+  max-width: 76rem;
+}
+
 h1 {
   margin: 0;
   font-size: 2rem;
@@ -134,4 +141,282 @@ h1 {
   border-radius: 6px;
   font-size: 0.85rem;
   line-height: 1.5;
+}
+
+/* ---- shell ---- */
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5e5e5;
+  padding-bottom: 1rem;
+}
+
+.masthead nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+a.nav {
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #444;
+  text-decoration: none;
+}
+
+a.nav:hover {
+  background: #f2f2f2;
+}
+
+a.nav.active {
+  background: #2e39b3;
+  color: #fff;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meta {
+  color: #777;
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+}
+
+.good {
+  color: #1a7f37;
+}
+.warn {
+  color: #9a6700;
+}
+.bad {
+  color: #b3261e;
+}
+
+/* ---- chips ---- */
+
+.chip {
+  display: inline-block;
+  margin: 0.15rem 0.25rem 0.15rem 0;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  background: #fafafa;
+  font-size: 0.78rem;
+  color: #444;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+.chip.active {
+  background: #2e39b3;
+  border-color: #2e39b3;
+  color: #fff;
+}
+.chip.ok {
+  border-color: #b7e0c1;
+  background: #f0fbf3;
+  color: #1a7f37;
+}
+.chip.bad {
+  border-color: #f0c2be;
+  background: #fdf3f2;
+  color: #b3261e;
+}
+.chip.sole {
+  border-color: #cfd3f2;
+  background: #f2f3fd;
+  color: #2e39b3;
+}
+
+/* ---- metrics table ---- */
+
+.table-scroll {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+table.metrics {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.88rem;
+}
+
+table.metrics th,
+table.metrics td {
+  padding: 0.45rem 0.6rem;
+  text-align: right;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+}
+
+table.metrics thead th {
+  text-align: right;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 2px solid #ddd;
+}
+
+table.metrics th[scope="row"],
+table.metrics thead th:first-child {
+  text-align: left;
+}
+
+/* The bar sits behind its number rather than beside it, so the column stays
+   readable as a column of numbers and the comparison is a bonus. */
+.bar {
+  display: inline-block;
+  height: 0.7rem;
+  background: #dfe2f7;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 0.4rem;
+  min-width: 2px;
+  max-width: 5rem;
+}
+
+.bar-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.failure-kinds {
+  color: #777;
+  font-size: 0.75rem;
+}
+
+.legend {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: #555;
+  border-top: 1px solid #eee;
+  padding-top: 1rem;
+}
+
+.legend dt {
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+.legend dd {
+  margin: 0.15rem 0 0;
+}
+
+/* ---- history ---- */
+
+.search-list {
+  list-style: none;
+  padding: 0;
+}
+
+.search-list li {
+  border-bottom: 1px solid #eee;
+  padding: 0.85rem 0;
+}
+
+.search-query {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* As a page heading rather than a list entry, it is the title of the page. */
+h2.search-query {
+  font-size: 1.5rem;
+  margin-bottom: 0;
+}
+
+a.search-link {
+  color: #2e39b3;
+  text-decoration: none;
+}
+
+a.search-link:hover {
+  text-decoration: underline;
+}
+
+button.more {
+  margin-top: 1rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* ---- search detail ---- */
+
+ol.merged li {
+  margin-bottom: 0.9rem;
+}
+
+.engine-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.engine-column {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 0.75rem;
+  min-width: 0;
+}
+
+.engine-column h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.engine-column h4 .meta {
+  display: block;
+  font-weight: 400;
+}
+
+ol.engine-results {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+ol.engine-results li {
+  margin-bottom: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+ol.engine-results a {
+  color: #444;
+  text-decoration: none;
+}
+
+ol.engine-results a:hover {
+  text-decoration: underline;
+}
+
+/* The whole point of the side-by-side view: which of each engine's results
+   actually survived into what the caller saw. */
+ol.engine-results li.made-the-cut a {
+  color: #2e39b3;
+  font-weight: 600;
+}
+
+.extraction-list {
+  list-style: none;
+  padding: 0;
+}
+
+.extraction-list li {
+  border-bottom: 1px solid #eee;
+  padding: 0.6rem 0;
 }

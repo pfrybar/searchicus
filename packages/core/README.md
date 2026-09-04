@@ -168,6 +168,31 @@ Each attempt is recorded as metadata only: status, timings, HTTP status,
 title, domain, sizes, and a digest of the Markdown. Page text is never stored,
 and the `extractions` table has nowhere to put it.
 
+## Reading the archive back
+
+`SqliteSearchArchive` also implements `ArchiveInsights`, the read side that the
+dashboard is built on:
+
+```ts
+const store = createDefaultSearchArchive()!;
+await store.engineMetrics({ window: 200 }); // per-engine reliability and contribution
+await store.recentSearches({ limit: 25 }); // newest first, keyset-paged
+await store.searchDetail(searchId); // every engine's page plus the merged ranking
+```
+
+Row-level tallies are computed in SQL; the merge-derived ones — how many of an
+engine's results reached the caller, how often it was the only engine to find
+one — are folded in JS over each stored merged response. Doing that half in
+SQL would mean `json_each` across a nested array of arrays for a result no
+more correct and much harder to read, and the window is bounded precisely so
+that reading it in JS stays cheap. Both halves cover the same window, so every
+number in a row describes the same set of searches.
+
+This is a separate interface from `SearchArchive` and `ExtractionArchive` on
+purpose. Those are narrow write paths taken during a request; this reads
+accumulated history, and anything serving it is exposing a record of what has
+been searched for.
+
 ## Rate limiting
 
 One global `Throttle` gates entry to `searchAll()`, so a single incoming

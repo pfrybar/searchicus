@@ -55,7 +55,7 @@ describe("search API mount points", () => {
   it("answers under /api, which is what the UI calls", async () => {
     const app = withUi();
 
-    expect((await request(app).get("/api/health")).body).toEqual({ status: "ok", extract: false });
+    expect((await request(app).get("/api/health")).body).toEqual({ status: "ok", extract: false, insights: false });
     expect((await request(app).get("/api/engines")).body).toEqual([{ id: "test", name: "Test Search Engine" }]);
 
     const search = await request(app).post("/api/search").send({ query: "cats" });
@@ -67,7 +67,7 @@ describe("search API mount points", () => {
   it("still answers at the root, keeping the existing contract", async () => {
     const app = withUi();
 
-    expect((await request(app).get("/health")).body).toEqual({ status: "ok", extract: false });
+    expect((await request(app).get("/health")).body).toEqual({ status: "ok", extract: false, insights: false });
     const search = await request(app).post("/search").send({ query: "cats" });
     expect(search.status).toBe(200);
   });

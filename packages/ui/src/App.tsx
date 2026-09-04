@@ -1,151 +1,71 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
-import {
-  extract,
-  extractEnabled,
-  listEngines,
-  search,
-  type EngineInfo,
-  type ExtractResponseBody,
-  type SearchResponseBody,
-} from "./api";
-
-type Status = "idle" | "loading" | "error";
-
-/** The extraction panel's state, keyed by the result ref it belongs to. */
-interface Extraction {
-  ref: string;
-  status: "loading" | "ready" | "error";
-  content?: ExtractResponseBody;
-  error?: string;
-}
+import { fetchCapabilities, type Capabilities } from "./api";
+import { MetricsPage } from "./pages/MetricsPage";
+import { SearchDetailPage } from "./pages/SearchDetailPage";
+import { SearchPage } from "./pages/SearchPage";
+import { SearchesPage } from "./pages/SearchesPage";
+import { href, useHashRoute, type Route } from "./router";
 
 export function App() {
-  const [engines, setEngines] = useState<EngineInfo[]>([]);
-  const [canExtract, setCanExtract] = useState(false);
-  const [query, setQuery] = useState("");
-  const [result, setResult] = useState<SearchResponseBody | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [extraction, setExtraction] = useState<Extraction | null>(null);
+  const route = useHashRoute();
+  const [capabilities, setCapabilities] = useState<Capabilities>({ extract: false, insights: false });
 
   useEffect(() => {
-    listEngines()
-      .then(setEngines)
-      .catch(() => setEngines([]));
-    // The endpoint always exists and always answers, so asking up front is
-    // how the button avoids being an action that can only fail.
-    extractEnabled()
-      .then(setCanExtract)
-      .catch(() => setCanExtract(false));
+    // One read for both questions, here rather than in each page: a nav link
+    // to a page that can only answer 503, like an Extract button that can
+    // only answer the same, is worse than no link at all.
+    fetchCapabilities()
+      .then(setCapabilities)
+      .catch(() => setCapabilities({ extract: false, insights: false }));
   }, []);
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!query.trim()) return;
-
-    setStatus("loading");
-    setError(null);
-    setResult(null);
-    setExtraction(null);
-    try {
-      const response = await search({ query });
-      setResult(response);
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
-      setStatus("error");
-    }
-  }
-
-  async function handleExtract(ref: string, url: string) {
-    setExtraction({ ref, status: "loading" });
-    try {
-      // The ref goes with the URL: it is what ties this read back to the
-      // ranking that offered it, which is the signal the server is collecting.
-      const content = await extract({ url, ref });
-      setExtraction({ ref, status: "ready", content });
-    } catch (err) {
-      setExtraction({ ref, status: "error", error: err instanceof Error ? err.message : "Extract failed" });
-    }
-  }
+  const wide = route.name !== "search";
 
   return (
-    <main className="page">
-      <h1>searchicus</h1>
-      <p className="tagline">One query, every backend search engine.</p>
-
-      <form className="search-form" onSubmit={handleSubmit}>
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search…"
-          aria-label="Search query"
-        />
-        <button type="submit" disabled={status === "loading"}>
-          {status === "loading" ? "Searching…" : "Search"}
-        </button>
-      </form>
-
-      {engines.length > 0 && <p className="engines">Searching: {engines.map((engine) => engine.name).join(", ")}</p>}
-
-      {status === "error" && error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-
-      {result && (
-        <div className="results">
-          {result.degraded && <p className="error">Partial results: one or more engines failed.</p>}
-          {result.results.length > 0 ? (
-            <ul>
-              {result.results.map((item) => (
-                <li key={item.ref}>
-                  <a href={item.url} target="_blank" rel="noreferrer">
-                    {item.title}
-                  </a>
-                  <p>Ref: {item.ref}</p>
-                  <p>Found by: {item.found.map(({ engineId }) => engineId).join(", ")}</p>
-                  {item.snippet && <p>{item.snippet}</p>}
-                  {canExtract && (
-                    <button
-                      type="button"
-                      className="extract"
-                      onClick={() => void handleExtract(item.ref, item.url)}
-                      disabled={extraction?.ref === item.ref && extraction.status === "loading"}
-                    >
-                      {extraction?.ref === item.ref && extraction.status === "loading" ? "Extracting…" : "Extract"}
-                    </button>
-                  )}
-                  {extraction?.ref === item.ref && extraction.status === "error" && (
-                    <p className="error" role="alert">
-                      {extraction.error}
-                    </p>
-                  )}
-                  {extraction?.ref === item.ref && extraction.status === "ready" && extraction.content && (
-                    <div className="extraction">
-                      <p className="untrusted">
-                        Untrusted page content
-                        {extraction.content.truncated ? " (truncated)" : ""} — {extraction.content.chars} characters
-                      </p>
-                      {/*
-                        Rendered as preformatted text on purpose. This is
-                        Markdown a stranger's website wrote; interpreting it as
-                        HTML would hand that page the run of this one.
-                      */}
-                      <pre>{extraction.content.markdown}</pre>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="empty">No results.</p>
-          )}
+    <main className={wide ? "page wide" : "page"}>
+      <header className="masthead">
+        <div>
+          <h1>searchicus</h1>
+          <p className="tagline">One query, every backend search engine.</p>
         </div>
-      )}
+        <nav aria-label="Sections">
+          <NavLink route={{ name: "search" }} current={route} label="Search" />
+          {capabilities.insights && (
+            <>
+              <NavLink route={{ name: "metrics" }} current={route} label="Metrics" />
+              <NavLink route={{ name: "searches" }} current={route} label="History" />
+            </>
+          )}
+        </nav>
+      </header>
+
+      {renderRoute(route, capabilities)}
     </main>
+  );
+}
+
+function renderRoute(route: Route, capabilities: Capabilities) {
+  switch (route.name) {
+    case "metrics":
+      return <MetricsPage />;
+    case "searches":
+      return <SearchesPage />;
+    case "search-detail":
+      return <SearchDetailPage searchId={route.searchId} />;
+    default:
+      return <SearchPage canExtract={capabilities.extract} />;
+  }
+}
+
+function NavLink({ route, current, label }: { route: Route; current: Route; label: string }) {
+  // The detail page belongs to History, so the section stays marked while
+  // you are inside it.
+  const active = current.name === route.name || (route.name === "searches" && current.name === "search-detail");
+
+  return (
+    <a href={href(route)} className={active ? "nav active" : "nav"} aria-current={active ? "page" : undefined}>
+      {label}
+    </a>
   );
 }

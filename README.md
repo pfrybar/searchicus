@@ -259,6 +259,35 @@ The base image is pinned to the same Playwright version as
 client expects, and a mismatch fails at launch rather than at build. Bump both
 together.
 
+## Dashboard
+
+The UI has two dashboard pages beside the search box, both reading the local
+archive:
+
+- **Metrics** — per-engine reliability, latency, and, more usefully, what each
+  engine actually contributed: how many of its results reached the caller, how
+  often it supplied the title shown, how many results **no other engine found**,
+  and how many were later extracted. That third number is the one that answers
+  whether an engine earns its seconds; an engine that always agrees with the
+  others is cheap to drop.
+- **History** — every archived search, and for each one what every engine
+  returned in its own order, side by side, with the results that survived into
+  the merged list highlighted. Refs, per-engine ranks, failure kinds and
+  extractions are all there.
+
+Routing is hash-based (`#/metrics`, `#/searches/<id>`), so deep links work
+without the server needing a history fallback — which it must not have, since a
+catch-all would turn genuine API 404s into HTML.
+
+Both pages need the archive, which is on by default. With
+`SEARCHICUS_STORE=false` the endpoints answer `503` and the UI hides the links
+rather than offering pages that can only fail.
+
+> **The archive is a record of everything searched for.** These endpoints serve
+> that history — queries, result titles, URLs — and the API has no
+> authentication. That is fine on a laptop and is not fine on a shared host.
+> Put the server behind something, or set `SEARCHICUS_STORE=false`.
+
 ## Extraction
 
 Extraction renders a URL and returns its main content as Markdown. It is

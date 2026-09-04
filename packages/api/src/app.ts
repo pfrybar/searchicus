@@ -1,5 +1,6 @@
 import {
   AllEnginesFailedError,
+  type ArchiveInsights,
   createDefaultRegistry,
   ExtractFailedError,
   ExtractionDisabledError,
@@ -54,6 +55,12 @@ export interface CreateAppOptions {
    * meeting a bare 404 they cannot interpret.
    */
   extraction?: ExtractionService;
+  /**
+   * Serves the dashboard's read endpoints. Omit to leave them answering 503:
+   * a deployment with archiving switched off has no history to show, and the
+   * dashboard is better told that than left guessing at empty responses.
+   */
+  insights?: ArchiveInsights;
 }
 
 /**
@@ -67,7 +74,7 @@ export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   options: CreateAppOptions = {},
 ): Express {
-  const { mcp = true, ui = false, extraction = new ExtractionService() } = options;
+  const { mcp = true, ui = false, extraction = new ExtractionService(), insights } = options;
   const app = express();
   app.use(express.json());
 
@@ -79,7 +86,7 @@ export function createApp(
   // same-origin in production without a build-time API URL baked in, while
   // the root paths keep the existing contract (README curl examples, every
   // existing test) working unchanged.
-  const search = createSearchRouter(registry, extraction);
+  const search = createSearchRouter(registry, extraction, insights);
   app.use("/api", search);
   app.use(search);
 
@@ -129,14 +136,18 @@ export function createApp(
 }
 
 /** The search and extract endpoints, mounted at both / and /api. */
-function createSearchRouter(registry: SearchEngineRegistry, extraction: ExtractionService): Router {
+function createSearchRouter(
+  registry: SearchEngineRegistry,
+  extraction: ExtractionService,
+  insights: ArchiveInsights | undefined,
+): Router {
   const router = Router();
 
   router.get("/health", (_req, res) => {
     // `extract` is here so the UI can hide an action that would only ever
     // fail, and so an operator can confirm the toggle took effect without
     // making a request that renders something.
-    res.json({ status: "ok", extract: extraction.enabled });
+    res.json({ status: "ok", extract: extraction.enabled, insights: insights !== undefined });
   });
 
   router.get("/engines", (_req, res) => {
@@ -197,7 +208,67 @@ function createSearchRouter(registry: SearchEngineRegistry, extraction: Extracti
     }
   });
 
+  // The dashboard's read endpoints. These serve accumulated history — every
+  // query made, every result seen — which is a good deal more sensitive than
+  // a single result list, so they are only mounted when an archive is
+  // actually configured and they are read-only.
+  router.get("/metrics/engines", async (_req, res, next) => {
+    if (!insights) {
+      res.status(503).json({ error: NO_ARCHIVE });
+      return;
+    }
+
+    try {
+      res.json(await insights.engineMetrics({ window: optionalInt(_req.query.window) }));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get("/searches", async (req, res, next) => {
+    if (!insights) {
+      res.status(503).json({ error: NO_ARCHIVE });
+      return;
+    }
+
+    try {
+      const before = typeof req.query.before === "string" ? req.query.before : undefined;
+      res.json({
+        searches: await insights.recentSearches({ limit: optionalInt(req.query.limit), ...(before ? { before } : {}) }),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get("/searches/:searchId", async (req, res, next) => {
+    if (!insights) {
+      res.status(503).json({ error: NO_ARCHIVE });
+      return;
+    }
+
+    try {
+      const detail = await insights.searchDetail(req.params.searchId);
+      if (!detail) {
+        res.status(404).json({ error: "No such search" });
+        return;
+      }
+      res.json(detail);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return router;
+}
+
+const NO_ARCHIVE = "No search archive is configured, so there is no history to show.";
+
+/** Reads a numeric query parameter, leaving validation to the insights layer. */
+function optionalInt(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 function isMalformedJsonError(err: unknown): boolean {

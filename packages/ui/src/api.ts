@@ -1,4 +1,12 @@
-import type { ExtractRequest, ExtractResponse, MergedSearchResponse, SearchRequest } from "@searchicus/core";
+import type {
+  EngineMetricsReport,
+  ExtractRequest,
+  ExtractResponse,
+  MergedSearchResponse,
+  SearchDetail,
+  SearchRequest,
+  SearchSummary,
+} from "@searchicus/core";
 
 // Defaults to the dev-server proxy (see vite.config.ts); override for a
 // standalone production build by setting VITE_API_URL.
@@ -44,10 +52,52 @@ export async function extract(request: ExtractRequest): Promise<ExtractResponseB
   return res.json() as Promise<ExtractResponseBody>;
 }
 
-/** Whether this server will actually extract, so the action can be hidden. */
-export async function extractEnabled(): Promise<boolean> {
+/** What this deployment can actually do, so the UI can hide what it cannot. */
+export interface Capabilities {
+  extract: boolean;
+  insights: boolean;
+}
+
+/**
+ * Read once, by the shell, and passed down.
+ *
+ * Both answers come from the same endpoint, so asking per-feature meant two
+ * identical requests on every load. Anything unreadable is treated as "off":
+ * hiding a control that would have worked is a smaller mistake than offering
+ * one that cannot.
+ */
+export async function fetchCapabilities(): Promise<Capabilities> {
   const res = await fetch(`${API_BASE}/health`);
-  if (!res.ok) return false;
-  const body = (await res.json().catch(() => null)) as { extract?: boolean } | null;
-  return body?.extract === true;
+  if (!res.ok) return { extract: false, insights: false };
+
+  const body = (await res.json().catch(() => null)) as Partial<Capabilities> | null;
+  return { extract: body?.extract === true, insights: body?.insights === true };
+}
+
+export type EngineMetricsBody = EngineMetricsReport;
+export type SearchSummaryBody = SearchSummary;
+export type SearchDetailBody = SearchDetail;
+
+export async function fetchEngineMetrics(window?: number): Promise<EngineMetricsBody> {
+  const query = window === undefined ? "" : `?window=${window}`;
+  const res = await fetch(`${API_BASE}/metrics/engines${query}`);
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<EngineMetricsBody>;
+}
+
+export async function fetchSearches(options: { limit?: number; before?: string } = {}): Promise<SearchSummaryBody[]> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  if (options.before !== undefined) params.set("before", options.before);
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+
+  const res = await fetch(`${API_BASE}/searches${suffix}`);
+  if (!res.ok) throw new Error(await readError(res));
+  return ((await res.json()) as { searches: SearchSummaryBody[] }).searches;
+}
+
+export async function fetchSearchDetail(searchId: string): Promise<SearchDetailBody> {
+  const res = await fetch(`${API_BASE}/searches/${encodeURIComponent(searchId)}`);
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<SearchDetailBody>;
 }

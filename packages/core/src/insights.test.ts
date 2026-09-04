@@ -1,0 +1,341 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { SearchArchiveRecord } from "./archive.js";
+import { boundedLimit, MAX_INSIGHTS_LIMIT, percentile, round } from "./insights.js";
+import type { RankedResult } from "./ranking.js";
+import { SqliteSearchArchive } from "./storage.js";
+import type { EngineFailureKind, EngineSearchOutcome, SearchResult } from "./types.js";
+
+const directories: string[] = [];
+
+function archive(): SqliteSearchArchive {
+  const directory = mkdtempSync(path.join(tmpdir(), "searchicus-insights-"));
+  directories.push(directory);
+  return new SqliteSearchArchive(path.join(directory, "searches.sqlite"));
+}
+
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+function result(url: string, source: string): SearchResult {
+  return { title: url, url, source };
+}
+
+function ranked(ref: string, url: string, found: string[], bestSource = found[0] ?? "bing"): RankedResult {
+  return {
+    ref,
+    title: url,
+    url,
+    score: 0.02,
+    bestSource,
+    found: found.map((engineId, index) => ({ engineId, rank: index + 1 })),
+    families: [...new Set(found)],
+  };
+}
+
+function ok(engineId: string, tookMs: number, results: SearchResult[]): EngineSearchOutcome {
+  return {
+    engineId,
+    ok: true,
+    tookMs,
+    response: { query: { query: "cats" }, engine: engineId, tookMs, results },
+  };
+}
+
+function failed(engineId: string, tookMs: number, kind: EngineFailureKind): EngineSearchOutcome {
+  return { engineId, ok: false, tookMs, errorKind: kind, error: `${engineId} failed` };
+}
+
+/**
+ * One archived fan-out. Coverage and match are not parameters here: the
+ * archive recomputes both from the results themselves, so a test steers them
+ * through the result text it supplies.
+ */
+function record(overrides: Partial<SearchArchiveRecord> = {}): SearchArchiveRecord {
+  const query = { query: "cats" };
+  const searchId = overrides.searchId ?? "search01";
+  return {
+    searchId,
+    startedAt: "2026-09-04T16:00:00.000Z",
+    query,
+    engineIds: ["bing", "brave"],
+    outcomes: [
+      ok("bing", 100, [result("https://a.test/cats", "bing"), result("https://b.test/cats", "bing")]),
+      ok("brave", 300, [result("https://a.test/cats", "brave")]),
+    ],
+    response: {
+      searchId,
+      query,
+      tookMs: 320,
+      degraded: false,
+      results: [
+        ranked(`${searchId}-1`, "https://a.test/cats", ["bing", "brave"]),
+        ranked(`${searchId}-2`, "https://b.test/cats", ["bing"]),
+      ],
+    },
+    tookMs: 320,
+    ...overrides,
+  };
+}
+
+describe("percentile", () => {
+  it("returns an observed value rather than an interpolated one", () => {
+    // These are measured request times; a p95 that really happened is more
+    // use than one averaged from two that did.
+    expect(percentile([10, 20, 30, 40], 0.5)).toBe(20);
+    expect(percentile([10, 20, 30, 40], 0.95)).toBe(40);
+    expect(percentile([7], 0.5)).toBe(7);
+    expect(percentile([], 0.5)).toBeNull();
+  });
+});
+
+describe("boundedLimit", () => {
+  it("falls back and caps rather than letting a caller read everything", () => {
+    expect(boundedLimit(undefined, 50)).toBe(50);
+    expect(boundedLimit(0, 50)).toBe(50);
+    expect(boundedLimit(1.5, 50)).toBe(50);
+    expect(boundedLimit(10, 50)).toBe(10);
+    expect(boundedLimit(999_999, 50)).toBe(MAX_INSIGHTS_LIMIT);
+  });
+});
+
+describe("round", () => {
+  it("keeps averages readable in a JSON response", () => {
+    expect(round(0.6666666)).toBe(0.667);
+    expect(round(12)).toBe(12);
+  });
+});
+
+describe("engineMetrics", () => {
+  it("summarizes reliability, speed, and what each engine contributed", async () => {
+    const store = archive();
+    await store.archive(record());
+    const metrics = await store.engineMetrics();
+
+    expect(metrics).toMatchObject({ window: 1, totalSearches: 1, since: "2026-09-04T16:00:00.000Z" });
+
+    const bing = metrics.engines.find((engine) => engine.engineId === "bing");
+    expect(bing).toMatchObject({
+      searches: 1,
+      succeeded: 1,
+      failed: 0,
+      medianTookMs: 100,
+      meanResultCount: 2,
+      returned: 2,
+      bestSource: 2,
+      soleFinder: 1,
+      extracted: 0,
+    });
+
+    const brave = metrics.engines.find((engine) => engine.engineId === "brave");
+    // Credited for the result it helped surface, but not for supplying the
+    // display, and not as the sole finder of anything.
+    expect(brave).toMatchObject({ returned: 1, bestSource: 0, soleFinder: 0 });
+    await store.close();
+  });
+
+  it("counts failures by kind and leaves averages null with nothing to average", async () => {
+    const store = archive();
+    await store.archive(
+      record({
+        outcomes: [ok("bing", 100, [result("https://a.test/cats", "bing")]), failed("brave", 50, "timeout")],
+      }),
+    );
+
+    const brave = (await store.engineMetrics()).engines.find((engine) => engine.engineId === "brave");
+    expect(brave).toMatchObject({
+      searches: 1,
+      succeeded: 0,
+      failed: 1,
+      failures: [{ kind: "timeout", count: 1 }],
+      medianTookMs: null,
+      meanResultCount: null,
+      meanCoverage: null,
+    });
+    await store.close();
+  });
+
+  it("credits an engine when a result it found was later extracted", async () => {
+    const store = archive();
+    await store.archive(record());
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:01:00.000Z",
+      searchId: "search01",
+      resultRef: "search01-1",
+      requestedUrl: "https://a.test/cats",
+      status: "completed",
+      tookMs: 700,
+    });
+
+    const metrics = await store.engineMetrics();
+    // Both engines found that result, and both helped it reach the caller who
+    // chose to read it — attribution is by `found`, not by who supplied the
+    // title that happened to be shown.
+    expect(metrics.engines.map((engine) => [engine.engineId, engine.extracted])).toEqual(
+      expect.arrayContaining([
+        ["bing", 1],
+        ["brave", 1],
+      ]),
+    );
+    await store.close();
+  });
+
+  it("ignores a failed extraction, which is evidence of nothing", async () => {
+    const store = archive();
+    await store.archive(record());
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:01:00.000Z",
+      searchId: "search01",
+      resultRef: "search01-1",
+      requestedUrl: "https://a.test/cats",
+      status: "failed",
+      errorKind: "timeout",
+      tookMs: 15_000,
+    });
+
+    const bing = (await store.engineMetrics()).engines.find((engine) => engine.engineId === "bing");
+    expect(bing?.extracted).toBe(0);
+    await store.close();
+  });
+
+  it("summarizes only the most recent window, and says how much it saw", async () => {
+    const store = archive();
+    for (let index = 0; index < 5; index++) {
+      await store.archive(record({ searchId: `search0${index}`, startedAt: `2026-09-04T16:0${index}:00.000Z` }));
+    }
+
+    const metrics = await store.engineMetrics({ window: 2 });
+    // A dashboard that slows down as history accumulates stops being opened,
+    // and "how is this engine doing" is a question about the recent past.
+    expect(metrics.window).toBe(2);
+    expect(metrics.totalSearches).toBe(5);
+    expect(metrics.since).toBe("2026-09-04T16:03:00.000Z");
+    expect(metrics.engines.find((engine) => engine.engineId === "bing")?.searches).toBe(2);
+    await store.close();
+  });
+
+  it("reports an empty archive without inventing anything", async () => {
+    const store = archive();
+    await expect(store.engineMetrics()).resolves.toEqual({
+      window: 0,
+      totalSearches: 0,
+      since: null,
+      engines: [],
+    });
+    await store.close();
+  });
+});
+
+describe("recentSearches", () => {
+  it("lists newest first with each engine's outcome, but not its whole page", async () => {
+    const store = archive();
+    await store.archive(record({ searchId: "older", startedAt: "2026-09-04T16:00:00.000Z" }));
+    await store.archive(record({ searchId: "newer", startedAt: "2026-09-04T17:00:00.000Z" }));
+
+    const searches = await store.recentSearches();
+
+    expect(searches.map((search) => search.searchId)).toEqual(["newer", "older"]);
+    expect(searches[0]).toMatchObject({
+      query: "cats",
+      status: "completed",
+      degraded: false,
+      resultCount: 2,
+      engineIds: ["bing", "brave"],
+      extractions: 0,
+    });
+    // A list view carries counts; the pages themselves are the detail view's
+    // job, and shipping them here would make the list enormous.
+    expect(searches[0]?.engines.map((engine) => engine.engineId)).toEqual(["bing", "brave"]);
+    expect(searches[0]?.engines[0]?.results).toBeUndefined();
+    await store.close();
+  });
+
+  it("pages with a keyset rather than an offset", async () => {
+    const store = archive();
+    for (let index = 0; index < 4; index++) {
+      await store.archive(record({ searchId: `s${index}`, startedAt: `2026-09-04T16:0${index}:00.000Z` }));
+    }
+
+    const first = await store.recentSearches({ limit: 2 });
+    const second = await store.recentSearches({ limit: 2, before: first.at(-1)!.searchId });
+
+    // An OFFSET would repeat or skip rows as new searches land mid-read.
+    expect(first.map((search) => search.searchId)).toEqual(["s3", "s2"]);
+    expect(second.map((search) => search.searchId)).toEqual(["s1", "s0"]);
+    await store.close();
+  });
+
+  it("reports a total failure as such, with no result count", async () => {
+    const store = archive();
+    await store.archive(
+      record({ response: undefined, outcomes: [failed("bing", 10, "no_results"), failed("brave", 20, "off_target")] }),
+    );
+
+    const [search] = await store.recentSearches();
+    expect(search).toMatchObject({ status: "failed", resultCount: null, degraded: null });
+    expect(search?.engines.every((engine) => !engine.ok)).toBe(true);
+    await store.close();
+  });
+});
+
+describe("searchDetail", () => {
+  it("returns each engine's own page alongside the ranking that shipped", async () => {
+    const store = archive();
+    await store.archive(record());
+
+    const detail = await store.searchDetail("search01");
+
+    // The question the page exists to answer: what did each engine actually
+    // say, and what did the caller end up seeing?
+    expect(detail?.merged?.results.map((result) => result.ref)).toEqual(["search01-1", "search01-2"]);
+    expect(detail?.engines.map((engine) => [engine.engineId, engine.results.length])).toEqual([
+      ["bing", 2],
+      ["brave", 1],
+    ]);
+    expect(detail?.engines[0]?.results[0]?.url).toBe("https://a.test/cats");
+    await store.close();
+  });
+
+  it("includes the diagnostic message a list view withholds", async () => {
+    const store = archive();
+    await store.archive(record({ outcomes: [failed("bing", 10, "off_target")] }));
+
+    const detail = await store.searchDetail("search01");
+    expect(detail?.engines[0]).toMatchObject({ ok: false, errorKind: "off_target", error: "bing failed", results: [] });
+    await store.close();
+  });
+
+  it("lists the extractions made from the search", async () => {
+    const store = archive();
+    await store.archive(record());
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:01:00.000Z",
+      searchId: "search01",
+      resultRef: "search01-2",
+      requestedUrl: "https://b.test/cats",
+      status: "completed",
+      tookMs: 800,
+      title: "B",
+      chars: 1200,
+    });
+
+    const detail = await store.searchDetail("search01");
+    expect(detail?.extractions).toBe(1);
+    expect(detail?.extractionDetails[0]).toMatchObject({
+      resultRef: "search01-2",
+      status: "completed",
+      title: "B",
+      chars: 1200,
+    });
+    await store.close();
+  });
+
+  it("resolves nothing for a search that was never archived", async () => {
+    const store = archive();
+    await expect(store.searchDetail("nope")).resolves.toBeUndefined();
+    await store.close();
+  });
+});

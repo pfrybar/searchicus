@@ -32,10 +32,11 @@ packages/
   core/   shared types + SearchEngine interface + registry + engines
           + browser session (Playwright) + rate-limit throttle
           + browser realism (stealth/human/dwell/click-through) + relevance gate
-          + ranking/fusion + SQLite archive + rendered extraction (src/extract/)
+          + ranking/fusion + SQLite archive and its read side (insights.ts)
+          + rendered extraction (src/extract/)
   cli/    `searchicus` CLI (commander)
   api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
-  ui/     web UI (vite + react)
+  ui/     web UI (vite + react): search, plus dashboard metrics/history pages
 ```
 
 Each package is independently versioned/built under `packages/*`. Internal
