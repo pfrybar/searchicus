@@ -3,6 +3,7 @@ export * from "./context.js";
 export * from "./schemas.js";
 export * from "./throttle.js";
 export * from "./relevance.js";
+export * from "./ranking.js";
 export * from "./registry.js";
 export * from "./engines/errors.js";
 export * from "./engines/flow.js";

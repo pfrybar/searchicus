@@ -7,7 +7,8 @@ server, UI):
 - `SearchQuerySchema` — a zod schema that validates and trims a `SearchQuery`.
 - `SearchRequestSchema` — the shared API/MCP request schema, which adds an
   optional, non-empty, duplicate-free `engines` selection.
-- `SearchEngine` — the plugin interface a backend search engine implements.
+- `SearchEngine` — the plugin interface a backend search engine implements;
+  its optional `indexFamily` identifies correlated result sources for ranking.
 - `SearchSession` — an engine's two-phase result: the response plus a
   `completed` promise for browser work that outlives it.
 - `SearchContext` / `BrowserLease` — what an engine is handed to get at a
@@ -27,6 +28,8 @@ server, UI):
   field is read off a SERP, guarded and style-stripped.
 - `assessRelevance()` — scores a result set against its query, to catch a
   results page that parses cleanly but answers a different question.
+- `rankResults()` / `canonicalizeUrl()` — merge per-engine outcomes into a
+  family-aware, attributed result ranking without changing the raw outcomes.
 - `createDefaultRegistry()` — the registry every front door uses by default.
 
 Playwright lives behind a separate entry point, `@searchicus/core/browser`:
@@ -128,7 +131,9 @@ Implement `SearchEngine` (`id`, `name`, `search(query, ctx)`) and
 `.register()` it in `createDefaultRegistry()` (`src/registry.ts`) — every
 front door picks it up automatically. `ctx.acquireBrowser()` is lazy, so an
 engine that doesn't need a browser never causes Chromium to launch. Engine
-ids must be stable and unique; callers use them to select a backend.
+ids must be stable and unique; callers use them to select a backend. Set the
+optional `indexFamily` when the engine is a correlated frontend for another
+index; omit it for an independent engine, which then forms its own family.
 
 ## Scripts
 

@@ -61,6 +61,7 @@ const SNIPPET_SELECTOR = ".generic-snippet .content, .inline-qa-question";
 export class BraveSearchEngine implements SearchEngine, BrowserSearchSpec {
   readonly id = "brave";
   readonly name = "Brave";
+  readonly indexFamily = "brave";
   readonly homepage = HOMEPAGE;
   readonly linkSelector = LINK_SELECTOR;
 
