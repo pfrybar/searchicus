@@ -219,16 +219,181 @@ describe("SqliteSearchArchive", () => {
     await store.close();
   });
 
+  describe("extractions", () => {
+    it("resolves a ref back to the URL that ref actually named", async () => {
+      const store = new SqliteSearchArchive(temporaryDatabase());
+      await store.archive(record());
+
+      await expect(store.findResult("search-123-1")).resolves.toEqual({
+        searchId: "search-123",
+        ref: "search-123-1",
+        url: "https://example.test/cats",
+        rank: 1,
+      });
+      await store.close();
+    });
+
+    it("resolves nothing for a ref that names no stored result", async () => {
+      const store = new SqliteSearchArchive(temporaryDatabase());
+      await store.archive(record());
+
+      for (const ref of ["search-123-2", "search-999-1", "search-123-0", "nodash", "-1", "search-123-x"]) {
+        await expect(store.findResult(ref), ref).resolves.toBeUndefined();
+      }
+      await store.close();
+    });
+
+    it("resolves nothing when the search failed and returned no list", async () => {
+      const store = new SqliteSearchArchive(temporaryDatabase());
+      await store.archive(record({ response: undefined }));
+
+      await expect(store.findResult("search-123-1")).resolves.toBeUndefined();
+      await store.close();
+    });
+
+    it("records ref-correlated and URL-only extractions side by side", async () => {
+      const filePath = temporaryDatabase();
+      const store = new SqliteSearchArchive(filePath);
+      await store.archive(record());
+      await store.recordExtraction({
+        startedAt: "2026-09-04T16:01:00.000Z",
+        searchId: "search-123",
+        resultRef: "search-123-1",
+        requestedUrl: "https://example.test/cats",
+        finalUrl: "https://www.example.test/cats",
+        status: "completed",
+        httpStatus: 200,
+        contentType: "text/html",
+        redirects: 1,
+        tookMs: 812,
+        title: "Cats",
+        domain: "www.example.test",
+        chars: 1200,
+        wordCount: 210,
+        truncated: false,
+        markdownSha256: "a".repeat(64),
+      });
+      await store.recordExtraction({
+        startedAt: "2026-09-04T16:02:00.000Z",
+        requestedUrl: "https://elsewhere.test/dogs",
+        status: "failed",
+        errorKind: "timeout",
+        tookMs: 15_000,
+        domain: "elsewhere.test",
+      });
+      await store.close();
+
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(filePath, { enableForeignKeyConstraints: true });
+      try {
+        const rows = db.prepare("SELECT * FROM extractions ORDER BY extraction_id").all() as Record<string, unknown>[];
+        expect(rows).toHaveLength(2);
+        expect(rows[0]).toMatchObject({
+          search_id: "search-123",
+          result_ref: "search-123-1",
+          status: "completed",
+          error_kind: null,
+          redirects: 1,
+          truncated: 0,
+        });
+        // A URL the caller brought themselves has no ranking behind it, and
+        // the row must not pretend otherwise.
+        expect(rows[1]).toMatchObject({
+          search_id: null,
+          result_ref: null,
+          status: "failed",
+          error_kind: "timeout",
+        });
+        expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      } finally {
+        db.close();
+      }
+    });
+
+    it("keeps no column that could hold page content", async () => {
+      const filePath = temporaryDatabase();
+      const store = new SqliteSearchArchive(filePath);
+      await store.archive(record());
+      await store.close();
+
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(filePath);
+      try {
+        // Structural, not incidental: extraction stores metadata about pages
+        // and never the pages themselves, so there must be nowhere to put it.
+        const columns = (db.prepare("PRAGMA table_info(extractions)").all() as { name: string }[]).map(
+          (column) => column.name,
+        );
+        expect(columns).not.toContain("content_text");
+        expect(columns.filter((name) => /content|markdown|html|text/.test(name))).toEqual([
+          "content_type",
+          "markdown_sha256",
+        ]);
+      } finally {
+        db.close();
+      }
+    });
+
+    it("counts repeat extractions of one result rather than collapsing them", async () => {
+      const filePath = temporaryDatabase();
+      const store = new SqliteSearchArchive(filePath);
+      await store.archive(record());
+
+      // Re-reading a result is the signal, not a duplicate: a key over
+      // (search_id, result_ref) would silently discard the second and third.
+      for (const startedAt of ["16:01", "16:02", "16:03"]) {
+        await store.recordExtraction({
+          startedAt: `2026-09-04T${startedAt}:00.000Z`,
+          searchId: "search-123",
+          resultRef: "search-123-1",
+          requestedUrl: "https://example.test/cats",
+          status: "completed",
+          tookMs: 700,
+        });
+      }
+      await store.close();
+
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(filePath);
+      try {
+        expect(db.prepare("SELECT count(*) AS count FROM extractions").get()).toEqual({ count: 3 });
+      } finally {
+        db.close();
+      }
+    });
+
+    it("refuses a row claiming half a search provenance", async () => {
+      const store = new SqliteSearchArchive(temporaryDatabase());
+      await store.archive(record());
+
+      await expect(
+        store.recordExtraction({
+          startedAt: "2026-09-04T16:01:00.000Z",
+          searchId: "search-123",
+          requestedUrl: "https://example.test/cats",
+          status: "completed",
+          tookMs: 5,
+        }),
+      ).rejects.toThrow(/constraint/i);
+      await store.close();
+    });
+  });
+
   it("lets several processes race to create the same new archive", { timeout: 30_000 }, async () => {
     const filePath = temporaryDatabase();
     const racer = fileURLToPath(new URL("./__fixtures__/archive-racer.mjs", import.meta.url));
 
-    // The regression: the migration used to read user_version before taking
-    // the write lock, so every process but the winner re-ran the DDL and died
-    // on "table searches already exists" — losing its record silently,
-    // because archive writes are best-effort.
+    // Two regressions live here, both of which lost records silently because
+    // archive writes are best-effort:
+    //
+    //   1. the migration read user_version before taking the write lock, so
+    //      every process but the winner re-ran the DDL and died on "table
+    //      searches already exists" — every time, at four processes;
+    //   2. `PRAGMA journal_mode = WAL` takes an exclusive lock SQLite refuses
+    //      to wait for, answering "database is locked" immediately whatever
+    //      busy_timeout says — about one open in sixteen.
     const outcomes = await Promise.allSettled(
-      ["one", "two", "three", "four"].map((searchId) =>
+      ["one", "two", "three", "four", "five", "six", "seven", "eight"].map((searchId) =>
         // --no-warnings keeps a failing racer's own message readable instead
         // of buried in Node's experimental-SQLite notice.
         execFileAsync(process.execPath, ["--no-warnings=ExperimentalWarning", racer, filePath, searchId]),
@@ -245,7 +410,8 @@ describe("SqliteSearchArchive", () => {
     const { DatabaseSync } = await import("node:sqlite");
     const db = new DatabaseSync(filePath);
     try {
-      expect(db.prepare("SELECT count(*) AS count FROM searches").get()).toEqual({ count: 4 });
+      expect(db.prepare("SELECT count(*) AS count FROM searches").get()).toEqual({ count: 8 });
+      expect(db.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "wal" });
       expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally {
       db.close();
