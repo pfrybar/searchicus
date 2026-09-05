@@ -1,6 +1,6 @@
 import type { Browser, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { collapse, readCollapsed, readSnippet, readText } from "./parse.js";
+import { collapse, isWebUrl, readCollapsed, readSnippet, readText } from "./parse.js";
 
 describe("collapse", () => {
   it("collapses the whitespace textContent preserves", () => {
@@ -133,5 +133,23 @@ describe.skipIf(!browser)("readSnippet", () => {
     await page.setContent(`<div id="result"><p>  What are people   saying?  </p></div>`);
 
     expect(await readSnippet(page.locator("#result p"))).toBe("What are people saying?");
+  });
+});
+
+describe("isWebUrl", () => {
+  it("accepts the absolute web URLs a result can actually have", () => {
+    expect(isWebUrl("https://example.com/a?b=1#c")).toBe(true);
+    expect(isWebUrl("http://example.com")).toBe(true);
+  });
+
+  it("refuses anything that is not one, including near misses", () => {
+    // The old check was startsWith("http"), which let the first two through
+    // and excluded the relative forms only by accident.
+    for (const href of ["httpfoo://example.com", "https-evil:payload", "javascript:alert(1)", "data:text/html,x"]) {
+      expect(isWebUrl(href), href).toBe(false);
+    }
+    for (const href of ["/results/1", "example.com", "", null, undefined]) {
+      expect(isWebUrl(href), String(href)).toBe(false);
+    }
   });
 });

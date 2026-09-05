@@ -1,4 +1,5 @@
 import path from "node:path";
+import { envOptOut } from "./env.js";
 
 /** The persistent state root relative to a front door's working directory. */
 export const DEFAULT_DATA_DIR = ".searchicus";
@@ -27,5 +28,5 @@ export function defaultStorePath(): string {
 
 /** Archiving is on unless explicitly disabled for a process. */
 export function searchArchiveEnabled(): boolean {
-  return process.env.SEARCHICUS_STORE !== "false";
+  return envOptOut(process.env.SEARCHICUS_STORE);
 }

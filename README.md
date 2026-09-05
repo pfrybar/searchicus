@@ -247,11 +247,11 @@ one platform's Chromium also isn't valid for another's.
 | `SEARCHICUS_DATA_DIR`    | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.     |
 | `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                |
 | `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                   |
-| `SEARCHICUS_STORE`       | enabled                             | Set to `false` to disable best-effort archival.                        |
+| `SEARCHICUS_STORE`       | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.           |
 | `SEARCHICUS_TIMEZONE`    | `America/Chicago`                   | IANA time zone the browser reports.                                    |
 | `SEARCHICUS_LOCALE`      | `en-US`                             | Locale the browser reports.                                            |
 | `SEARCHICUS_EXTRACT_*`   | extraction disabled                 | Rendered extraction; see "Extraction" below.                           |
-| `MCP_ENABLED`            | on                                  | `false` serves the search API alone; `/mcp` then 404s.                 |
+| `MCP_ENABLED`            | on                                  | Off serves the search API alone; `/mcp` then 404s.                     |
 | `SERVE_UI`               | on when a build exists              | `false` skips the static UI.                                           |
 | `UI_DIST_DIR`            | `packages/ui/dist`                  | Alternate UI build directory.                                          |
 
@@ -343,7 +343,7 @@ someone has to remember.
 
 | Variable                                   |     Default | Effect                                        |
 | ------------------------------------------ | ----------: | --------------------------------------------- |
-| `SEARCHICUS_EXTRACT_ENABLED`               |    disabled | `true` or `1` enables extraction.             |
+| `SEARCHICUS_EXTRACT_ENABLED`               |    disabled | Any of `true`/`1`/`yes`/`on` enables it.      |
 | `SEARCHICUS_EXTRACT_MAX_CONCURRENT`        |         `2` | Extractions running at once, per process.     |
 | `SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS` |    `10_000` | Deadline through `domcontentloaded`.          |
 | `SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS`     |     `2_000` | Fixed pause after the DOM is ready.           |
@@ -351,7 +351,15 @@ someone has to remember.
 | `SEARCHICUS_EXTRACT_MAX_BYTES`             | `5_242_880` | Advisory transfer budget; see below.          |
 | `SEARCHICUS_EXTRACT_MAX_REDIRECTS`         |         `5` | Redirect-chain cap.                           |
 | `SEARCHICUS_EXTRACT_ALLOWED_PORTS`         |    `80,443` | Permitted destination ports.                  |
-| `SEARCHICUS_EXTRACT_DWELL`                 |     enabled | `false` skips the post-load dwell.            |
+| `SEARCHICUS_EXTRACT_DWELL`                 |     enabled | Off skips the post-load dwell.                |
+
+Switches read one vocabulary throughout. A switch that is **off** by default
+(`SEARCHICUS_EXTRACT_ENABLED`) turns on for `true`, `1`, `yes` or `on` and
+stays off for anything else; a switch that is **on** by default
+(`SEARCHICUS_STORE`, `SEARCHICUS_EXTRACT_DWELL`, `MCP_ENABLED`, `SERVE_UI`)
+turns off for `false`, `0`, `no` or `off` and stays on for anything else.
+Case and surrounding spaces do not matter, and an unrecognised value leaves
+the switch at its default — which for both directions is the safe one.
 
 `maxChars` is the one limit a caller controls, since it only bounds the
 response (default 20,000, maximum 100,000). The byte budget is advisory: a

@@ -1,3 +1,5 @@
+import { envOptIn, envOptOut } from "../env.js";
+
 /** Markdown returned when a caller does not ask for a specific budget. */
 export const DEFAULT_EXTRACT_MAX_CHARS = 20_000;
 /** Ceiling on the caller-controlled Markdown budget. */
@@ -61,7 +63,9 @@ export const DEFAULT_EXTRACT_CONFIG: ExtractConfig = {
  */
 export function extractConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ExtractConfig {
   return {
-    enabled: env.SEARCHICUS_EXTRACT_ENABLED === "true" || env.SEARCHICUS_EXTRACT_ENABLED === "1",
+    // Opt-in: rendering caller-supplied URLs is not something to start doing
+    // because a value was ambiguous. See envOptIn.
+    enabled: envOptIn(env.SEARCHICUS_EXTRACT_ENABLED),
     maxConcurrent: positiveInt(env.SEARCHICUS_EXTRACT_MAX_CONCURRENT, DEFAULT_EXTRACT_CONFIG.maxConcurrent),
     navigationTimeoutMs: positiveInt(
       env.SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS,
@@ -69,7 +73,7 @@ export function extractConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Extr
     ),
     settleTimeoutMs: nonNegativeInt(env.SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS, DEFAULT_EXTRACT_CONFIG.settleTimeoutMs),
     timeoutMs: positiveInt(env.SEARCHICUS_EXTRACT_TIMEOUT_MS, DEFAULT_EXTRACT_CONFIG.timeoutMs),
-    dwell: env.SEARCHICUS_EXTRACT_DWELL !== "false",
+    dwell: envOptOut(env.SEARCHICUS_EXTRACT_DWELL),
     maxBytes: positiveInt(env.SEARCHICUS_EXTRACT_MAX_BYTES, DEFAULT_EXTRACT_CONFIG.maxBytes),
     maxRedirects: nonNegativeInt(env.SEARCHICUS_EXTRACT_MAX_REDIRECTS, DEFAULT_EXTRACT_CONFIG.maxRedirects),
     allowedPorts: ports(env.SEARCHICUS_EXTRACT_ALLOWED_PORTS, DEFAULT_EXTRACT_CONFIG.allowedPorts),

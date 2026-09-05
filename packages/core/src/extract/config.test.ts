@@ -4,13 +4,16 @@ import { DEFAULT_EXTRACT_CONFIG, extractConfigFromEnv } from "./config.js";
 describe("extractConfigFromEnv", () => {
   it("is off unless explicitly switched on", () => {
     expect(extractConfigFromEnv({}).enabled).toBe(false);
-    // Opt-in, so only an unambiguous yes counts. "1" is accepted because it is
-    // what a shell or compose file most often carries.
-    for (const value of ["false", "0", "yes", "on", "", "TRUE"]) {
+    // Opt-in, so only an unambiguous yes counts — but every unambiguous yes
+    // does. An operator who writes "yes" means yes, and used to get a
+    // silently disabled endpoint with nothing to explain it.
+    for (const value of ["true", "TRUE", " true ", "1", "yes", "on"]) {
+      expect(extractConfigFromEnv({ SEARCHICUS_EXTRACT_ENABLED: value }).enabled, value).toBe(true);
+    }
+    // Anything that is not a yes leaves it off, including a near miss.
+    for (const value of ["false", "0", "no", "off", "", "tru", "maybe"]) {
       expect(extractConfigFromEnv({ SEARCHICUS_EXTRACT_ENABLED: value }).enabled, value).toBe(false);
     }
-    expect(extractConfigFromEnv({ SEARCHICUS_EXTRACT_ENABLED: "true" }).enabled).toBe(true);
-    expect(extractConfigFromEnv({ SEARCHICUS_EXTRACT_ENABLED: "1" }).enabled).toBe(true);
   });
 
   it("reads every limit from the environment", () => {
