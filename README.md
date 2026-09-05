@@ -100,8 +100,9 @@ Two consequences shape the API:
   are ready; the `SearchSession.completed` promise settling means the browser
   work is finished. An engine can return results immediately and keep paging
   or following links afterwards. The registry holds the browser lease until
-  `completed` settles, which is why short-lived processes must `drain()`
-  before exiting.
+  `completed` settles, or until the session cap fires if an engine never
+  settles it, which is why short-lived processes must `drain()` before
+  exiting.
 - **Searches are rate limited as whole fan-outs.** One global throttle gates
   entry to `searchAll()`, so a single query still hits every engine in
   parallel while consecutive searches are spaced apart (5s ±30% by default).

@@ -4,6 +4,7 @@ import type { BrowserLeaseHandle, BrowserProvider } from "../context.js";
 import { defaultProfileDir } from "../paths.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "../registry.js";
 import { createDefaultSearchArchive } from "../storage.js";
+import { LazyLaunch } from "./lazy-launch.js";
 import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
 
 /**
@@ -82,8 +83,7 @@ export class BrowserSession implements BrowserProvider {
   readonly #launchOptions: NonNullable<BrowserSessionOptions["launchOptions"]>;
   readonly #initScript: string | undefined;
 
-  #context: BrowserContext | undefined;
-  #launching: Promise<BrowserContext> | undefined;
+  readonly #chromium: LazyLaunch<BrowserContext>;
   #closed = false;
   #openPages = 0;
   #waiters: { resolve: () => void; reject: (err: unknown) => void }[] = [];
@@ -93,11 +93,15 @@ export class BrowserSession implements BrowserProvider {
     this.#maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
     this.#launchOptions = options.launchOptions ?? {};
     this.#initScript = options.initScript;
+    this.#chromium = new LazyLaunch(
+      () => this.#launchContext(),
+      (context) => context.close(),
+    );
   }
 
   /** True once Chromium has actually been launched. Nothing launches until first acquire. */
   get launched(): boolean {
-    return this.#context !== undefined;
+    return this.#chromium.launched;
   }
 
   /**
@@ -159,54 +163,41 @@ export class BrowserSession implements BrowserProvider {
     this.#waiters = [];
     for (const waiter of waiters) waiter.reject(new Error("BrowserSession is closed"));
 
-    const context = this.#context;
-    this.#context = undefined;
-    this.#launching = undefined;
     this.#openPages = 0;
+    await this.#chromium.close();
+  }
 
-    if (context) await context.close().catch(() => undefined);
+  /** The memoized context, launched on first use. See LazyLaunch. */
+  async #ensureContext(): Promise<BrowserContext> {
+    return this.#chromium.get();
   }
 
   /**
-   * Launches on first use and memoizes. `launchPersistentContext` returns a
-   * BrowserContext directly — with a persistent profile there is no separate
-   * Browser object, which is why this class holds a context and not a browser.
+   * `launchPersistentContext` returns a BrowserContext directly — with a
+   * persistent profile there is no separate Browser object, which is why this
+   * class holds a context and not a browser.
    */
-  async #ensureContext(): Promise<BrowserContext> {
-    if (this.#context) return this.#context;
-    if (this.#launching) return this.#launching;
+  async #launchContext(): Promise<BrowserContext> {
+    try {
+      const launchOptions =
+        typeof this.#launchOptions === "function" ? await this.#launchOptions() : this.#launchOptions;
 
-    this.#launching = (async () => {
-      try {
-        const launchOptions =
-          typeof this.#launchOptions === "function" ? await this.#launchOptions() : this.#launchOptions;
+      const context = await chromium.launchPersistentContext(this.#profileDir, {
+        headless: true,
+        ...launchOptions,
+      });
 
-        const context = await chromium.launchPersistentContext(this.#profileDir, {
-          headless: true,
-          ...launchOptions,
-        });
+      // Before any page exists, so the very first navigation is covered.
+      if (this.#initScript) await context.addInitScript(this.#initScript);
 
-        // Before any page exists, so the very first navigation is covered.
-        if (this.#initScript) await context.addInitScript(this.#initScript);
+      // A crashed or externally-killed browser must not be handed out again;
+      // dropping the reference makes the next acquire relaunch.
+      context.on("close", () => this.#chromium.forget(context));
 
-        // A crashed or externally-killed browser must not be handed out
-        // again; dropping the reference makes the next acquire relaunch.
-        context.on("close", () => {
-          if (this.#context === context) {
-            this.#context = undefined;
-            this.#launching = undefined;
-          }
-        });
-
-        this.#context = context;
-        return context;
-      } catch (err) {
-        this.#launching = undefined;
-        throw new BrowserUnavailableError(err);
-      }
-    })();
-
-    return this.#launching;
+      return context;
+    } catch (err) {
+      throw new BrowserUnavailableError(err);
+    }
   }
 
   #reservePageSlot(signal?: AbortSignal): Promise<void> {

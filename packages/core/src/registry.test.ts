@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SearchArchive, SearchArchiveRecord } from "./archive.js";
 import { AllEnginesFailedError, createDefaultRegistry, SearchEngineRegistry, UnknownEngineError } from "./registry.js";
-import type { SearchEngine, SearchQuery, SearchResponse, SearchResult } from "./types.js";
+import type { BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
+import type { SearchEngine, SearchQuery, SearchResponse, SearchResult, SearchSession } from "./types.js";
 
 class RecordingArchive implements SearchArchive {
   readonly records: SearchArchiveRecord[] = [];
@@ -32,6 +33,100 @@ class TestSearchEngine implements SearchEngine {
     return { query, results, engine: this.id, tookMs: 0 };
   }
 }
+
+/** A browser whose page hand-out this test controls the timing of. */
+function pausedBrowser(): {
+  provider: BrowserProvider;
+  hand: (handle: BrowserLeaseHandle) => void;
+  released: string[];
+} {
+  const released: string[] = [];
+  let hand: (handle: BrowserLeaseHandle) => void = () => undefined;
+  const pending = new Promise<BrowserLeaseHandle>((resolve) => {
+    hand = resolve;
+  });
+
+  return {
+    released,
+    hand: (handle) => hand(handle),
+    provider: {
+      acquire: () => pending,
+      close: async () => undefined,
+    },
+  };
+}
+
+function leaseHandle(name: string, released: string[]): BrowserLeaseHandle {
+  return {
+    lease: { page: {} as never, newPage: async () => ({}) as never },
+    release: async () => void released.push(name),
+  };
+}
+
+describe("SearchEngineRegistry session lifetime", () => {
+  it("releases a lease the session cap reached, even if the engine never finishes", async () => {
+    // The regression: cleanup hung off `completed`, so an engine that never
+    // settled it held its page, its slot in drain(), and close() itself open
+    // forever. Aborting the signal only asks; this is the bound.
+    const released: string[] = [];
+    const provider: BrowserProvider = {
+      acquire: async () => leaseHandle("page", released),
+      close: async () => undefined,
+    };
+
+    class NeverFinishes implements SearchEngine {
+      readonly id = "stuck";
+      readonly name = "Never Finishes";
+      async search(query: SearchQuery, ctx: SearchContext): Promise<SearchSession> {
+        await ctx.acquireBrowser();
+        return {
+          response: { query, results: [], engine: this.id, tookMs: 0 },
+          completed: new Promise<void>(() => undefined),
+        };
+      }
+    }
+
+    const registry = new SearchEngineRegistry({ throttle: null, browser: provider, sessionTimeoutMs: 40 });
+    registry.register(new NeverFinishes());
+
+    await registry.searchAll({ query: "x" }, ["stuck"]);
+    expect(registry.activeSessions).toBe(1);
+
+    // The whole point: this returns rather than hanging.
+    await registry.drain();
+    expect(registry.activeSessions).toBe(0);
+    expect(released).toEqual(["page"]);
+  });
+
+  it("releases a lease that arrives after the run was cleaned up", async () => {
+    // A Chromium launch can still be resolving when the results deadline
+    // fires. The handle used to be pushed onto an already-emptied list and
+    // never released, leaking a page into a browser meant to run for days.
+    const { provider, hand, released } = pausedBrowser();
+
+    class SlowToGetABrowser implements SearchEngine {
+      readonly id = "slow";
+      readonly name = "Slow";
+      async search(query: SearchQuery, ctx: SearchContext): Promise<SearchResponse> {
+        await ctx.acquireBrowser();
+        return { query, results: [], engine: this.id, tookMs: 0 };
+      }
+    }
+
+    const registry = new SearchEngineRegistry({ throttle: null, browser: provider, resultsTimeoutMs: 30 });
+    registry.register(new SlowToGetABrowser());
+
+    const outcomes = await registry.searchAll({ query: "x" }, ["slow"]);
+    expect(outcomes[0]?.ok).toBe(false);
+
+    // The browser finally hands over a page, long after the search gave up.
+    hand(leaseHandle("late page", released));
+    await afterImmediate();
+    await afterImmediate();
+
+    expect(released).toEqual(["late page"]);
+  });
+});
 
 describe("SearchEngineRegistry", () => {
   it("registers and looks up engines by id", () => {
