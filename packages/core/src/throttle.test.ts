@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Throttle, ThrottleAbortError, sleep } from "./throttle.js";
+import { Throttle, ThrottleAbortError, ThrottleOverloadedError, sleep } from "./throttle.js";
 
 /** Milliseconds elapsed while running `fn`. */
 async function timed(fn: () => Promise<unknown>): Promise<number> {
@@ -75,6 +75,66 @@ describe("Throttle", () => {
     await throttle.acquire();
 
     await expect(throttle.acquire(AbortSignal.abort())).rejects.toBeInstanceOf(ThrottleAbortError);
+  });
+
+  it("gives an aborted caller's place back instead of spending its slot", async () => {
+    // The bug this pins: reservations used to be taken at request time and
+    // kept when the caller gave up, so a burst of abandoned searches pushed
+    // the horizon minutes out and every legitimate search in between failed.
+    const throttle = new Throttle({ minIntervalMs: 60, jitter: 0 });
+    await throttle.acquire();
+
+    const abandoned = Array.from({ length: 20 }, () => {
+      const controller = new AbortController();
+      const pending = throttle.acquire(controller.signal);
+      controller.abort();
+      return pending;
+    });
+    await Promise.allSettled(abandoned);
+
+    expect(throttle.queued).toBe(0);
+    // One interval, not twenty-one. The abandoned callers cost nothing.
+    expect(await timed(() => throttle.acquire())).toBeLessThan(150);
+  });
+
+  it("keeps the queue in arrival order when a waiter in the middle leaves", async () => {
+    const throttle = new Throttle({ minIntervalMs: 20, jitter: 0 });
+    const order: string[] = [];
+    await throttle.acquire();
+
+    const first = throttle.acquire().then(() => void order.push("first"));
+    const controller = new AbortController();
+    const leaving = throttle.acquire(controller.signal).catch(() => void order.push("left"));
+    const last = throttle.acquire().then(() => void order.push("last"));
+
+    controller.abort();
+    await Promise.all([first, leaving, last]);
+
+    expect(order).toEqual(["left", "first", "last"]);
+  });
+
+  it("refuses a caller outright once the queue is full", async () => {
+    // Waiting behind sixty callers is a promise nobody can keep, so the
+    // honest answer is an immediate refusal the caller can act on.
+    const throttle = new Throttle({ minIntervalMs: 5_000, jitter: 0, maxQueued: 2 });
+    await throttle.acquire();
+
+    const controller = new AbortController();
+    const waiting = [throttle.acquire(controller.signal), throttle.acquire(controller.signal)];
+    for (const pending of waiting) void pending.catch(() => undefined);
+    expect(throttle.queued).toBe(2);
+
+    await expect(throttle.acquire()).rejects.toBeInstanceOf(ThrottleOverloadedError);
+    await expect(throttle.acquire()).rejects.toThrow(/Too many searches/);
+
+    // The refusal is not permanent: when the waiters leave, the queue reopens.
+    controller.abort();
+    await Promise.allSettled(waiting);
+    expect(throttle.queued).toBe(0);
+
+    const readmitted = throttle.acquire(AbortSignal.timeout(10_000));
+    void readmitted.catch(() => undefined);
+    expect(throttle.queued).toBe(1);
   });
 
   it("rejects nonsensical options", () => {

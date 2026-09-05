@@ -8,6 +8,7 @@ import {
   ExtractRequestSchema,
   SearchEngineRegistry,
   SearchRequestSchema,
+  ThrottleOverloadedError,
   UnknownEngineError,
 } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -47,6 +48,14 @@ export function createMcpServer(
         }
         if (err instanceof AllEnginesFailedError) {
           return { isError: true, content: [{ type: "text", text: "Search unavailable" }] };
+        }
+        // Distinguished from the above so an agent retries rather than
+        // concluding search is down and giving up on the tool.
+        if (err instanceof ThrottleOverloadedError) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: "Too many searches in progress. Try again shortly." }],
+          };
         }
         throw err;
       }

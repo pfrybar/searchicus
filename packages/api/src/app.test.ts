@@ -1,6 +1,7 @@
 import {
   ExtractFailedError,
   SearchEngineRegistry,
+  Throttle,
   type ArchiveInsights,
   type EngineMetricsReport,
   type PageRenderer,
@@ -138,6 +139,24 @@ describe("unknown routes", () => {
   it("404s", async () => {
     const res = await request(testApp()).get("/nope");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /search when the rate-limit queue is full", () => {
+  it("answers 503 with a Retry-After rather than the 502 that means the backends are down", async () => {
+    // maxQueued 1, and one caller already holding the queue open, so the
+    // request under test is refused at the door.
+    const throttle = new Throttle({ minIntervalMs: 60_000, jitter: 0, maxQueued: 1 });
+    await throttle.acquire();
+    const holding = throttle.acquire(AbortSignal.timeout(30_000));
+    void holding.catch(() => undefined);
+
+    const app = createApp(new SearchEngineRegistry({ throttle }).register(new TestSearchEngine()));
+    const res = await request(app).post("/search").send({ query: "cats" });
+
+    expect(res.status).toBe(503);
+    expect(res.headers["retry-after"]).toBe("30");
+    expect(res.body).toEqual({ error: "Too many searches in progress. Try again shortly." });
   });
 });
 

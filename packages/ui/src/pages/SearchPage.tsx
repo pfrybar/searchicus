@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   extract,
   listEngines,
@@ -25,6 +25,8 @@ export function SearchPage({ canExtract }: { canExtract: boolean }) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [extraction, setExtraction] = useState<Extraction | null>(null);
+  /** Cancels whatever request this page currently has open. */
+  const inFlight = useRef<AbortController | null>(null);
 
   useEffect(() => {
     listEngines()
@@ -32,32 +34,51 @@ export function SearchPage({ canExtract }: { canExtract: boolean }) {
       .catch(() => setEngines([]));
   }, []);
 
+  // Leaving the page cancels the request. A search holds a place in the
+  // server's rate-limit queue and a browser page for as long as it runs, so
+  // abandoning one silently costs the next person in line real time.
+  useEffect(() => () => inFlight.current?.abort(), []);
+
+  /** Replaces the open request with a fresh one, cancelling the old. */
+  function startRequest(): AbortSignal {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    return controller.signal;
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!query.trim()) return;
 
+    const signal = startRequest();
     setStatus("loading");
     setError(null);
     setResult(null);
     setExtraction(null);
     try {
-      const response = await search({ query });
+      const response = await search({ query }, signal);
       setResult(response);
       setStatus("idle");
     } catch (err) {
+      // A cancelled request was replaced or abandoned on purpose. Reporting
+      // it would put an error on screen for something the person just did.
+      if (signal.aborted) return;
       setError(err instanceof Error ? err.message : "Search failed");
       setStatus("error");
     }
   }
 
   async function handleExtract(ref: string, url: string) {
+    const signal = startRequest();
     setExtraction({ ref, status: "loading" });
     try {
       // The ref goes with the URL: it is what ties this read back to the
       // ranking that offered it, which is the signal the server is collecting.
-      const content = await extract({ url, ref });
+      const content = await extract({ url, ref }, signal);
       setExtraction({ ref, status: "ready", content });
     } catch (err) {
+      if (signal.aborted) return;
       setExtraction({ ref, status: "error", error: err instanceof Error ? err.message : "Extract failed" });
     }
   }
