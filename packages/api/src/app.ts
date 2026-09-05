@@ -18,6 +18,8 @@ import { createMcpRouter } from "./mcp/router.js";
 
 /** Path the MCP Streamable HTTP endpoint is mounted at, when enabled. */
 const MCP_PATH = "/mcp";
+/** Ceiling on a request body, comfortably above any legitimate one. */
+const JSON_BODY_LIMIT = "64kb";
 
 /**
  * The built UI, resolved relative to this module — which lands on
@@ -77,7 +79,11 @@ export function createApp(
 ): Express {
   const { mcp = true, ui = false, extraction = new ExtractionService(), insights } = options;
   const app = express();
-  app.use(express.json());
+  // Explicit rather than inherited. Every body this API accepts is a query,
+  // a URL and a handful of ids; the shared core schemas bound each field, and
+  // this bounds the whole. body-parser's own default is the same order of
+  // magnitude, but a limit worth relying on is a limit worth writing down.
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   // Must be mounted before the catch-all 404 below, which would otherwise
   // swallow every MCP request.
@@ -126,6 +132,14 @@ export function createApp(
 
     if (isMalformedJsonError(err)) {
       res.status(400).json({ error: "Invalid JSON" });
+      return;
+    }
+
+    // An oversized body is the caller's to fix and body-parser already knows
+    // its own limit was the reason. Left to the branch below it became a 500,
+    // which reads as "this server is broken" rather than "send less".
+    if (isTooLargeError(err)) {
+      res.status(413).json({ error: `Request body must not exceed ${JSON_BODY_LIMIT}.` });
       return;
     }
 
@@ -307,6 +321,10 @@ function optionalInt(value: unknown): number | undefined {
 
 function isMalformedJsonError(err: unknown): boolean {
   return err instanceof SyntaxError && (err as { status?: unknown }).status === 400;
+}
+
+function isTooLargeError(err: unknown): boolean {
+  return (err as { type?: unknown } | null)?.type === "entity.too.large";
 }
 
 /** True for requests aimed at the MCP endpoint, path-only (query string stripped). */

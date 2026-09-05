@@ -410,6 +410,11 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
   }
 
   async #open(): Promise<DatabaseSync> {
+    // Checked here rather than at each entry point, so a read cannot quietly
+    // reopen the file a moment after close() shut it. Writes always refused;
+    // reads used to open a second connection and go on working, which made
+    // "closed" mean two different things depending on the method called.
+    if (this.#closed) throw new Error("Search archive is closed");
     if (this.#database) return this.#database;
     if (this.#opening) return this.#opening;
 
