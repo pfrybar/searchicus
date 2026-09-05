@@ -157,3 +157,50 @@ describe("assessRelevance", () => {
     expect(RELEVANCE_THRESHOLD).toBe(0.6);
   });
 });
+
+describe("tokenizing scripts that are not Latin", () => {
+  it("finds words in scripts a character class cannot", () => {
+    // `/[^a-z0-9]+/` treated every one of these as punctuation, so they
+    // produced no tokens at all.
+    expect(tokenize("Разработка на Rust")).toEqual(["разработка", "на", "rust"]);
+    // "й" is its own letter, not an accented "и": folding it away would be
+    // like deciding "i" and "l" are the same character.
+    expect(tokenize("японский")).toEqual(["японский"]);
+    expect(tokenize("بحث في الويب")).toEqual(["بحث", "في", "الويب"]);
+    // Japanese has no spaces between words, which is why this needs a
+    // dictionary rather than a pattern.
+    expect(tokenize("日本語の検索")).toEqual(["日本語", "の", "検索"]);
+    // Marks outside Latin are left alone: the Greek tonos and the Cyrillic
+    // breve are parts of letters, not decoration on them. Query and results
+    // fold identically either way, so this costs nothing in matching.
+    expect(tokenize("Ελληνικά")).toEqual(["ελληνικά"]);
+  });
+
+  it("still folds Latin accents to one token", () => {
+    // Folded before segmentation, so this did not regress while fixing the
+    // scripts above.
+    expect(tokenize("Café naïve")).toEqual(["cafe", "naive"]);
+  });
+
+  it("keeps things a character class used to shred", () => {
+    expect(tokenize("aren't")).toEqual(["aren't"]);
+    expect(tokenize("version 3.7.0")).toEqual(["version", "3.7.0"]);
+    expect(tokenize("example.com")).toEqual(["example.com"]);
+  });
+
+  it("gates a non-ASCII query instead of waving every result through", () => {
+    // The bug this closes: with no tokens, queryTokenCoverage returns 1 —
+    // "nothing to check" — so the off-target gate was absent rather than
+    // lenient for every query in these scripts.
+    const query = "японский поиск";
+    expect(contentTokens(query).length).toBeGreaterThan(1);
+
+    const offTarget = [result("Купить телевизор", "Магазин электроники"), result("Погода в Москве", "Прогноз")];
+    expect(queryTokenCoverage(query, offTarget)).toBeLessThan(RELEVANCE_THRESHOLD);
+    expect(assessRelevance(query, offTarget).offTarget).toBe(true);
+
+    const relevant = [result("японский поиск — как это работает", "поиск по японский текстам")];
+    expect(queryTokenCoverage(query, relevant)).toBe(1);
+    expect(assessRelevance(query, relevant).offTarget).toBe(false);
+  });
+});

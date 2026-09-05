@@ -27,7 +27,9 @@ export function formatSearch(response: MergedSearchResponse): string[] {
  * somewhere should be able to see where our output stops.
  */
 export function formatExtract(response: ExtractResponse): string[] {
-  const size = response.truncated ? `${response.chars} chars (truncated)` : `${response.chars} chars`;
+  const size = response.truncated
+    ? `${response.chars} of ${response.totalChars} chars (truncated)`
+    : `${response.chars} chars`;
   return [
     response.title,
     response.finalUrl,

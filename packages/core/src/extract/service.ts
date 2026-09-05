@@ -154,7 +154,7 @@ export class ExtractionService {
         this.#slots.release();
       }
 
-      const { markdown, truncated } = truncateMarkdown(parsed.markdown, maxChars);
+      const { markdown, truncated, totalChars } = truncateMarkdown(parsed.markdown, maxChars);
       if (markdown.trim().length === 0) {
         throw new ExtractFailedError("no_content", "That page had no readable content to extract.");
       }
@@ -167,6 +167,7 @@ export class ExtractionService {
         markdown,
         truncated,
         chars: markdown.length,
+        totalChars,
         tookMs: Date.now() - started,
         untrusted: true,
       };
@@ -337,8 +338,12 @@ function resolveMaxChars(value: number | undefined): number {
  * this system invented sitting inside content the response labels untrusted,
  * and `truncated` already carries that fact in a field a caller can trust.
  */
-export function truncateMarkdown(markdown: string, maxChars: number): { markdown: string; truncated: boolean } {
-  if (markdown.length <= maxChars) return { markdown, truncated: false };
+export function truncateMarkdown(
+  markdown: string,
+  maxChars: number,
+): { markdown: string; truncated: boolean; totalChars: number } {
+  const totalChars = markdown.length;
+  if (markdown.length <= maxChars) return { markdown, truncated: false, totalChars };
 
   const cut = markdown.slice(0, maxChars);
   const half = maxChars / 2;
@@ -346,7 +351,7 @@ export function truncateMarkdown(markdown: string, maxChars: number): { markdown
   const space = cut.lastIndexOf(" ");
   const end = newline > half ? newline : space > half ? space : maxChars;
 
-  return { markdown: cut.slice(0, end).trimEnd(), truncated: true };
+  return { markdown: cut.slice(0, end).trimEnd(), truncated: true, totalChars };
 }
 
 function domainOf(url: string): string | undefined {
