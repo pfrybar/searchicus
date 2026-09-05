@@ -352,6 +352,7 @@ someone has to remember.
 | ------------------------------------------ | ----------: | --------------------------------------------- |
 | `SEARCHICUS_EXTRACT_ENABLED`               |    disabled | Any of `true`/`1`/`yes`/`on` enables it.      |
 | `SEARCHICUS_EXTRACT_MAX_CONCURRENT`        |         `2` | Extractions running at once, per process.     |
+| `SEARCHICUS_EXTRACT_MAX_QUEUED`            |        `32` | Callers that may wait for one of those.       |
 | `SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS` |    `10_000` | Deadline through `domcontentloaded`.          |
 | `SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS`     |     `2_000` | Fixed pause after the DOM is ready.           |
 | `SEARCHICUS_EXTRACT_TIMEOUT_MS`            |    `30_000` | End-to-end render, dwell, parse, and respond. |

@@ -164,7 +164,12 @@ Defuddle runs in a memory-capped worker so a pathological document cannot take
 the host process with it.
 
 Extraction is disabled unless `SEARCHICUS_EXTRACT_ENABLED=true`, and every
-other limit is operator configuration rather than a request field. Read the
+other limit is operator configuration rather than a request field. Renders are
+bounded two at a time with at most 32 callers waiting; past that
+`ExtractionBusyError` refuses rather than promising a turn that will arrive
+after the caller's own deadline. `close()` waits for archive writes it has
+already started, so the owner of a shared archive can close it afterwards
+without losing one. Read the
 root README's "Extraction" section — particularly its network warning — before
 enabling it.
 

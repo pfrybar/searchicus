@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ArchivedResult, ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "./config.js";
-import { ExtractFailedError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
+import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
 import { ExtractionService, truncateMarkdown } from "./service.js";
 import type { DocumentParser, PageRenderer, RenderedPage } from "./types.js";
 
@@ -383,5 +383,94 @@ describe("ExtractionService timers", () => {
 
     expect(clear).toHaveBeenCalled();
     clear.mockRestore();
+  });
+});
+
+describe("ExtractionService admission and shutdown", () => {
+  it("refuses a caller once the queue is full, without recording an attempt", async () => {
+    // Nothing was rendered, so there is no page outcome. Recording one would
+    // put this server's own load into a table that exists to describe
+    // documents.
+    const archive = new FakeArchive();
+    // One gate every render waits on, so releasing it releases all of them
+    // however many started after the first.
+    let openGate: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    const extraction = service({
+      config: config({ maxConcurrent: 1, maxQueued: 2 }),
+      archive,
+      renderer: new FakeRenderer({}, () => gate),
+    });
+
+    // One rendering, two waiting, and the fourth has nowhere to wait.
+    const running = [1, 2, 3].map((n) => {
+      const pending = extraction.extract({ url: `${PAGE_URL}/${n}` });
+      void pending.catch(() => undefined);
+      return pending;
+    });
+    await settle();
+
+    await expect(extraction.extract({ url: `${PAGE_URL}/4` })).rejects.toBeInstanceOf(ExtractionBusyError);
+    await settle();
+    expect(archive.extractions).toHaveLength(0);
+
+    openGate();
+    await Promise.allSettled(running);
+  });
+
+  it("waits for archive writes it has already started before closing", async () => {
+    // The regression: writes were fire-and-forget, so one still in flight met
+    // a shared archive that shutdown had already closed underneath it — and
+    // the failure is swallowed here, so the record vanished with nothing said.
+    let releaseWrite: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+
+    class SlowArchive extends FakeArchive {
+      override async recordExtraction(record: ExtractionArchiveRecord): Promise<void> {
+        await blocked;
+        await super.recordExtraction(record);
+      }
+    }
+
+    const archive = new SlowArchive();
+    const extraction = service({ archive });
+    await extraction.extract({ url: PAGE_URL });
+
+    let closed = false;
+    const closing = extraction.close().then(() => void (closed = true));
+    await settle();
+    expect(closed).toBe(false); // still owes the archive a write
+
+    releaseWrite();
+    await closing;
+    expect(closed).toBe(true);
+    expect(archive.extractions).toHaveLength(1);
+  });
+
+  it("stops rendering when the caller goes away", async () => {
+    let observed: AbortSignal | undefined;
+    // A real renderer expresses cancellation by rejecting; this one has to do
+    // the same or the test would only prove the signal was passed along.
+    const renderer = new FakeRenderer({}, (signal) => {
+      observed = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("context closed")), { once: true });
+      });
+    });
+    const extraction = service({ renderer });
+
+    const caller = new AbortController();
+    const pending = extraction.extract({ url: PAGE_URL }, { signal: caller.signal });
+    void pending.catch(() => undefined);
+    await settle();
+
+    expect(observed?.aborted).toBe(false);
+    caller.abort();
+    expect(observed?.aborted).toBe(true);
+    await expect(pending).rejects.toBeInstanceOf(ExtractFailedError);
   });
 });

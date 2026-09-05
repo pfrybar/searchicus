@@ -2,6 +2,7 @@ import {
   AllEnginesFailedError,
   createDefaultRegistry,
   ExtractFailedError,
+  ExtractionBusyError,
   ExtractionDisabledError,
   ExtractionService,
   ExtractRequestError,
@@ -90,6 +91,7 @@ export function createMcpServer(
         if (
           err instanceof ExtractRequestError ||
           err instanceof ExtractionDisabledError ||
+          err instanceof ExtractionBusyError ||
           err instanceof ExtractFailedError
         ) {
           return { isError: true, content: [{ type: "text", text: err.message }] };
