@@ -330,6 +330,23 @@ describe("SqliteSearchArchive", () => {
     }
   });
 
+  it("refuses reads after close instead of quietly opening a second connection", async () => {
+    // Writes always refused; reads called #open() again and carried on
+    // working, so "closed" meant two different things depending on which
+    // method you called — and a drained shutdown could leave a live handle.
+    const filePath = temporaryDatabase();
+    const archive = new SqliteSearchArchive(filePath);
+    await archive.archive(record());
+    expect(await archive.recentSearches()).toHaveLength(1);
+    await archive.close();
+
+    await expect(archive.recentSearches()).rejects.toThrow(/closed/);
+    await expect(archive.engineMetrics()).rejects.toThrow(/closed/);
+    await expect(archive.searchDetail("search-123")).rejects.toThrow(/closed/);
+    await expect(archive.findResult("search-123-1")).rejects.toThrow(/closed/);
+    await expect(archive.archive(record({ searchId: "later" }))).rejects.toThrow(/closed/);
+  });
+
   it("refuses an archive written by a newer schema rather than corrupting it", async () => {
     const filePath = temporaryDatabase();
     const { DatabaseSync } = await import("node:sqlite");

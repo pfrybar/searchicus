@@ -19,9 +19,26 @@ export function parseHash(hash: string): Route {
   if (path === "searches") return { name: "searches" };
 
   const detail = /^searches\/(.+)$/.exec(path);
-  if (detail?.[1]) return { name: "search-detail", searchId: decodeURIComponent(detail[1]) };
+  if (detail?.[1]) return { name: "search-detail", searchId: decodeSegment(detail[1]) };
 
   return { name: "search" };
+}
+
+/**
+ * Decodes one path segment, surviving a hash nobody meant to type.
+ *
+ * `decodeURIComponent` throws on a stray percent or a truncated escape, and
+ * this runs during the first render and on every hashchange — so a URL like
+ * `#/searches/%` took the whole page down rather than showing "no such
+ * search". The undecoded text is the better fallback: it will not resolve to
+ * a search either, but it fails where the rest of the UI can explain itself.
+ */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 /** Current route, kept in step with the address bar and the back button. */

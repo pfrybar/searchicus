@@ -18,9 +18,10 @@ instance with a persistent profile and hands each search a page from it.
 
 ## Status
 
-`core`, `cli`, `api`, `mcp`, and `ui` all build, typecheck, lint, and have
-passing tests. The API, MCP tool server, CLI, and UI are covered at their
-adapter boundaries; the MCP suite also makes a real Streamable HTTP request.
+`core`, `cli`, `api` (which serves both the HTTP API and MCP), and `ui` all
+build, typecheck, lint, and have passing tests. The API, MCP tool server, CLI,
+and UI are covered at their adapter boundaries; the MCP suite also makes a
+real Streamable HTTP request.
 
 The browser layer — persistent Chromium session, page-per-search leases,
 two-phase search sessions, and rate limiting — is in place in `core`, along

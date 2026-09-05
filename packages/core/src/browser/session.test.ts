@@ -153,6 +153,20 @@ describe.skipIf(!available)("BrowserSession (live Chromium)", () => {
   });
 });
 
+describe("BrowserSession options", () => {
+  it("refuses a page cap that would deadlock every acquisition", () => {
+    // `#openPages < #maxPages` is never true for these, so every acquire
+    // queues forever and the symptom is a hung browser rather than a bad
+    // option. Fail where the mistake was made.
+    for (const maxPages of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new BrowserSession({ profileDir: "/tmp/unused", maxPages }), String(maxPages)).toThrow(RangeError);
+    }
+
+    expect(() => new BrowserSession({ profileDir: "/tmp/unused", maxPages: 1 })).not.toThrow();
+    expect(() => new BrowserSession({ profileDir: "/tmp/unused" })).not.toThrow();
+  });
+});
+
 describe("launchOptions as a factory", () => {
   it("is not called until something actually needs a browser", async () => {
     // The laziness the whole design rests on: an engine that never calls

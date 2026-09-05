@@ -160,6 +160,40 @@ describe("POST /search when the rate-limit queue is full", () => {
   });
 });
 
+describe("request limits", () => {
+  it("answers an oversized body with 413 rather than a 500", async () => {
+    // body-parser already knew its own limit was the reason; the generic
+    // handler turned that into "this server is broken" instead of "send less".
+    const res = await request(testApp())
+      .post("/search")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ query: "x".repeat(200_000) }));
+
+    expect(res.status).toBe(413);
+    expect(String(res.body.error)).toMatch(/must not exceed/);
+  });
+
+  it("bounds the fields a caller can send", async () => {
+    const app = testApp();
+
+    const longQuery = await request(app)
+      .post("/search")
+      .send({ query: "x".repeat(2_000) });
+    expect(longQuery.status).toBe(400);
+
+    const manyEngines = await request(app)
+      .post("/search")
+      .send({ query: "cats", engines: Array.from({ length: 40 }, (_, i) => `engine-${i}`) });
+    expect(manyEngines.status).toBe(400);
+
+    // The bound is generous: an ordinary request is nowhere near it.
+    const ordinary = await request(app)
+      .post("/search")
+      .send({ query: "x".repeat(1_000) });
+    expect(ordinary.status).toBe(200);
+  });
+});
+
 describe("POST /extract", () => {
   function extractApp(renderer?: PageRenderer) {
     return createApp(testRegistry(), { extraction: testExtraction({}, renderer) });

@@ -100,11 +100,14 @@ Request body:
 { "query": "typescript generics", "limit": 5, "engines": ["bing", "brave"] }
 ```
 
-- `query` (required string containing non-whitespace text; surrounding
-  whitespace is trimmed)
+- `query` (required string containing non-whitespace text, at most 1024
+  characters; surrounding whitespace is trimmed)
 - `limit` (optional final merged-result count, integer 1–100; defaults to 8)
-- `engines` (optional non-empty, duplicate-free array of engine-id strings;
-  defaults to every registered engine)
+- `engines` (optional non-empty, duplicate-free array of at most 16 engine-id
+  strings, each at most 64 characters; defaults to every registered engine)
+
+The whole body is capped at 64kb, and an oversized one is a `413` naming the
+limit rather than a generic failure.
 
 Response body:
 
@@ -190,6 +193,8 @@ Response:
 
 `untrusted` is always present and always `true`: the Markdown is arbitrary web
 content and must be treated as data to evaluate, never as instructions.
+
+`url` is capped at 2048 characters and `ref` at 128.
 
 | Status | Meaning                                                                            |
 | -----: | ---------------------------------------------------------------------------------- |

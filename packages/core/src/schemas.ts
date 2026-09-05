@@ -1,7 +1,24 @@
 import { z } from "zod";
+
 import { MAX_EXTRACT_MAX_CHARS } from "./extract/config.js";
 import type { ExtractRequest } from "./extract/types.js";
 import type { SearchQuery, SearchRequest } from "./types.js";
+
+/**
+ * Upper bounds on the text a caller may send.
+ *
+ * Generous enough that no real request meets them and small enough that no
+ * unreal one costs anything: a search engine will not accept a thousand-word
+ * query, a URL beyond two kilobytes is outside what browsers and servers
+ * agree to handle, and a ref is a search id and a rank. Unbounded strings
+ * reach a browser, a SQLite row, and a rendered page, so the cap belongs at
+ * the door rather than at whichever of those complains first.
+ */
+export const MAX_QUERY_LENGTH = 1_024;
+export const MAX_URL_LENGTH = 2_048;
+export const MAX_REF_LENGTH = 128;
+export const MAX_ENGINE_ID_LENGTH = 64;
+export const MAX_ENGINE_SELECTION = 16;
 
 /**
  * Validates untrusted input (HTTP request bodies, MCP tool arguments) into
@@ -10,7 +27,7 @@ import type { SearchQuery, SearchRequest } from "./types.js";
  * drift at compile time.
  */
 export const SearchQuerySchema = z.object({
-  query: z.string().trim().min(1, "query must not be empty"),
+  query: z.string().trim().min(1, "query must not be empty").max(MAX_QUERY_LENGTH),
 }) satisfies z.ZodType<SearchQuery>;
 
 /**
@@ -22,8 +39,9 @@ export const SearchRequestSchema = SearchQuerySchema.extend({
   /** Final merged output count; never forwarded to an individual engine. */
   limit: z.number().int().positive().max(100).optional(),
   engines: z
-    .array(z.string().min(1, "engine id must not be empty"))
+    .array(z.string().min(1, "engine id must not be empty").max(MAX_ENGINE_ID_LENGTH))
     .min(1, "engines must contain at least one engine id")
+    .max(MAX_ENGINE_SELECTION, `engines must not name more than ${MAX_ENGINE_SELECTION} engines`)
     .refine((engineIds) => new Set(engineIds).size === engineIds.length, "engines must not contain duplicates")
     .optional()
     .describe("Specific engine ids to search; defaults to every registered engine."),
@@ -38,8 +56,8 @@ export const SearchRequestSchema = SearchQuerySchema.extend({
  * whether a URL arrived from a caller or from a redirect mid-render.
  */
 export const ExtractRequestSchema = z.object({
-  url: z.string().trim().min(1, "url must not be empty"),
-  ref: z.string().trim().min(1, "ref must not be empty").optional(),
+  url: z.string().trim().min(1, "url must not be empty").max(MAX_URL_LENGTH),
+  ref: z.string().trim().min(1, "ref must not be empty").max(MAX_REF_LENGTH).optional(),
   maxChars: z
     .number()
     .int()

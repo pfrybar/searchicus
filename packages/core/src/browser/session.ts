@@ -23,7 +23,7 @@ export type PersistentContextOptions = NonNullable<Parameters<typeof chromium.la
 export interface BrowserSessionOptions {
   /** Chromium user-data directory. Real, growing, single-writer state on disk. */
   profileDir: string;
-  /** Max simultaneously-open pages. See DEFAULT_MAX_PAGES. */
+  /** Max simultaneously-open pages, a positive integer. See DEFAULT_MAX_PAGES. */
   maxPages?: number;
   /**
    * Passed straight through to launchPersistentContext.
@@ -91,6 +91,12 @@ export class BrowserSession implements BrowserProvider {
   constructor(options: BrowserSessionOptions) {
     this.#profileDir = options.profileDir;
     this.#maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
+    // Zero, negative, or NaN makes `#openPages < #maxPages` permanently false,
+    // so every acquire would queue forever and the failure would look like a
+    // hung browser rather than a bad option. Say so at construction instead.
+    if (!Number.isSafeInteger(this.#maxPages) || this.#maxPages < 1) {
+      throw new RangeError(`maxPages must be a positive integer, received ${String(options.maxPages)}`);
+    }
     this.#launchOptions = options.launchOptions ?? {};
     this.#initScript = options.initScript;
     this.#chromium = new LazyLaunch(
