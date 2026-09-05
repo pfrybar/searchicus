@@ -405,6 +405,7 @@ export class ExtractionBrowser implements PageRenderer {
       const browser = await chromium.launch(options.launch);
 
       browser.on("disconnected", () => this.#chromium.forget(browser));
+      log.info("chromium launched", { role: "extraction" });
 
       this.#contextOptions = options.context;
       return browser;

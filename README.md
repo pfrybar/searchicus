@@ -395,6 +395,10 @@ someone has to remember.
 | `SEARCHICUS_EXTRACT_MAX_REDIRECTS`         |         `5` | Redirect-chain cap.                           |
 | `SEARCHICUS_EXTRACT_ALLOWED_PORTS`         |    `80,443` | Permitted destination ports.                  |
 | `SEARCHICUS_EXTRACT_DWELL`                 |     enabled | Off skips the post-load dwell.                |
+| `SEARCHICUS_EXTRACT_CACHE`                 |     enabled | Off re-renders for every window.              |
+| `SEARCHICUS_EXTRACT_CACHE_TTL_MS`          |   `300_000` | How long a parsed page may be served.         |
+| `SEARCHICUS_EXTRACT_CACHE_MAX_ENTRIES`     |        `32` | Pages held at once.                           |
+| `SEARCHICUS_EXTRACT_CACHE_MAX_CHARS`       | `8_000_000` | Total Markdown held, across every entry.      |
 
 Switches read one vocabulary throughout. A switch that is **off** by default
 (`SEARCHICUS_EXTRACT_ENABLED`) turns on for `true`, `1`, `yes` or `on` and
@@ -410,6 +414,23 @@ where the window started and where to continue, and those offsets snap to
 — and never inside a fenced code block, which is where a naive character cut
 lands. `searchicus extract --offset`, the `offset` field on `POST /extract`,
 and a "Read on" button in the UI are the same mechanism.
+
+Reading each window would otherwise re-render the page, so a parsed page is
+held briefly in memory: measured, the first window of a real page took 5,049ms
+and the next three took 1–2ms each. It is bounded three ways — a five-minute
+TTL, 32 entries, and 8,000,000 characters in total — because each bound fails
+differently on its own, and a page cache without a size bound is a memory leak
+with good intentions.
+
+> **This holds page text.** Not on disk and not in the archive, which still has
+> nowhere to put it, but in memory for minutes. That is a smaller claim than
+> persistence and it is a different one. `SEARCHICUS_EXTRACT_CACHE=false` turns
+> it off and costs only time, because paging is correct without it — it has to
+> be, since the CLI and the API are separate processes and neither sees the
+> other's memory. Entries are keyed by URL and so shared between callers: on a
+> shared host a cache hit is visible in the response time, which reveals that
+> somebody read that URL. The content is public either way, so what leaks is
+> the access pattern rather than the data.
 
 `maxChars` is the one limit a caller controls, since it only bounds the
 response (default 20,000, maximum 100,000). The byte budget is advisory: a

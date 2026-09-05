@@ -203,7 +203,7 @@ export class BrowserSession implements BrowserProvider {
       // dropping the reference makes the next acquire relaunch.
       context.on("close", () => this.#chromium.forget(context));
 
-      log.info("chromium launched", { profile: this.#profileDir });
+      log.info("chromium launched", { role: "search", profile: this.#profileDir });
       return context;
     } catch (err) {
       log.error("chromium failed to launch", { profile: this.#profileDir, cause: causeOf(err) });
