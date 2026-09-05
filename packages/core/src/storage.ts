@@ -13,8 +13,11 @@ import {
   type ArchiveInsights,
   type EngineMetrics,
   type EngineMetricsReport,
+  type ExtractionTotals,
+  type OverloadTotals,
   type SearchDetail,
   type SearchSummary,
+  type SearchTotals,
 } from "./insights.js";
 import { parseResultRef } from "./ranking.js";
 import { assessRelevance } from "./relevance.js";
@@ -168,7 +171,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
    * that reading it in JS stays cheap. Both halves cover the same window, so
    * every number in a row describes the same set of searches.
    */
-  async engineMetrics(options: { window?: number } = {}): Promise<EngineMetricsReport> {
+  async engineMetrics(options: { window?: number; overload?: OverloadTotals } = {}): Promise<EngineMetricsReport> {
     const window = boundedLimit(options.window, DEFAULT_METRICS_WINDOW);
     const db = await this.#open();
 
@@ -228,13 +231,92 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       }
     }
 
+    const since = searches.at(-1)?.started_at ?? null;
     return {
       window: searches.length,
       totalSearches,
-      since: searches.at(-1)?.started_at ?? null,
+      since,
+      searches: this.#searchTotals(searches),
+      extractions: this.#extractionTotals(db, since),
+      ...(options.overload ? { overload: options.overload } : {}),
       engines: [...metrics.values()]
         .map((entry) => finalizeMetrics(entry, latencies.get(entry.engineId) ?? []))
         .sort((left, right) => right.returned - left.returned || left.engineId.localeCompare(right.engineId)),
+    };
+  }
+
+  /** How the window's fan-outs ended, read off the rows already in hand. */
+  #searchTotals(rows: WindowedSearchRow[]): SearchTotals {
+    const totals: SearchTotals = { completed: 0, failed: 0, degraded: 0 };
+    for (const row of rows) {
+      const merged = parseMerged(row.merged_response_json);
+      if (merged) {
+        totals.completed++;
+        if (merged.degraded) totals.degraded++;
+      } else {
+        totals.failed++;
+      }
+    }
+    return totals;
+  }
+
+  /**
+   * Extractions over the window's period.
+   *
+   * Bounded by time rather than joined to the window's searches, because a
+   * bare-URL extraction has no search to join to and dropping those would
+   * make the number quietly answer a different question.
+   */
+  #extractionTotals(db: DatabaseSync, since: string | null): ExtractionTotals {
+    const empty: ExtractionTotals = {
+      attempted: 0,
+      completed: 0,
+      failed: 0,
+      failures: [],
+      medianTookMs: null,
+      meanChars: null,
+      domains: 0,
+    };
+    if (since === null) return empty;
+
+    const summary = firstRow<{
+      attempted: number;
+      completed: number;
+      failed: number;
+      domains: number;
+      chars: number | null;
+    }>(
+      db.prepare(`SELECT
+           count(*) AS attempted,
+           sum(status = 'completed') AS completed,
+           sum(status = 'failed') AS failed,
+           count(DISTINCT domain) AS domains,
+           avg(chars) AS chars
+         FROM extractions WHERE created_at >= ?`),
+      since,
+    );
+    if (!summary || Number(summary.attempted) === 0) return empty;
+
+    const kinds = rows<{ error_kind: string | null; n: number }>(
+      db.prepare(`SELECT error_kind, count(*) AS n FROM extractions
+                  WHERE created_at >= ? AND status = 'failed'
+                  GROUP BY error_kind ORDER BY n DESC, error_kind`),
+      since,
+    );
+
+    const took = rows<{ took_ms: number }>(
+      db.prepare("SELECT took_ms FROM extractions WHERE created_at >= ? AND status = 'completed' ORDER BY took_ms"),
+      since,
+    ).map((row) => row.took_ms);
+
+    return {
+      attempted: Number(summary.attempted),
+      completed: Number(summary.completed ?? 0),
+      failed: Number(summary.failed ?? 0),
+      failures: kinds.map((row) => ({ kind: row.error_kind ?? "unknown", count: Number(row.n) })),
+      medianTookMs: percentile(took, 0.5),
+      meanChars: summary.chars === null ? null : round(Number(summary.chars)),
+      domains: Number(summary.domains),
     };
   }
 

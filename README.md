@@ -301,7 +301,9 @@ below, applied to the other place queries can leak.
 The UI has two dashboard pages beside the search box, both reading the local
 archive:
 
-- **Metrics** — per-engine reliability, latency, and, more usefully, what each
+- **Metrics** — totals for the window first: how the fan-outs ended, what was
+  read back out of them, and what this process turned away. Then per-engine
+  reliability, latency, and, more usefully, what each
   engine actually contributed: how many of its results reached the caller, how
   often it supplied the title shown, how many results **no other engine found**,
   and how many were later extracted. That third number is the one that answers

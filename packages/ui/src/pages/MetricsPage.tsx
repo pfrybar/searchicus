@@ -5,6 +5,103 @@ import type { EngineMetrics } from "@searchicus/core";
 /** Windows an operator is likely to want, rather than a free-text box. */
 const WINDOWS = [50, 200, 500, 2000];
 
+/** A labelled number, with its own quiet subtitle. */
+function Stat({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
+  return (
+    <div className="stat">
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+      {detail && <div className="stat-detail">{detail}</div>}
+    </div>
+  );
+}
+
+/**
+ * Totals for the window, above the per-engine table.
+ *
+ * Three groups, and the third is not like the other two. Searches and
+ * extractions are read back from the archive over the same period. Overload
+ * is a count this server process has been keeping since it started, because
+ * work it refused never reached an engine or a page and archiving it would
+ * put the server's own load into tables that describe engines and documents
+ * — which it used to, and which made every engine read as broken. The label
+ * says "since restart" because it is the one number here that does not
+ * survive one.
+ */
+function Totals({ report }: { report: EngineMetricsBody }) {
+  const { searches, extractions, overload } = report;
+  const worstExtractFailure = extractions.failures[0];
+  const turnedAway = overload
+    ? overload.search.refused + overload.search.abandoned + overload.extract.refused + overload.extract.abandoned
+    : 0;
+
+  return (
+    <div className="totals">
+      <section className="total-group">
+        <h3>Searches</h3>
+        <div className="stats">
+          <Stat label="completed" value={searches.completed} />
+          <Stat
+            label="degraded"
+            value={searches.degraded}
+            detail={searches.degraded > 0 ? "an engine was missing" : undefined}
+          />
+          <Stat label="failed" value={searches.failed} detail={searches.failed > 0 ? "every engine" : undefined} />
+        </div>
+      </section>
+
+      <section className="total-group">
+        <h3>Extractions</h3>
+        {extractions.attempted === 0 ? (
+          <p className="meta">None over this period.</p>
+        ) : (
+          <div className="stats">
+            <Stat
+              label="completed"
+              value={extractions.completed}
+              detail={`${extractions.domains} ${extractions.domains === 1 ? "host" : "hosts"}`}
+            />
+            <Stat
+              label="failed"
+              value={extractions.failed}
+              detail={worstExtractFailure ? `mostly ${worstExtractFailure.kind}` : undefined}
+            />
+            <Stat
+              label="median read"
+              value={extractions.medianTookMs === null ? "—" : `${(extractions.medianTookMs / 1000).toFixed(1)}s`}
+              detail={extractions.meanChars === null ? undefined : `${Math.round(extractions.meanChars)} chars avg`}
+            />
+          </div>
+        )}
+      </section>
+
+      {overload && (
+        <section className="total-group">
+          <h3>
+            Turned away <span className="stat-detail">since restart</span>
+          </h3>
+          {turnedAway === 0 ? (
+            <p className="meta">Nothing refused. This server has kept up.</p>
+          ) : (
+            <div className="stats">
+              <Stat
+                label="searches"
+                value={overload.search.refused + overload.search.abandoned}
+                detail={`${overload.search.refused} refused, ${overload.search.abandoned} gave up waiting`}
+              />
+              <Stat
+                label="extractions"
+                value={overload.extract.refused + overload.extract.abandoned}
+                detail={`${overload.extract.refused} refused, ${overload.extract.abandoned} gave up waiting`}
+              />
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function MetricsPage() {
   const [window, setWindow] = useState(500);
   const [report, setReport] = useState<EngineMetricsBody | null>(null);
@@ -76,6 +173,8 @@ export function MetricsPage() {
               }${report.since ? `, back to ${new Date(report.since).toLocaleString()}` : ""}.`}
         </p>
       )}
+
+      {report && report.window > 0 && <Totals report={report} />}
 
       {loading && !report && <p className="meta">Loading…</p>}
 

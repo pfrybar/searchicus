@@ -1,6 +1,7 @@
 import {
   AllEnginesFailedError,
   type ArchiveInsights,
+  type OverloadTotals,
   causeOf,
   createLogger,
   createDefaultRegistry,
@@ -11,8 +12,9 @@ import {
   ExtractRequestError,
   ExtractRequestSchema,
   SearchEngineRegistry,
+  SearchCancelledError,
+  SearchOverloadedError,
   SearchRequestSchema,
-  ThrottleOverloadedError,
   UnknownEngineError,
 } from "@searchicus/core";
 import express, { Router, type Express, type NextFunction, type Request, type Response } from "express";
@@ -69,6 +71,13 @@ export interface CreateAppOptions {
    * dashboard is better told that than left guessing at empty responses.
    */
   insights?: ArchiveInsights;
+  /**
+   * Reads this process's own refusal counts for the metrics endpoint.
+   *
+   * A function rather than a value, because it is sampled per request and
+   * the registry and extraction service own the numbers.
+   */
+  runtime?: () => OverloadTotals;
 }
 
 /**
@@ -82,7 +91,7 @@ export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   options: CreateAppOptions = {},
 ): Express {
-  const { mcp = true, ui = false, extraction = new ExtractionService(), insights } = options;
+  const { mcp = true, ui = false, extraction = new ExtractionService(), insights, runtime } = options;
   const app = express();
   app.use(accessLog);
   // Explicit rather than inherited. Every body this API accepts is a query,
@@ -99,7 +108,7 @@ export function createApp(
   // same-origin in production without a build-time API URL baked in, while
   // the root paths keep the existing contract (README curl examples, every
   // existing test) working unchanged.
-  const search = createSearchRouter(registry, extraction, insights);
+  const search = createSearchRouter(registry, extraction, insights, runtime);
   app.use("/api", search);
   app.use(search);
 
@@ -188,6 +197,7 @@ function createSearchRouter(
   registry: SearchEngineRegistry,
   extraction: ExtractionService,
   insights: ArchiveInsights | undefined,
+  runtime: (() => OverloadTotals) | undefined,
 ): Router {
   const router = Router();
 
@@ -223,16 +233,16 @@ function createSearchRouter(
         res.status(502).json({ error: "Search unavailable" });
         return;
       }
-      // Not 502: the backends are fine, this server is simply full. Saying so
-      // with a Retry-After lets a client back off instead of hammering a
-      // queue that is already too long to join.
-      if (err instanceof ThrottleOverloadedError) {
+      // Not 502: the backends are fine, this server is simply full — whether
+      // it refused at the door or ran out of patience in the queue. Both mean
+      // "come back", which a Retry-After says and a 502 does not.
+      if (err instanceof SearchOverloadedError) {
         res.status(503).set("retry-after", "30").json({ error: "Too many searches in progress. Try again shortly." });
         return;
       }
       // A client that hung up gets no response and no error log: it asked
       // for the search to stop, and it did.
-      if (clientGone(res)) return;
+      if (err instanceof SearchCancelledError || clientGone(res)) return;
       next(err);
     }
   });
@@ -285,7 +295,15 @@ function createSearchRouter(
     }
 
     try {
-      res.json(await insights.engineMetrics({ window: optionalInt(req.query.window) }));
+      // The process counters ride along with the archive numbers: they answer
+      // the same question and belong on the same screen, even though one is
+      // durable history and the other resets with the process.
+      res.json(
+        await insights.engineMetrics({
+          window: optionalInt(req.query.window),
+          ...(runtime ? { overload: runtime() } : {}),
+        }),
+      );
     } catch (err) {
       next(err);
     }

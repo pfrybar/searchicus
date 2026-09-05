@@ -54,6 +54,7 @@ export class ExtractionService {
   readonly #lookup: AddressLookup | undefined;
   readonly #slots: Semaphore;
   readonly #pendingWrites = new Set<Promise<void>>();
+  readonly #overload = { refused: 0, abandoned: 0 };
   #closed = false;
 
   constructor(options: ExtractionServiceOptions = {}) {
@@ -72,6 +73,19 @@ export class ExtractionService {
 
   get config(): ExtractConfig {
     return this.#config;
+  }
+
+  /**
+   * Extractions this process turned away, since it started.
+   *
+   * Never archived: nothing was rendered, so there is no page outcome, and
+   * writing one put this server's load into a table that describes
+   * documents — 22 rows once claimed example.com had timed out while 14
+   * concurrent reads of it succeeded. A process gauge instead, reset on
+   * restart, and anything reporting it should say so.
+   */
+  get overload(): Readonly<{ refused: number; abandoned: number }> {
+    return { ...this.#overload };
   }
 
   async extract(request: ExtractRequest, options: { signal?: AbortSignal } = {}): Promise<ExtractResponse> {
@@ -110,7 +124,22 @@ export class ExtractionService {
       // Queue time counts against the deadline. Without that, a burst past
       // MAX_CONCURRENT would grow an unbounded queue of callers each still
       // expecting a full timeout's worth of work once they reached the front.
-      await this.#slots.acquire(controller.signal);
+      // Queue time counts against the deadline, so giving up here is giving
+      // up waiting for this server rather than waiting for the page. Told
+      // apart because the difference decides whether the caller retries and
+      // whether the archive believes the page was slow.
+      const admitted = Date.now();
+      await this.#slots.acquire(controller.signal).catch((err: unknown) => {
+        if (err instanceof ExtractionBusyError) {
+          this.#overload.refused++;
+          log.warn("extraction refused, queue full", { queued: err.queued });
+          throw err;
+        }
+        this.#overload.abandoned++;
+        log.warn("extraction gave up waiting for a slot", { waitedMs: Date.now() - admitted });
+        throw new ExtractionBusyError(0, "queue_timeout");
+      });
+
       let rendered: RenderedPage;
       let parsed: ParsedDocument;
       try {
@@ -169,9 +198,9 @@ export class ExtractionService {
       // the only way it happens, and that is worth surviving.
       if (err instanceof ExtractRequestError) throw err;
 
-      // Nor is a refusal at the door: nothing was rendered, so there is no
-      // page outcome, and recording one would put this server's own load into
-      // a table that exists to describe documents.
+      // Nor is a refusal at the door, or a caller that never reached it:
+      // nothing was rendered, so there is no page outcome, and recording one
+      // put this server's own load into a table that describes documents.
       if (err instanceof ExtractionBusyError) throw err;
 
       const failure = asExtractFailure(err, controller.signal);

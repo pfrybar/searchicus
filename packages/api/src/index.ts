@@ -36,7 +36,13 @@ const ui = envOptOut(process.env.SERVE_UI) && existsSync(path.join(uiDir, "index
 const archive = createDefaultSearchArchive();
 const registry = createBrowserRegistry("api", { archive });
 const extraction = createBrowserExtraction({ archive });
-const server = createApp(registry, { mcp, ui: ui && uiDir, extraction, insights: archive }).listen(port, host, () => {
+const server = createApp(registry, {
+  mcp,
+  ui: ui && uiDir,
+  extraction,
+  insights: archive,
+  runtime: () => ({ search: registry.overload, extract: extraction.overload }),
+}).listen(port, host, () => {
   // Through the logger, not console: the banner is diagnostics, so it
   // belongs on the same stream and behind the same switch as everything
   // else this process reports. `SEARCHICUS_LOG` controls the lot.

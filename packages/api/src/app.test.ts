@@ -289,6 +289,16 @@ describe("dashboard endpoints", () => {
     window: 2,
     totalSearches: 2,
     since: "2026-09-04T16:00:00.000Z",
+    searches: { completed: 2, failed: 0, degraded: 1 },
+    extractions: {
+      attempted: 3,
+      completed: 2,
+      failed: 1,
+      failures: [{ kind: "navigation_failed", count: 1 }],
+      medianTookMs: 5100,
+      meanChars: 8400,
+      domains: 2,
+    },
     engines: [
       {
         engineId: "bing",

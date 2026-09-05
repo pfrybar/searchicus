@@ -1,7 +1,7 @@
 import type { Page } from "playwright";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
-import { createDefaultRegistry, SearchEngineRegistry } from "./registry.js";
+import { createDefaultRegistry, SearchEngineRegistry, SearchOverloadedError } from "./registry.js";
 import { sleep } from "./throttle.js";
 import type { SearchEngine, SearchQuery, SearchResponse, SearchSession } from "./types.js";
 
@@ -252,7 +252,11 @@ describe("rate limiting", () => {
     expect(Date.now() - start).toBeGreaterThanOrEqual(100);
   });
 
-  it("reports every engine as failed when the rate-limit wait exhausts the budget", async () => {
+  it("refuses rather than blaming the engines when the rate-limit wait exhausts the budget", async () => {
+    // This used to report every engine as failed, which was archived, which
+    // made the dashboard built to judge engines report all of them broken
+    // after a burst that never reached one. Nothing here describes a backend,
+    // so nothing here is reported as one.
     const reg = new SearchEngineRegistry({
       throttle: { minIntervalMs: 5_000, jitter: 0 },
       resultsTimeoutMs: 50,
@@ -261,10 +265,9 @@ describe("rate limiting", () => {
       .register({ id: "b", name: "B", search: async (q: SearchQuery) => responseFor("b", q) });
 
     await reg.searchAll({ query: "first" });
-    const outcomes = await reg.searchAll({ query: "second" });
 
-    expect(outcomes).toHaveLength(2);
-    expect(outcomes.every((o) => !o.ok)).toBe(true);
+    await expect(reg.searchAll({ query: "second" })).rejects.toBeInstanceOf(SearchOverloadedError);
+    expect(reg.overload).toEqual({ refused: 0, abandoned: 1 });
   });
 });
 

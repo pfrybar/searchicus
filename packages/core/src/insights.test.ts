@@ -217,12 +217,113 @@ describe("engineMetrics", () => {
     await store.close();
   });
 
+  it("totals how the fan-outs ended, separately from what the engines did", async () => {
+    const store = archive();
+    await store.archive(record({ searchId: "s1", startedAt: "2026-09-04T10:00:00.000Z" }));
+    await store.archive(
+      record({
+        searchId: "s2",
+        startedAt: "2026-09-04T10:01:00.000Z",
+        outcomes: [ok("bing", 100, [result("https://a.test/1", "bing")]), failed("brave", 90, "no_results")],
+        response: {
+          searchId: "s2",
+          query: { query: "cats" },
+          results: [ranked("s2-1", "https://a.test/1", ["bing"])],
+          tookMs: 100,
+          degraded: true,
+        },
+      }),
+    );
+    // Every engine failed: no merged response at all.
+    await store.archive(
+      record({
+        searchId: "s3",
+        startedAt: "2026-09-04T10:02:00.000Z",
+        outcomes: [failed("bing", 10, "timeout"), failed("brave", 10, "timeout")],
+        response: undefined,
+      }),
+    );
+
+    const report = await store.engineMetrics();
+    expect(report.searches).toEqual({ completed: 2, failed: 1, degraded: 1 });
+    await store.close();
+  });
+
+  it("totals extractions over the same period, including ones with no search behind them", async () => {
+    const store = archive();
+    await store.archive(record({ searchId: "s1", startedAt: "2026-09-04T10:00:00.000Z" }));
+
+    const base = { startedAt: "2026-09-04T10:00:30.000Z", requestedUrl: "https://a.test/1" };
+    await store.recordExtraction({ ...base, status: "completed", tookMs: 400, chars: 1000, domain: "a.test" });
+    await store.recordExtraction({
+      ...base,
+      requestedUrl: "https://b.test/2",
+      status: "completed",
+      tookMs: 600,
+      chars: 3000,
+      domain: "b.test",
+    });
+    // A bare-URL read, with no search to join to. Counting only extractions
+    // tied to this window's searches would quietly drop these.
+    await store.recordExtraction({
+      ...base,
+      requestedUrl: "https://c.test/3",
+      status: "failed",
+      errorKind: "navigation_failed",
+      tookMs: 200,
+      domain: "c.test",
+    });
+
+    const report = await store.engineMetrics();
+    expect(report.extractions).toEqual({
+      attempted: 3,
+      completed: 2,
+      failed: 1,
+      failures: [{ kind: "navigation_failed", count: 1 }],
+      // Nearest-rank, like the engine percentiles: over [400, 600] the p50
+      // is a measurement that happened, not the 500 between them.
+      medianTookMs: 400,
+      meanChars: 2000,
+      domains: 3,
+    });
+    await store.close();
+  });
+
+  it("carries this process's refusals through without inventing them from the archive", async () => {
+    // Overload is deliberately never archived, so it can only arrive from a
+    // caller that has a process to ask.
+    const store = archive();
+    await store.archive(record());
+
+    expect((await store.engineMetrics()).overload).toBeUndefined();
+    const withCounts = await store.engineMetrics({
+      overload: { search: { refused: 3, abandoned: 12 }, extract: { refused: 1, abandoned: 4 } },
+    });
+    expect(withCounts.overload).toEqual({
+      search: { refused: 3, abandoned: 12 },
+      extract: { refused: 1, abandoned: 4 },
+    });
+    await store.close();
+  });
+
   it("reports an empty archive without inventing anything", async () => {
     const store = archive();
     await expect(store.engineMetrics()).resolves.toEqual({
       window: 0,
       totalSearches: 0,
       since: null,
+      searches: { completed: 0, failed: 0, degraded: 0 },
+      // No window means no period to count extractions over, so this reports
+      // nothing rather than reaching for every extraction ever made.
+      extractions: {
+        attempted: 0,
+        completed: 0,
+        failed: 0,
+        failures: [],
+        medianTookMs: null,
+        meanChars: null,
+        domains: 0,
+      },
       engines: [],
     });
     await store.close();
