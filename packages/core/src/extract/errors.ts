@@ -45,8 +45,15 @@ export class ExtractRequestError extends Error {
  * retry rather than conclude the URL cannot be read.
  */
 export class ExtractionBusyError extends Error {
-  constructor(public readonly queued: number) {
-    super(`Too many extractions are already queued (${queued}). Try again shortly.`);
+  constructor(
+    public readonly queued: number,
+    public readonly reason: "queue_full" | "queue_timeout" = "queue_full",
+  ) {
+    super(
+      reason === "queue_full"
+        ? `Too many extractions are already queued (${queued}). Try again shortly.`
+        : "This server was too busy to start reading that page. Try again shortly.",
+    );
     this.name = "ExtractionBusyError";
   }
 }

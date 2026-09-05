@@ -50,6 +50,39 @@ export class RegistryClosedError extends Error {
   }
 }
 
+/**
+ * The search was never admitted: this server is at capacity.
+ *
+ * Deliberately not an engine failure. The backends were never contacted, so
+ * reporting it as one made every engine read as broken on the dashboard built
+ * to answer whether an engine is broken — measured at 67% "failure" across
+ * all four after a single burst, none of it theirs.
+ */
+export class SearchOverloadedError extends Error {
+  constructor(readonly reason: "queue_full" | "queue_timeout") {
+    super(
+      reason === "queue_full" ? "Too many searches are already waiting." : "Timed out waiting for a rate-limit slot.",
+    );
+    this.name = "SearchOverloadedError";
+  }
+}
+
+/** The caller went away before the search could start. */
+export class SearchCancelledError extends Error {
+  constructor() {
+    super("The search was cancelled.");
+    this.name = "SearchCancelledError";
+  }
+}
+
+/** Counts of work this process turned away, since it started. */
+export interface OverloadCounts {
+  /** Refused at the door because the queue was already full. */
+  refused: number;
+  /** Admitted, then gave up waiting before a slot came free. */
+  abandoned: number;
+}
+
 /** Every selected engine failed before returning a result response. */
 export class AllEnginesFailedError extends Error {
   constructor() {
@@ -102,6 +135,7 @@ export class SearchEngineRegistry {
   readonly #archive: SearchArchive | undefined;
   readonly #inFlightSessions = new Set<Promise<void>>();
   readonly #inFlightArchives = new Set<Promise<void>>();
+  readonly #overload: OverloadCounts = { refused: 0, abandoned: 0 };
   #closed = false;
 
   constructor(options: SearchEngineRegistryOptions = {}) {
@@ -139,6 +173,17 @@ export class SearchEngineRegistry {
   /** Number of best-effort archive writes still pending. */
   get activeArchives(): number {
     return this.#inFlightArchives.size;
+  }
+
+  /**
+   * Searches this process turned away, since it started.
+   *
+   * A process gauge rather than archived history, because these never
+   * reached an engine and do not belong in a record of what engines did.
+   * They reset on restart, and anything reporting them should say so.
+   */
+  get overload(): Readonly<OverloadCounts> {
+    return { ...this.#overload };
   }
 
   /**
@@ -219,16 +264,11 @@ export class SearchEngineRegistry {
     const started = Date.now();
     const deadline = started + this.#resultsTimeoutMs;
 
-    try {
-      await this.#awaitSlot(deadline, signal);
-    } catch (err) {
-      // An overloaded throttle is the one entry failure that is not about
-      // the backends at all, so it is not dressed up as every engine having
-      // failed: the caller should back off and retry, not conclude that
-      // search is broken.
-      if (err instanceof ThrottleOverloadedError) throw err;
-      return engineIds.map((engineId) => this.#failedOutcome(engineId, Date.now() - started, err));
-    }
+    // Deliberately not wrapped. A search that never got a slot is not every
+    // engine having failed: nothing reached a backend, so nothing here
+    // describes one — and returning outcomes would archive them, putting this
+    // server's own load into the table the dashboard reads to judge engines.
+    await this.#awaitSlot(deadline, signal);
 
     return Promise.all(
       engineIds.map(async (engineId): Promise<EngineSearchOutcome> => {
@@ -255,12 +295,27 @@ export class SearchEngineRegistry {
     if (!this.#throttle) return;
 
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new EngineTimeoutError("Timed out waiting for a rate-limit slot");
+    if (remaining <= 0) {
+      this.#overload.abandoned++;
+      throw new SearchOverloadedError("queue_timeout");
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
     try {
       await this.#throttle.acquire(signal ? AbortSignal.any([controller.signal, signal]) : controller.signal);
+    } catch (err) {
+      // Three ways to not get a slot, and they mean different things to the
+      // caller: come back later, we were too slow for you, or you left.
+      if (err instanceof ThrottleOverloadedError) {
+        this.#overload.refused++;
+        log.warn("search refused, queue full", { queued: err.queued });
+        throw new SearchOverloadedError("queue_full");
+      }
+      if (signal?.aborted) throw new SearchCancelledError();
+      this.#overload.abandoned++;
+      log.warn("search gave up waiting for a slot", { waitedMs: remaining });
+      throw new SearchOverloadedError("queue_timeout");
     } finally {
       clearTimeout(timer);
     }

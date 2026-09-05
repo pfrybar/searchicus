@@ -420,3 +420,49 @@ ol.engine-results li.made-the-cut a {
   border-bottom: 1px solid #eee;
   padding: 0.6rem 0;
 }
+
+/* Window totals, above the per-engine table. */
+.totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem 1.5rem;
+  margin: 1.25rem 0 1.75rem;
+}
+
+.total-group h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #56555b;
+}
+
+.total-group h3 .stat-detail {
+  display: inline;
+  margin-left: 0.4rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.stats {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: #56555b;
+}
+
+/* Deliberately quiet: context for the number above, not a number itself. */
+.stat-detail {
+  font-size: 0.72rem;
+  color: #8a8890;
+}

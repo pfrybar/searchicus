@@ -50,6 +50,23 @@ afterEach(() => {
   window.location.hash = "";
 });
 
+/** The window totals every metrics response carries. */
+function totals(overrides: Record<string, unknown> = {}) {
+  return {
+    searches: { completed: 9, failed: 1, degraded: 2 },
+    extractions: {
+      attempted: 4,
+      completed: 3,
+      failed: 1,
+      failures: [{ kind: "navigation_failed", count: 1 }],
+      medianTookMs: 5100,
+      meanChars: 8400,
+      domains: 3,
+    },
+    ...overrides,
+  };
+}
+
 describe("dashboard navigation", () => {
   it("hides the dashboard links when no archive is configured", async () => {
     mockApi({ "/health": { body: { status: "ok", extract: false, insights: false } }, "/engines": { body: [] } });
@@ -66,7 +83,9 @@ describe("dashboard navigation", () => {
     mockApi({
       "/health": HEALTH,
       "/engines": { body: [] },
-      "/metrics/engines": { body: { window: 10, totalSearches: 42, since: null, engines: [engine("bing")] } },
+      "/metrics/engines": {
+        body: { window: 10, totalSearches: 42, since: null, ...totals(), engines: [engine("bing")] },
+      },
     });
 
     render(<App />);
@@ -100,6 +119,7 @@ describe("metrics page", () => {
           window: 10,
           totalSearches: 42,
           since: "2026-09-04T16:00:00.000Z",
+          ...totals({ overload: { search: { refused: 3, abandoned: 12 }, extract: { refused: 0, abandoned: 1 } } }),
           engines: [engine("bing"), engine("brave", { failed: 2, failures: [{ kind: "timeout", count: 2 }] })],
         },
       },
@@ -118,6 +138,58 @@ describe("metrics page", () => {
     expect(screen.getByText(/10 of 42 archived searches/)).toBeInTheDocument();
   });
 
+  it("shows window totals, and marks the process counters as not surviving a restart", async () => {
+    mockApi({
+      "/health": HEALTH,
+      "/metrics/engines": {
+        body: {
+          window: 10,
+          totalSearches: 42,
+          since: "2026-09-04T16:00:00.000Z",
+          ...totals({ overload: { search: { refused: 3, abandoned: 12 }, extract: { refused: 0, abandoned: 1 } } }),
+          engines: [engine("bing")],
+        },
+      },
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("link", { name: "Metrics" }));
+
+    // Fan-out outcomes, which the per-engine table cannot show: an engine
+    // count says nothing about whether the caller got an answer.
+    expect(await screen.findByText("Searches")).toBeInTheDocument();
+    expect(screen.getByText("degraded")).toBeInTheDocument();
+
+    expect(screen.getByText("Extractions")).toBeInTheDocument();
+    expect(screen.getByText("mostly navigation_failed")).toBeInTheDocument();
+    expect(screen.getByText("3 hosts")).toBeInTheDocument();
+
+    // The one number here that is a process gauge rather than archived
+    // history, so it has to say so.
+    expect(screen.getByText("since restart")).toBeInTheDocument();
+    expect(screen.getByText("3 refused, 12 gave up waiting")).toBeInTheDocument();
+  });
+
+  it("says so when nothing has been turned away, rather than showing zeroes", async () => {
+    mockApi({
+      "/health": HEALTH,
+      "/metrics/engines": {
+        body: {
+          window: 10,
+          totalSearches: 42,
+          since: null,
+          ...totals({ overload: { search: { refused: 0, abandoned: 0 }, extract: { refused: 0, abandoned: 0 } } }),
+          engines: [engine("bing")],
+        },
+      },
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("link", { name: "Metrics" }));
+
+    expect(await screen.findByText(/This server has kept up/)).toBeInTheDocument();
+  });
+
   it("refetches for a different window", async () => {
     const urls: string[] = [];
     vi.stubGlobal(
@@ -126,7 +198,7 @@ describe("metrics page", () => {
         const url = input.toString();
         urls.push(url);
         const body = url.includes("/metrics/engines")
-          ? { window: 50, totalSearches: 42, since: null, engines: [engine("bing")] }
+          ? { window: 50, totalSearches: 42, since: null, ...totals(), engines: [engine("bing")] }
           : { status: "ok", extract: false, insights: true };
         return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
       }),

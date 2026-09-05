@@ -58,6 +58,42 @@ export interface EngineMetrics {
 }
 
 /** Per-engine metrics plus the window they describe. */
+/** How the fan-outs in the window ended, whatever the engines did inside them. */
+export interface SearchTotals {
+  /** Fan-outs that returned a ranked list. */
+  completed: number;
+  /** Fan-outs where every selected engine failed. */
+  failed: number;
+  /** Completed, but with at least one engine missing from the answer. */
+  degraded: number;
+}
+
+/** What was read back out of the pages this window's searches offered. */
+export interface ExtractionTotals {
+  attempted: number;
+  completed: number;
+  failed: number;
+  /** Failure kinds, commonest first. Never includes this server's own load. */
+  failures: Array<{ kind: string; count: number }>;
+  medianTookMs: number | null;
+  meanChars: number | null;
+  /** Distinct hosts read, a rough measure of breadth rather than volume. */
+  domains: number;
+}
+
+/**
+ * Work this process refused or gave up on, since it started.
+ *
+ * Deliberately not from the archive: these never reached an engine or a
+ * page, so archiving them would put the server's own load into tables that
+ * describe engines and documents. That does mean they reset on restart,
+ * unlike every other number here, and a reader has to be told so.
+ */
+export interface OverloadTotals {
+  search: { refused: number; abandoned: number };
+  extract: { refused: number; abandoned: number };
+}
+
 export interface EngineMetricsReport {
   /** Searches actually examined. */
   window: number;
@@ -65,7 +101,16 @@ export interface EngineMetricsReport {
   totalSearches: number;
   /** Timestamp of the oldest search in the window, ISO-8601. */
   since: string | null;
+  /** How the window's fan-outs ended. */
+  searches: SearchTotals;
+  /** Extractions over the same period. */
+  extractions: ExtractionTotals;
   engines: EngineMetrics[];
+  /**
+   * Refusals by this process, when the caller supplied them. Absent from a
+   * bare archive read, which has no process to ask.
+   */
+  overload?: OverloadTotals;
 }
 
 /** One engine's outcome, as listed beside a search. */
@@ -130,7 +175,7 @@ export interface SearchDetail extends SearchSummary {
  * searched for, which deserves more thought than a result list does.
  */
 export interface ArchiveInsights {
-  engineMetrics(options?: { window?: number }): Promise<EngineMetricsReport>;
+  engineMetrics(options?: { window?: number; overload?: OverloadTotals }): Promise<EngineMetricsReport>;
   recentSearches(options?: { limit?: number; before?: string }): Promise<SearchSummary[]>;
   searchDetail(searchId: string): Promise<SearchDetail | undefined>;
 }

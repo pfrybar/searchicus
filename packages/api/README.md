@@ -235,6 +235,14 @@ switched off".
 These return accumulated search history and the API has no authentication —
 see the root README's warning before exposing this beyond localhost.
 
+`GET /metrics/engines` also carries totals for the window — how the fan-outs
+ended (completed, degraded, failed) and what was extracted over the same
+period — plus `overload`, the counts this **process** has refused since it
+started. Overload is deliberately never archived: work turned away never
+reached an engine or a page, and recording it made every engine read as
+broken on the dashboard built to judge engines. That does mean those two
+numbers reset on restart, unlike everything else there, and the UI says so.
+
 | Endpoint                  | Returns                                                                                               |
 | ------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `GET /metrics/engines`    | Per-engine metrics over the recent window. `?window=N` (default 500, max 2000).                       |
