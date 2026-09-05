@@ -21,6 +21,18 @@ export const MAX_ENGINE_ID_LENGTH = 64;
 export const MAX_ENGINE_SELECTION = 16;
 
 /**
+ * Ceiling on the final merged result count.
+ *
+ * Measured rather than chosen: every engine returns one page, and merging
+ * four of those and deduplicating by URL yields somewhere around twenty
+ * unique results. Asking for more used to be accepted and then quietly
+ * unmet — `limit=100` returned 23 with nothing to say whether the list had
+ * been cut to the limit or the pool had simply run out. A ceiling near what
+ * the pool actually holds keeps the number honest.
+ */
+export const MAX_SEARCH_LIMIT = 20;
+
+/**
  * Validates untrusted input (HTTP request bodies, MCP tool arguments) into
  * a SearchQuery. Kept in sync with the SearchQuery interface by hand — if
  * you change one, change the other; the `satisfies` below at least catches
@@ -37,7 +49,7 @@ export const SearchQuerySchema = z.object({
  */
 export const SearchRequestSchema = SearchQuerySchema.extend({
   /** Final merged output count; never forwarded to an individual engine. */
-  limit: z.number().int().positive().max(100).optional(),
+  limit: z.number().int().positive().max(MAX_SEARCH_LIMIT).optional(),
   engines: z
     .array(z.string().min(1, "engine id must not be empty").max(MAX_ENGINE_ID_LENGTH))
     .min(1, "engines must contain at least one engine id")

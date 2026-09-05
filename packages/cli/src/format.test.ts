@@ -41,10 +41,10 @@ describe("formatSearch", () => {
 describe("CLI argument handling", () => {
   it("accepts only final result limits allowed by the shared request schema", () => {
     expect(parseLimit("1")).toBe(1);
-    expect(parseLimit("100")).toBe(100);
+    expect(parseLimit("20")).toBe(20);
     expect(() => parseLimit("2results")).toThrow();
     expect(() => parseLimit("0")).toThrow();
-    expect(() => parseLimit("101")).toThrow();
+    expect(() => parseLimit("21")).toThrow();
   });
 
   it("normalizes a valid query before searching", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SearchQuerySchema, SearchRequestSchema } from "./schemas.js";
+import { MAX_SEARCH_LIMIT, SearchQuerySchema, SearchRequestSchema } from "./schemas.js";
 
 describe("SearchQuerySchema", () => {
   it("accepts a minimal valid query", () => {
@@ -27,7 +27,8 @@ describe("SearchRequestSchema", () => {
 
   it("rejects an invalid final result limit", () => {
     expect(SearchRequestSchema.safeParse({ query: "cats", limit: 0 }).success).toBe(false);
-    expect(SearchRequestSchema.safeParse({ query: "cats", limit: 101 }).success).toBe(false);
+    expect(SearchRequestSchema.safeParse({ query: "cats", limit: MAX_SEARCH_LIMIT }).success).toBe(true);
+    expect(SearchRequestSchema.safeParse({ query: "cats", limit: MAX_SEARCH_LIMIT + 1 }).success).toBe(false);
   });
 
   it("rejects malformed, empty, and duplicate engine selections", () => {

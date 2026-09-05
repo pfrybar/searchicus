@@ -6,6 +6,7 @@ import {
   defaultStorePath,
   ExtractionService,
   ExtractRequestSchema,
+  MAX_SEARCH_LIMIT,
   SearchEngineRegistry,
   SearchRequestSchema,
 } from "@searchicus/core";
@@ -19,7 +20,7 @@ export function parseLimit(value: string): number {
   if (!parsed.success || parsed.data === undefined) {
     throw new InvalidArgumentError(
       !parsed.success
-        ? (parsed.error.issues[0]?.message ?? "limit must be a number from 1 to 100")
+        ? (parsed.error.issues[0]?.message ?? `limit must be a number from 1 to ${MAX_SEARCH_LIMIT}`)
         : "limit is required",
     );
   }
@@ -59,7 +60,7 @@ export function createProgram(
     .command("search <query>")
     .description("Search for a query across one or more engines")
     .option("-e, --engine <id...>", "engine id(s) to search; defaults to every registered engine")
-    .option("-l, --limit <n>", "max merged results (1–100; defaults to 8)", parseLimit)
+    .option("-l, --limit <n>", `max merged results (1–${MAX_SEARCH_LIMIT}; defaults to 8)`, parseLimit)
     .option("--json", "print raw JSON instead of a formatted list")
     .action(async (query: string, opts: { engine?: string[]; limit?: number; json?: boolean }) => {
       const parsed = SearchRequestSchema.safeParse({ query, limit: opts.limit, engines: opts.engine });

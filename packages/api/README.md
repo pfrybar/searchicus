@@ -109,7 +109,9 @@ Request body:
 
 - `query` (required string containing non-whitespace text, at most 1024
   characters; surrounding whitespace is trimmed)
-- `limit` (optional final merged-result count, integer 1–100; defaults to 8)
+- `limit` (optional final merged-result count, integer 1–20; defaults to 8).
+  The ceiling is roughly what one page from each engine yields once merged and
+  deduplicated, so a larger number would be accepted and then quietly unmet.
 - `engines` (optional non-empty, duplicate-free array of at most 16 engine-id
   strings, each at most 64 characters; defaults to every registered engine)
 
