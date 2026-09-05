@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { createDefaultSearchArchive, envOptOut } from "@searchicus/core";
+import { createDefaultSearchArchive, defaultDataDir, envOptOut } from "@searchicus/core";
 import { createBrowserExtraction, createBrowserRegistry } from "@searchicus/core/browser";
 import { createApp, defaultUiDir } from "./app.js";
 import { shutdownOn } from "./shutdown.js";
@@ -44,6 +44,9 @@ const server = createApp(registry, { mcp, ui: ui && uiDir, extraction, insights:
   console.log(
     archive ? "  dashboard data at /api/metrics/engines and /api/searches" : "  archive disabled: no dashboard data",
   );
+  // Printed because the failure this guards against was silent: two data
+  // roots, each working perfectly, and nothing to say which one was in use.
+  console.log(`  persistent state in ${defaultDataDir()}`);
   console.log(ui ? `  UI served from ${uiDir}` : "  UI not served (no build found)");
 });
 

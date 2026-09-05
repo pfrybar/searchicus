@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import {
   createDefaultRegistry,
+  defaultDataDir,
+  defaultProfileDir,
+  defaultStorePath,
   ExtractionService,
   ExtractRequestSchema,
   SearchEngineRegistry,
@@ -94,6 +97,28 @@ export function createProgram(
       }
 
       console.log(formatExtract(response).join("\n"));
+    });
+
+  program
+    .command("paths")
+    .description("Show where this machine keeps its profiles and search archive")
+    .option("--json", "print raw JSON instead of a formatted list")
+    .action((opts: { json?: boolean }) => {
+      // Worth a command of its own: these resolve from the application root
+      // and the environment, so "which archive am I looking at" is otherwise
+      // a question you can only answer by guessing.
+      const paths = {
+        dataDir: defaultDataDir(),
+        archive: defaultStorePath(),
+        profile: defaultProfileDir("cli"),
+      };
+
+      if (opts.json) {
+        console.log(JSON.stringify(paths, null, 2));
+        return;
+      }
+
+      for (const [name, value] of Object.entries(paths)) console.log(`${name}\t${value}`);
     });
 
   program
