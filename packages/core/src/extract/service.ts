@@ -155,6 +155,12 @@ export class ExtractionService {
 
       return response;
     } catch (err) {
+      // A request error is not an extraction attempt, so it is not archived
+      // and keeps its 400 rather than being flattened into a 502. Nothing
+      // inside the try raises one today; an injected renderer or parser is
+      // the only way it happens, and that is worth surviving.
+      if (err instanceof ExtractRequestError) throw err;
+
       const failure = asExtractFailure(err, controller.signal);
       this.#record({
         ...base,
@@ -188,7 +194,6 @@ export class ExtractionService {
 
     if (!this.#archive) {
       throw new ExtractRequestError(
-        "unknown_ref",
         "This server has no search archive, so a ref cannot be verified. Extract the URL without one.",
       );
     }
@@ -201,10 +206,10 @@ export class ExtractionService {
     }
 
     if (!found) {
-      throw new ExtractRequestError("unknown_ref", `ref "${ref}" does not name a result from an archived search.`);
+      throw new ExtractRequestError(`ref "${ref}" does not name a result from an archived search.`);
     }
     if (canonicalizeUrl(found.url) !== canonicalizeUrl(url.toString())) {
-      throw new ExtractRequestError("ref_url_mismatch", `ref "${ref}" names a different URL than the one requested.`);
+      throw new ExtractRequestError(`ref "${ref}" names a different URL than the one requested.`);
     }
 
     return found;
@@ -225,7 +230,6 @@ export class ExtractionService {
 /** Normalizes anything thrown mid-extraction into a safe public failure. */
 function asExtractFailure(err: unknown, signal: AbortSignal): ExtractFailedError {
   if (err instanceof ExtractFailedError) return err;
-  if (err instanceof ExtractRequestError) throw err;
 
   // An abort mid-flight is the deadline in almost every case; distinguishing
   // it from an explicit cancel matters for the archive's failure counts.
@@ -237,7 +241,7 @@ function asExtractFailure(err: unknown, signal: AbortSignal): ExtractFailedError
 function resolveMaxChars(value: number | undefined): number {
   if (value === undefined) return DEFAULT_EXTRACT_MAX_CHARS;
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new ExtractRequestError("invalid_url", "maxChars must be a positive integer.");
+    throw new ExtractRequestError("maxChars must be a positive integer.");
   }
   return Math.min(value, MAX_EXTRACT_MAX_CHARS);
 }

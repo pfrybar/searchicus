@@ -49,10 +49,7 @@ export interface ExtractResponse {
 
 /** Stable categories for archived extraction failures. */
 export type ExtractFailureKind =
-  | "invalid_url"
   | "blocked_address"
-  | "unknown_ref"
-  | "ref_url_mismatch"
   | "navigation_failed"
   | "timeout"
   | "too_large"
