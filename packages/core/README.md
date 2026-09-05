@@ -34,6 +34,10 @@ server, UI):
 - `rankResults()` / `canonicalizeUrl()` — merge per-engine outcomes into a
   family-aware, attributed result ranking without changing the raw outcomes.
 - `createDefaultRegistry()` — the registry every front door uses by default.
+- `createLogger()` / `setLogLevel()` — leveled logging on stderr, silent under
+  test. See the root README's "Logging".
+- `envOptIn()` / `envOptOut()` — the one vocabulary every environment switch
+  is read with.
 
 Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 

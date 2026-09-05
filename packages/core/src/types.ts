@@ -56,7 +56,6 @@ export type EngineFailureKind =
   | "search_box_unavailable"
   | "browser_unavailable"
   | "unknown_engine"
-  | "overloaded"
   | "closed"
   | "unknown";
 

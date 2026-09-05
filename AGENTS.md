@@ -34,6 +34,7 @@ packages/
           + browser realism (stealth/human/dwell/click-through) + relevance gate
           + ranking/fusion + SQLite archive and its read side (insights.ts)
           + rendered extraction (src/extract/)
+          + logging (logger.ts) and environment switches (env.ts)
   cli/    `searchicus` CLI (commander)
   api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
   ui/     web UI (vite + react): search, plus dashboard metrics/history pages
@@ -236,7 +237,7 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   results to stdout and people pipe them into `jq`. Suites run silent
   (`VITEST` is detected) because several of them exercise failure paths on
   purpose. Query text stays at `debug` and below.
-- **One tokenizer, two scorers.** `relevance.ts` tokenizes with
+- **Tokenize with ICU, not a character class.** `relevance.ts` tokenizes with
   `Intl.Segmenter`, not a character class: `/[^a-z0-9]+/` treated every
   non-ASCII character as a separator, so a Cyrillic, Greek, Arabic or CJK
   query produced no tokens, and no tokens means `queryTokenCoverage` returns 1
@@ -245,17 +246,6 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   dictionary. Accent folding happens before segmentation and only where a mark
   decorates a _Latin_ letter: folding everything turned Cyrillic "й" into "и",
   which is a different letter, not an accented one. Tokens come back in NFC.
-  When section ranking arrives it should share this tokenizer — but not the
-  scorer. Coverage is an absolute, thresholded gate and BM25 is a ranking
-  function whose scores are not comparable across queries; using one for the
-  other would mean thresholding a number that means something different every
-  time.
-- **Paged extraction must work without a cache.** The API and CLI are separate
-  processes with separate memory, so a CLI paged read would never hit the
-  API's cache. `offset` therefore has to be correct via a re-render, which
-  makes any cache purely an optimisation that can be added later without
-  changing behaviour — and keeps the "page text is never stored" property a
-  decision to be made deliberately rather than acquired by accident.
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.

@@ -200,10 +200,15 @@ Response:
   "markdown": "…",
   "truncated": false,
   "chars": 4812,
+  "totalChars": 4812,
   "tookMs": 7340,
   "untrusted": true
 }
 ```
+
+`chars` is what was returned and `totalChars` what the page held, so a caller
+can tell a 5% trim from a 95% one and decide whether asking again with a
+larger budget is worth a second render.
 
 `untrusted` is always present and always `true`: the Markdown is arbitrary web
 content and must be treated as data to evaluate, never as instructions.
