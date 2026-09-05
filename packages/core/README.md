@@ -109,9 +109,11 @@ async search(query: SearchQuery, ctx: SearchContext): Promise<SearchSession> {
 ```
 
 The registry releases the browser lease when `completed` settles — including
-when it rejects — so an engine that never settles it leaks a page into a
-browser meant to run for days. Engines with nothing to do afterwards return
-a bare `SearchResponse`; the registry normalizes both.
+when it rejects. An engine that never settles it does not leak a page: the
+session cap (60s by default) aborts the run and releases the lease anyway, so
+`drain()` and `close()` always finish. Settling `completed` is still an
+engine's job; the cap is a backstop, not a schedule. Engines with nothing to
+do afterwards return a bare `SearchResponse`; the registry normalizes both.
 
 Because sessions outlive the call that started them, **a short-lived process
 must `drain()` (or `close()`) before exiting**, or it kills live browser work.

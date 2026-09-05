@@ -8,6 +8,7 @@ import { DEFAULT_EXTRACT_CONFIG, extractConfigFromEnv, type ExtractConfig } from
 import { ExtractFailedError } from "../extract/errors.js";
 import type { PageRenderer, RenderedPage } from "../extract/types.js";
 import { extractDwell } from "./dwell.js";
+import { LazyLaunch } from "./lazy-launch.js";
 import { buildStealthBrowserOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
 import { BrowserUnavailableError } from "./session.js";
 
@@ -68,19 +69,22 @@ export interface ExtractionBrowserOptions {
 export class ExtractionBrowser implements PageRenderer {
   readonly #config: ExtractConfig;
   readonly #assertAddress: (hostname: string) => Promise<void>;
-  #browser: Browser | undefined;
-  #launching: Promise<Browser> | undefined;
+  readonly #chromium: LazyLaunch<Browser>;
   #contextOptions: Awaited<ReturnType<typeof buildStealthBrowserOptions>>["context"] | undefined;
   #closed = false;
 
   constructor(options: ExtractionBrowserOptions = {}) {
     this.#config = options.config ?? DEFAULT_EXTRACT_CONFIG;
     this.#assertAddress = options.assertAddress ?? ((hostname) => assertPublicHost(hostname));
+    this.#chromium = new LazyLaunch(
+      () => this.#launchBrowser(),
+      (browser) => browser.close(),
+    );
   }
 
   /** True once Chromium has actually started. Nothing starts until first use. */
   get launched(): boolean {
-    return this.#browser !== undefined;
+    return this.#chromium.launched;
   }
 
   async render(url: string, signal: AbortSignal): Promise<RenderedPage> {
@@ -163,10 +167,7 @@ export class ExtractionBrowser implements PageRenderer {
 
   async close(): Promise<void> {
     this.#closed = true;
-    const browser = this.#browser;
-    this.#browser = undefined;
-    this.#launching = undefined;
-    if (browser) await browser.close().catch(() => undefined);
+    await this.#chromium.close();
   }
 
   /**
@@ -380,35 +381,29 @@ export class ExtractionBrowser implements PageRenderer {
     await check;
   }
 
+  /** The memoized browser, launched on first use. See LazyLaunch. */
   async #ensureBrowser(): Promise<Browser> {
-    if (this.#browser?.isConnected()) return this.#browser;
-    if (this.#launching) return this.#launching;
+    const browser = this.#chromium.current;
+    // A browser that has lost its connection is dropped so the next render
+    // relaunches, exactly as BrowserSession does for search.
+    if (browser && !browser.isConnected()) this.#chromium.forget(browser);
+    return this.#chromium.get();
+  }
 
-    this.#launching = (async () => {
-      try {
-        const options = buildStealthBrowserOptions({
-          major: await resolveChromiumMajor(chromium.executablePath()),
-        });
-        const browser = await chromium.launch(options.launch);
+  async #launchBrowser(): Promise<Browser> {
+    try {
+      const options = buildStealthBrowserOptions({
+        major: await resolveChromiumMajor(chromium.executablePath()),
+      });
+      const browser = await chromium.launch(options.launch);
 
-        // A crashed browser must not be handed out again; dropping the
-        // reference makes the next render relaunch, exactly as
-        // BrowserSession does for search.
-        browser.on("disconnected", () => {
-          if (this.#browser === browser) this.#browser = undefined;
-        });
+      browser.on("disconnected", () => this.#chromium.forget(browser));
 
-        this.#contextOptions = options.context;
-        this.#browser = browser;
-        return browser;
-      } catch (err) {
-        throw err instanceof BrowserUnavailableError ? err : new BrowserUnavailableError(err);
-      } finally {
-        this.#launching = undefined;
-      }
-    })();
-
-    return this.#launching;
+      this.#contextOptions = options.context;
+      return browser;
+    } catch (err) {
+      throw err instanceof BrowserUnavailableError ? err : new BrowserUnavailableError(err);
+    }
   }
 }
 

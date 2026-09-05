@@ -192,10 +192,13 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
 - **Results and sessions are separate signals.** `search()` resolving means
   results are ready; the returned `SearchSession.completed` settling means
   the browser work is done. An engine may return results and keep using its
-  page. The registry releases the browser lease when `completed` settles, so
-  an engine that never settles it leaks a page into a browser that is meant
-  to run for days. Engines with nothing to do afterwards just return a bare
-  `SearchResponse` and the registry normalizes it.
+  page. The registry releases the browser lease when `completed` settles —
+  or when the session cap fires, whichever comes first. That cap is a hard
+  bound rather than a request: aborting the run's signal only asks an engine
+  to stop, and one that ignores it must not be able to hold a page, `drain()`
+  and `close()` open forever (the CLI has no outer timeout at all). Settling
+  `completed` remains the engine's job. Engines with nothing to do afterwards
+  just return a bare `SearchResponse` and the registry normalizes it.
 - **Anything short-lived must `drain()` before exiting.** Sessions outlive the
   call that started them, so exiting as soon as results arrive kills live
   browser work. The CLI `close()`s in a `finally`; the servers drain on

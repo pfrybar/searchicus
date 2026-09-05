@@ -286,41 +286,51 @@ export class SearchEngineRegistry {
     const onCallerGone = (): void => controller.abort();
     signal?.addEventListener("abort", onCallerGone, { once: true });
     const scope = new EngineRunScope(this.#browser, controller.signal);
-    const sessionTimer = setTimeout(() => {
+
+    // Settles when the lease is actually released, which is what the registry
+    // tracks — not when the engine says it is finished, which an engine is
+    // free never to say.
+    const released = deferred();
+    let finalized = false;
+    const finalize = (): void => {
+      if (finalized) return;
+      finalized = true;
+      clearTimeout(sessionTimer);
       signal?.removeEventListener("abort", onCallerGone);
+      void scope.releaseAll().then(released.resolve, released.resolve);
+    };
+
+    // The session cap is a hard bound, not a request. Aborting the signal
+    // asks an engine to stop; an engine that ignores it — or that hands back
+    // a `completed` promise which never settles — would otherwise hold its
+    // page, this session's slot in drain(), and close() itself open forever.
+    // The CLI has no outer timeout at all, so "forever" is literal there.
+    const sessionTimer = setTimeout(() => {
       controller.abort();
+      finalize();
     }, this.#sessionTimeoutMs);
 
     let outcome: SearchResponse | SearchSession;
     try {
       outcome = await withDeadline(engine.search(query, scope), deadline, `Engine "${engineId}" timed out`);
     } catch (err) {
-      clearTimeout(sessionTimer);
-      signal?.removeEventListener("abort", onCallerGone);
       controller.abort();
-      await scope.releaseAll();
+      finalize();
+      await released.promise;
       throw err;
     }
 
     // A bare SearchResponse means the engine is done the moment it has
     // results; only a SearchSession keeps the lease open past this point.
     if (!isSearchSession(outcome)) {
-      clearTimeout(sessionTimer);
-      signal?.removeEventListener("abort", onCallerGone);
-      await scope.releaseAll();
+      finalize();
+      await released.promise;
       return outcome;
     }
 
-    this.#track(
-      this.#inFlightSessions,
-      outcome.completed
-        .catch(() => undefined)
-        .finally(() => {
-          clearTimeout(sessionTimer);
-          signal?.removeEventListener("abort", onCallerGone);
-          return scope.releaseAll();
-        }),
-    );
+    // Whichever comes first: the engine finishing, or the cap above.
+    outcome.completed.then(finalize, finalize);
+    this.#track(this.#inFlightSessions, released.promise);
 
     return outcome.response;
   }
@@ -381,6 +391,7 @@ export class SearchEngineRegistry {
  */
 class EngineRunScope implements SearchContext {
   readonly #handles: BrowserLeaseHandle[] = [];
+  #released = false;
 
   constructor(
     private readonly browser: BrowserProvider | undefined,
@@ -394,16 +405,37 @@ class EngineRunScope implements SearchContext {
           'from "@searchicus/core/browser", or inject a BrowserSession.',
       );
     }
+    if (this.#released) throw new Error("This search has already finished");
 
     const handle = await this.browser.acquire(this.signal);
+
+    // Acquisition is asynchronous and a Chromium launch is slow, so this can
+    // land after the run was cleaned up — a search that timed out while its
+    // browser was still starting. Pushing onto an already-emptied list would
+    // leak the page into a browser meant to run for days.
+    if (this.#released) {
+      await handle.release().catch(() => undefined);
+      throw new Error("This search has already finished");
+    }
+
     this.#handles.push(handle);
     return handle.lease;
   }
 
   async releaseAll(): Promise<void> {
+    this.#released = true;
     await Promise.allSettled(this.#handles.map((handle) => handle.release()));
     this.#handles.length = 0;
   }
+}
+
+/** A promise with its resolver, for work that is settled from elsewhere. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = () => settle();
+  });
+  return { promise, resolve };
 }
 
 function isSearchSession(value: SearchResponse | SearchSession): value is SearchSession {
