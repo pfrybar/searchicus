@@ -207,6 +207,84 @@ describe("SqliteSearchArchive", () => {
     }
   });
 
+  it("answers the dashboard's window query from an index rather than sorting the table", async () => {
+    // The window is bounded so reading it stays cheap, which does nothing if
+    // *finding* the window costs a full scan and a temporary B-tree — and it
+    // did, three times per metrics request, growing with the archive.
+    const filePath = temporaryDatabase();
+    const archive = new SqliteSearchArchive(filePath);
+    await archive.archive(record());
+    await archive.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(filePath);
+    try {
+      const plan = db
+        .prepare("EXPLAIN QUERY PLAN SELECT search_id FROM searches ORDER BY started_at DESC, search_id DESC LIMIT 5")
+        .all()
+        .map((row) => String((row as { detail: string }).detail))
+        .join(" ");
+
+      expect(plan).toContain("searches_recent");
+      expect(plan).not.toContain("TEMP B-TREE");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("adds the window index to an archive written before it existed", async () => {
+    const filePath = temporaryDatabase();
+    const { DatabaseSync } = await import("node:sqlite");
+
+    // Schema 1 as the previous release left it: the tables, none of the
+    // later indexes. An upgrade must add the index and keep the rows.
+    const seed = new DatabaseSync(filePath);
+    seed.exec(`
+      CREATE TABLE searches (
+        search_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, query TEXT NOT NULL,
+        selected_engine_ids_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+        merged_response_json TEXT, took_ms INTEGER NOT NULL,
+        degraded INTEGER, schema_version INTEGER NOT NULL
+      );
+      CREATE TABLE engine_results (
+        search_id TEXT NOT NULL REFERENCES searches(search_id) ON DELETE CASCADE,
+        engine_id TEXT NOT NULL, engine_position INTEGER NOT NULL, succeeded INTEGER NOT NULL,
+        took_ms INTEGER NOT NULL, result_count INTEGER NOT NULL, coverage REAL, match REAL,
+        raw_response_json TEXT, error_kind TEXT, error_message TEXT,
+        PRIMARY KEY (search_id, engine_id)
+      );
+      CREATE TABLE extractions (
+        extraction_id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
+        search_id TEXT REFERENCES searches(search_id) ON DELETE CASCADE, result_ref TEXT,
+        requested_url TEXT NOT NULL, final_url TEXT, status TEXT NOT NULL, error_kind TEXT,
+        http_status INTEGER, content_type TEXT, redirects INTEGER, took_ms INTEGER NOT NULL,
+        title TEXT, domain TEXT, language TEXT, author TEXT, published TEXT, chars INTEGER,
+        word_count INTEGER, truncated INTEGER, markdown_sha256 TEXT
+      );
+      INSERT INTO searches VALUES ('older-1', '2026-01-01T00:00:00.000Z', 'q', '[]', 'completed', NULL, 1, 0, 1);
+      PRAGMA user_version = 1;
+    `);
+    seed.close();
+
+    const archive = new SqliteSearchArchive(filePath);
+    expect(await archive.recentSearches({ limit: 5 })).toHaveLength(1);
+    await archive.close();
+
+    const db = new DatabaseSync(filePath);
+    try {
+      expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: ARCHIVE_SCHEMA_VERSION });
+      const indexes = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'searches_recent'")
+        .all();
+      expect(indexes).toHaveLength(1);
+      // The upgrade adds an index; it must not lose what was already stored.
+      expect(db.prepare("SELECT count(*) AS total FROM searches").get()).toEqual({ total: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
   it("refuses an archive written by a newer schema rather than corrupting it", async () => {
     const filePath = temporaryDatabase();
     const { DatabaseSync } = await import("node:sqlite");
