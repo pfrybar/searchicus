@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { causeOf, createLogger } from "./logger.js";
 import type { BrowserLease, BrowserLeaseHandle, BrowserProvider, SearchContext } from "./context.js";
 import type { SearchArchive, SearchArchiveRecord } from "./archive.js";
 import { BingSearchEngine } from "./engines/bing.js";
@@ -18,6 +19,8 @@ import type {
   SearchResponse,
   SearchSession,
 } from "./types.js";
+
+const log = createLogger("registry");
 
 /** Budget from searchAll() entry to results, including time spent throttled. */
 export const DEFAULT_RESULTS_TIMEOUT_MS = 30_000;
@@ -329,18 +332,27 @@ export class SearchEngineRegistry {
     }
 
     // Whichever comes first: the engine finishing, or the cap above.
-    outcome.completed.then(finalize, finalize);
+    outcome.completed.then(finalize, (err: unknown) => {
+      // Expected — the results already shipped — but an engine whose page
+      // work always fails is worth being able to see.
+      log.debug("session ended in failure", { engine: engineId, cause: causeOf(err) });
+      finalize();
+    });
     this.#track(this.#inFlightSessions, released.promise);
 
     return outcome.response;
   }
 
   #failedOutcome(engineId: string, tookMs: number, err: unknown): EngineSearchOutcome {
+    const kind = classifyFailure(err);
+    // Archived too, but nobody should need SQL to notice an engine has
+    // started failing.
+    log.warn("engine failed", { engine: engineId, kind, tookMs, cause: causeOf(err) });
     return {
       engineId,
       ok: false,
       tookMs: Math.max(0, tookMs),
-      errorKind: classifyFailure(err),
+      errorKind: kind,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -355,7 +367,11 @@ export class SearchEngineRegistry {
     const scheduled = new Promise<void>((resolve) => setImmediate(resolve)).then(() => archive.archive(record));
     this.#track(
       this.#inFlightArchives,
-      scheduled.catch(() => undefined),
+      // Swallowed so archival never changes a search's outcome — but a write
+      // that vanishes silently is how an archive quietly stops being one.
+      scheduled.catch((err: unknown) => {
+        log.warn("archive write failed", { searchId: record.searchId, cause: causeOf(err) });
+      }),
     );
   }
 

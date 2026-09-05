@@ -1,6 +1,7 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 
 import type { BrowserLeaseHandle, BrowserProvider } from "../context.js";
+import { causeOf, createLogger } from "../logger.js";
 import { defaultProfileDir } from "../paths.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "../registry.js";
 import { createDefaultSearchArchive } from "../storage.js";
@@ -14,6 +15,8 @@ import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./steal
  * searches start queueing on it, sessions are living longer than expected.
  */
 export const DEFAULT_MAX_PAGES = 24;
+
+const log = createLogger("browser");
 
 /** @deprecated Import from the browser-free core entry instead. */
 export { DEFAULT_PROFILE_ROOT } from "../paths.js";
@@ -200,8 +203,10 @@ export class BrowserSession implements BrowserProvider {
       // dropping the reference makes the next acquire relaunch.
       context.on("close", () => this.#chromium.forget(context));
 
+      log.info("chromium launched", { profile: this.#profileDir });
       return context;
     } catch (err) {
+      log.error("chromium failed to launch", { profile: this.#profileDir, cause: causeOf(err) });
       throw new BrowserUnavailableError(err);
     }
   }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ArchivedResult, ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
+import { causeOf, createLogger } from "../logger.js";
 import { canonicalizeUrl } from "../ranking.js";
 import { assertPublicHost, parseExtractUrl, type AddressLookup } from "./address.js";
 import {
@@ -17,6 +18,8 @@ import type {
   ParsedDocument,
   RenderedPage,
 } from "./types.js";
+
+const log = createLogger("extract");
 
 export interface ExtractionServiceOptions {
   /** Renders pages. Required before any extraction can actually run. */
@@ -172,6 +175,15 @@ export class ExtractionService {
       if (err instanceof ExtractionBusyError) throw err;
 
       const failure = asExtractFailure(err, controller.signal);
+      // The response is deliberately vague — a specific one would let a
+      // caller map internal network space by probing. The operator gets the
+      // real reason, which is the whole point of carrying a cause.
+      log.warn("extraction failed", {
+        url: url.toString(),
+        kind: failure.kind,
+        tookMs: Date.now() - started,
+        cause: causeOf(failure.cause ?? err),
+      });
       this.#record({
         ...base,
         status: "failed",
@@ -262,7 +274,9 @@ export class ExtractionService {
 
     const write: Promise<void> = archive
       .recordExtraction(record)
-      .catch(() => undefined)
+      .catch((err: unknown) => {
+        log.warn("extraction archive write failed", { url: record.requestedUrl, cause: causeOf(err) });
+      })
       .finally(() => this.#pendingWrites.delete(write));
     this.#pendingWrites.add(write);
   }

@@ -3,6 +3,7 @@ import { chromium, type APIResponse, type Browser, type BrowserContext, type Pag
 import type { ExtractionArchive } from "../archive.js";
 import { assertPublicHost, parseExtractUrl } from "../extract/address.js";
 import { ExtractionService } from "../extract/service.js";
+import { causeOf, createLogger } from "../logger.js";
 import { createDefaultSearchArchive } from "../storage.js";
 import { DEFAULT_EXTRACT_CONFIG, extractConfigFromEnv, type ExtractConfig } from "../extract/config.js";
 import { ExtractFailedError } from "../extract/errors.js";
@@ -32,6 +33,8 @@ const ALLOWED_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "xhr
  * otherwise be bounded only by the clock. This is the backstop for that.
  */
 export const MAX_PAGE_REQUESTS = 300;
+
+const log = createLogger("extract");
 
 export interface ExtractionBrowserOptions {
   config?: ExtractConfig;
@@ -200,8 +203,12 @@ export class ExtractionBrowser implements PageRenderer {
     await context.route("**/*", async (route) => {
       try {
         await this.#screen(route, page, budget, resolved);
-      } catch {
+      } catch (err) {
         budget.blocked = true;
+        // Debug rather than warn: an ordinary page refers to plenty of hosts
+        // this policy declines, and one line per refusal at info would drown
+        // everything else.
+        log.debug("request refused", { url: route.request().url(), cause: causeOf(err) });
         await route.abort("blockedbyclient").catch(() => undefined);
       }
     });

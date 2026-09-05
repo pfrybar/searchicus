@@ -227,6 +227,15 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   must never shadow an endpoint) and before the 404. There is no SPA history
   fallback on purpose — it would turn API 404s into HTML, and the UI has no
   client-side router.
+- **Log through `core/logger.ts`, on stderr, never `console`.** The package
+  was silent before, which read as tidy and was not: every handled failure
+  was swallowed with nothing written anywhere, and the one time it mattered
+  an extraction 502 could not be diagnosed at all. The reasoning behind each
+  swallow — never let this affect the response — was right; implementing it
+  as "never tell anyone" was not. stderr is load-bearing: the CLI prints
+  results to stdout and people pipe them into `jq`. Suites run silent
+  (`VITEST` is detected) because several of them exercise failure paths on
+  purpose. Query text stays at `debug` and below.
 - Validate untrusted requests through the shared core schemas. `SearchQuery`
   is the engine input; `SearchRequest` adds the optional engine selection for
   API/MCP callers. Do not recover `engines` by casting raw request bodies.

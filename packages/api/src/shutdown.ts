@@ -1,4 +1,7 @@
+import { causeOf, createLogger } from "@searchicus/core";
 import type { Server } from "node:http";
+
+const log = createLogger("api");
 
 /** How long to wait for browser sessions and queued archive writes before exiting. */
 const SHUTDOWN_GRACE_MS = 15_000;
@@ -21,10 +24,10 @@ export function shutdownOn(server: Server, registry: Closeable): void {
     process.on(signal, () => {
       if (shuttingDown) return;
       shuttingDown = true;
-      console.log(`Received ${signal}, finishing in-flight search work...`);
+      log.info("shutting down", { signal });
 
       const forceExit = setTimeout(() => {
-        console.warn("Shutdown grace period elapsed; exiting with search work still running.");
+        log.warn("grace period elapsed, exiting with work still running", { graceMs: SHUTDOWN_GRACE_MS });
         process.exit(1);
       }, SHUTDOWN_GRACE_MS);
       forceExit.unref();
@@ -36,7 +39,7 @@ export function shutdownOn(server: Server, registry: Closeable): void {
       server.close(() => {
         void registry
           .close()
-          .catch((err: unknown) => console.error("Error during shutdown:", err))
+          .catch((err: unknown) => log.error("error during shutdown", { cause: causeOf(err) }))
           .finally(() => {
             clearTimeout(forceExit);
             process.exit(0);
