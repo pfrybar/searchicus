@@ -7,6 +7,17 @@ import { shutdownOn } from "./shutdown.js";
 
 const port = Number(process.env.PORT ?? 3000);
 
+/**
+ * Loopback unless told otherwise.
+ *
+ * This server has no authentication and its dashboard endpoints serve every
+ * query ever made through it, so the default binds where only this machine
+ * can reach it. Deployments that need more say so: the image sets
+ * HOST=0.0.0.0, because a container that listens only on its own loopback
+ * cannot be reached at all.
+ */
+const host = process.env.HOST ?? "127.0.0.1";
+
 /** Treats the usual falsy spellings as "off"; anything else (or unset) is on. */
 function enabled(value: string | undefined): boolean {
   return !["false", "0", "no"].includes((value ?? "").toLowerCase());
@@ -28,8 +39,8 @@ const ui = enabled(process.env.SERVE_UI) && existsSync(path.join(uiDir, "index.h
 const archive = createDefaultSearchArchive();
 const registry = createBrowserRegistry("api", { archive });
 const extraction = createBrowserExtraction({ archive });
-const server = createApp(registry, { mcp, ui: ui && uiDir, extraction, insights: archive }).listen(port, () => {
-  console.log(`searchicus API listening on http://localhost:${port}`);
+const server = createApp(registry, { mcp, ui: ui && uiDir, extraction, insights: archive }).listen(port, host, () => {
+  console.log(`searchicus API listening on http://${host}:${port}`);
   console.log(`  search API at /api (also at the root, for compatibility)`);
   console.log(mcp ? `  MCP (Streamable HTTP) at /mcp` : "  MCP endpoint disabled");
   console.log(

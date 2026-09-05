@@ -9,7 +9,14 @@ import {
   type ExtractConfig,
 } from "./config.js";
 import { ExtractFailedError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
-import type { DocumentParser, ExtractRequest, ExtractResponse, PageRenderer } from "./types.js";
+import type {
+  DocumentParser,
+  ExtractRequest,
+  ExtractResponse,
+  PageRenderer,
+  ParsedDocument,
+  RenderedPage,
+} from "./types.js";
 
 export interface ExtractionServiceOptions {
   /** Renders pages. Required before any extraction can actually run. */
@@ -96,15 +103,20 @@ export class ExtractionService {
       // MAX_CONCURRENT would grow an unbounded queue of callers each still
       // expecting a full timeout's worth of work once they reached the front.
       await this.#slots.acquire(controller.signal);
-      let rendered;
+      let rendered: RenderedPage;
+      let parsed: ParsedDocument;
       try {
         rendered = await renderer.render(url.toString(), controller.signal);
+        // The slot is held across the parse too. Parsing spawns a
+        // memory-capped worker per document, and releasing before it meant
+        // the limit bounded renders while workers piled up behind them —
+        // capping the cheap half of the work and not the expensive one.
+        const parse = this.#parse ?? (await this.#defaultParser());
+        parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
       } finally {
         this.#slots.release();
       }
 
-      const parse = this.#parse ?? (await this.#defaultParser());
-      const parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
       const { markdown, truncated } = truncateMarkdown(parsed.markdown, maxChars);
       if (markdown.trim().length === 0) {
         throw new ExtractFailedError("no_content", "That page had no readable content to extract.");
