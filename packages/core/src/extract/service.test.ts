@@ -456,3 +456,84 @@ describe("ExtractionService admission and shutdown", () => {
     await expect(pending).rejects.toBeInstanceOf(ExtractFailedError);
   });
 });
+
+describe("ExtractionService page cache", () => {
+  const long = Array.from({ length: 20 }, (_, i) => `## Section ${i}\n\n${"word ".repeat(40)}`).join("\n\n");
+  const longParse: DocumentParser = async () => ({ title: "Long", markdown: long, wordCount: 800 });
+
+  it("renders once however many windows are read", async () => {
+    // Without this, reading a 35,000-character document in 6,000-character
+    // windows renders it seven times: seven browser launches and seven
+    // requests to someone else's server to read one page once.
+    const renderer = new FakeRenderer();
+    const extraction = service({ renderer, parse: longParse });
+
+    let offset: number | undefined = 0;
+    let windows = 0;
+    while (offset !== undefined && windows < 50) {
+      const page: Awaited<ReturnType<typeof extraction.extract>> = await extraction.extract({
+        url: PAGE_URL,
+        maxChars: 900,
+        offset,
+      });
+      windows++;
+      offset = page.nextOffset;
+    }
+
+    expect(windows).toBeGreaterThan(3);
+    expect(renderer.rendered).toEqual([PAGE_URL]);
+  });
+
+  it("renders every window when caching is off", async () => {
+    const renderer = new FakeRenderer();
+    const extraction = service({
+      renderer,
+      parse: longParse,
+      config: config({ cache: { ...DEFAULT_EXTRACT_CONFIG.cache, enabled: false } }),
+    });
+
+    await extraction.extract({ url: PAGE_URL, maxChars: 900 });
+    await extraction.extract({ url: PAGE_URL, maxChars: 900, offset: 900 });
+
+    // Paging is correct without the cache, which is what makes the cache an
+    // optimisation rather than a mechanism.
+    expect(renderer.rendered).toEqual([PAGE_URL, PAGE_URL]);
+  });
+
+  it("still checks the ref and the address on a cached read", async () => {
+    // A cache is an optimisation, not a bypass.
+    const archive = new FakeArchive({ "abc123-1": { searchId: "abc123", ref: "abc123-1", url: PAGE_URL, rank: 1 } });
+    const extraction = service({ archive, parse: longParse });
+
+    await extraction.extract({ url: PAGE_URL, maxChars: 900 });
+    await expect(
+      extraction.extract({ url: PAGE_URL, ref: "abc123-9", maxChars: 900, offset: 900 }),
+    ).rejects.toBeInstanceOf(ExtractRequestError);
+  });
+
+  it("does not consume a concurrency slot for a page it already has", async () => {
+    // The only slot is held by a render that never finishes. A cached window
+    // must come back anyway, which is what makes paging cheap under load
+    // rather than merely cheap when idle.
+    const rendered: string[] = [];
+    const renderer: PageRenderer = {
+      render: async (url) => {
+        rendered.push(url);
+        if (url.includes("/blocking")) await new Promise<void>(() => undefined);
+        return { finalUrl: url, html: "<html></html>", status: 200, redirects: 0 };
+      },
+      close: async () => undefined,
+    };
+
+    const extraction = service({ renderer, parse: longParse, config: config({ maxConcurrent: 1 }) });
+    await extraction.extract({ url: PAGE_URL, maxChars: 900 });
+
+    const blocking = extraction.extract({ url: "https://example.test/blocking", maxChars: 900 });
+    void blocking.catch(() => undefined);
+    await settle();
+
+    const cached = await extraction.extract({ url: PAGE_URL, maxChars: 900, offset: 900 });
+    expect(cached.offset).toBeGreaterThan(0);
+    expect(rendered).toEqual([PAGE_URL, "https://example.test/blocking"]);
+  });
+});

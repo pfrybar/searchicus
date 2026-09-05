@@ -10,6 +10,7 @@ import {
   type ExtractConfig,
 } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
+import { PageCache } from "./page-cache.js";
 import { sliceWindow } from "./sections.js";
 import type {
   DocumentParser,
@@ -56,6 +57,7 @@ export class ExtractionService {
   readonly #slots: Semaphore;
   readonly #pendingWrites = new Set<Promise<void>>();
   readonly #overload = { refused: 0, abandoned: 0 };
+  readonly #cache: PageCache | undefined;
   #closed = false;
 
   constructor(options: ExtractionServiceOptions = {}) {
@@ -65,6 +67,7 @@ export class ExtractionService {
     this.#parse = options.parse;
     this.#lookup = options.lookup;
     this.#slots = new Semaphore(this.#config.maxConcurrent, this.#config.maxQueued);
+    this.#cache = this.#config.cache.enabled ? new PageCache(this.#config.cache) : undefined;
   }
 
   /** Whether this deployment will actually extract. Front doors report it. */
@@ -122,40 +125,62 @@ export class ExtractionService {
       // discover that "localhost" was never going anywhere.
       await assertPublicHost(url.hostname, this.#lookup);
 
-      // Queue time counts against the deadline. Without that, a burst past
-      // MAX_CONCURRENT would grow an unbounded queue of callers each still
-      // expecting a full timeout's worth of work once they reached the front.
-      // Queue time counts against the deadline, so giving up here is giving
-      // up waiting for this server rather than waiting for the page. Told
-      // apart because the difference decides whether the caller retries and
-      // whether the archive believes the page was slow.
-      const admitted = Date.now();
-      await this.#slots.acquire(controller.signal).catch((err: unknown) => {
-        if (err instanceof ExtractionBusyError) {
-          this.#overload.refused++;
-          log.warn("extraction refused, queue full", { queued: err.queued });
-          throw err;
-        }
-        this.#overload.abandoned++;
-        log.warn("extraction gave up waiting for a slot", { waitedMs: Date.now() - admitted });
-        throw new ExtractionBusyError(0, "queue_timeout");
-      });
+      // A page already read is served from memory: no slot, no browser, no
+      // second request to somebody else's server. Everything above still
+      // runs — the ref must still check out, and the address is still
+      // screened — because a cache is an optimisation and not a bypass.
+      const cacheKey = url.toString();
+      let page = this.#cache?.get(cacheKey);
 
-      let rendered: RenderedPage;
-      let parsed: ParsedDocument;
-      try {
-        rendered = await renderer.render(url.toString(), controller.signal);
-        // The slot is held across the parse too. Parsing spawns a
-        // memory-capped worker per document, and releasing before it meant
-        // the limit bounded renders while workers piled up behind them —
-        // capping the cheap half of the work and not the expensive one.
-        const parse = this.#parse ?? (await this.#defaultParser());
-        parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
-      } finally {
-        this.#slots.release();
+      if (!page) {
+        // Queue time counts against the deadline, so giving up here is giving
+        // up waiting for this server rather than waiting for the page. Told
+        // apart because the difference decides whether the caller retries and
+        // whether the archive believes the page was slow.
+        const admitted = Date.now();
+        await this.#slots.acquire(controller.signal).catch((err: unknown) => {
+          if (err instanceof ExtractionBusyError) {
+            this.#overload.refused++;
+            log.warn("extraction refused, queue full", { queued: err.queued });
+            throw err;
+          }
+          this.#overload.abandoned++;
+          log.warn("extraction gave up waiting for a slot", { waitedMs: Date.now() - admitted });
+          throw new ExtractionBusyError(0, "queue_timeout");
+        });
+
+        let rendered: RenderedPage;
+        let parsed: ParsedDocument;
+        try {
+          rendered = await renderer.render(cacheKey, controller.signal);
+          // The slot is held across the parse too. Parsing spawns a
+          // memory-capped worker per document, and releasing before it meant
+          // the limit bounded renders while workers piled up behind them —
+          // capping the cheap half of the work and not the expensive one.
+          const parse = this.#parse ?? (await this.#defaultParser());
+          parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
+        } finally {
+          this.#slots.release();
+        }
+
+        // The captured HTML is deliberately not kept: it is the largest thing
+        // here and nothing downstream reads it once the Markdown exists.
+        page = {
+          finalUrl: rendered.finalUrl,
+          ...(rendered.status === undefined ? {} : { status: rendered.status }),
+          ...(rendered.contentType === undefined ? {} : { contentType: rendered.contentType }),
+          redirects: rendered.redirects,
+          title: parsed.title,
+          markdown: parsed.markdown,
+          wordCount: parsed.wordCount,
+          ...(parsed.language === undefined ? {} : { language: parsed.language }),
+          ...(parsed.author === undefined ? {} : { author: parsed.author }),
+          ...(parsed.published === undefined ? {} : { published: parsed.published }),
+        };
+        this.#cache?.set(cacheKey, page);
       }
 
-      const window = sliceWindow(parsed.markdown, {
+      const window = sliceWindow(page.markdown, {
         maxChars,
         ...(request.offset === undefined ? {} : { offset: request.offset }),
       });
@@ -166,9 +191,9 @@ export class ExtractionService {
 
       const response: ExtractResponse = {
         url: request.url,
-        finalUrl: rendered.finalUrl,
+        finalUrl: page.finalUrl,
         ...(provenance ? { ref: provenance.ref } : {}),
-        title: parsed.title,
+        title: page.title,
         markdown,
         truncated: window.nextOffset !== undefined,
         chars: markdown.length,
@@ -181,19 +206,19 @@ export class ExtractionService {
 
       this.#record({
         ...base,
-        finalUrl: rendered.finalUrl,
+        finalUrl: page.finalUrl,
         status: "completed",
-        ...(rendered.status === undefined ? {} : { httpStatus: rendered.status }),
-        ...(rendered.contentType === undefined ? {} : { contentType: rendered.contentType }),
-        redirects: rendered.redirects,
+        ...(page.status === undefined ? {} : { httpStatus: page.status }),
+        ...(page.contentType === undefined ? {} : { contentType: page.contentType }),
+        redirects: page.redirects,
         tookMs: response.tookMs,
-        title: parsed.title,
-        domain: domainOf(rendered.finalUrl),
-        ...(parsed.language === undefined ? {} : { language: parsed.language }),
-        ...(parsed.author === undefined ? {} : { author: parsed.author }),
-        ...(parsed.published === undefined ? {} : { published: parsed.published }),
+        title: page.title,
+        domain: domainOf(page.finalUrl),
+        ...(page.language === undefined ? {} : { language: page.language }),
+        ...(page.author === undefined ? {} : { author: page.author }),
+        ...(page.published === undefined ? {} : { published: page.published }),
         chars: markdown.length,
-        wordCount: parsed.wordCount,
+        wordCount: page.wordCount,
         truncated: window.nextOffset !== undefined,
         markdownSha256: createHash("sha256").update(markdown).digest("hex"),
       });
@@ -250,6 +275,7 @@ export class ExtractionService {
    */
   async close(): Promise<void> {
     this.#closed = true;
+    this.#cache?.clear();
     await this.drain();
     await this.#renderer?.close();
   }

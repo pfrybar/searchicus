@@ -48,6 +48,20 @@ export interface ExtractConfig {
   readonly maxRedirects: number;
   /** Destination ports the renderer may open. */
   readonly allowedPorts: ReadonlySet<number>;
+  /**
+   * Briefly holding parsed pages so paging does not re-render.
+   *
+   * On by default, because without it reading a 35,000-character document in
+   * six-thousand-character windows renders it seven times — seven browser
+   * launches and seven requests to someone else's server to read one page
+   * once. Off is a supported configuration and costs only time.
+   */
+  readonly cache: {
+    readonly enabled: boolean;
+    readonly ttlMs: number;
+    readonly maxEntries: number;
+    readonly maxChars: number;
+  };
 }
 
 export const DEFAULT_EXTRACT_CONFIG: ExtractConfig = {
@@ -65,6 +79,16 @@ export const DEFAULT_EXTRACT_CONFIG: ExtractConfig = {
   maxBytes: 5_242_880,
   maxRedirects: 5,
   allowedPorts: new Set([80, 443]),
+  cache: {
+    enabled: true,
+    // Long enough to read a document through, short enough that nobody is
+    // served a page that has since changed. Paging happens in seconds.
+    ttlMs: 300_000,
+    maxEntries: 32,
+    // About 8MB of Markdown at worst, which is a bound worth stating: a page
+    // cache without one is a memory leak with good intentions.
+    maxChars: 8_000_000,
+  },
 };
 
 /**
@@ -90,6 +114,12 @@ export function extractConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Extr
     maxBytes: positiveInt(env.SEARCHICUS_EXTRACT_MAX_BYTES, DEFAULT_EXTRACT_CONFIG.maxBytes),
     maxRedirects: nonNegativeInt(env.SEARCHICUS_EXTRACT_MAX_REDIRECTS, DEFAULT_EXTRACT_CONFIG.maxRedirects),
     allowedPorts: ports(env.SEARCHICUS_EXTRACT_ALLOWED_PORTS, DEFAULT_EXTRACT_CONFIG.allowedPorts),
+    cache: {
+      enabled: envOptOut(env.SEARCHICUS_EXTRACT_CACHE),
+      ttlMs: positiveInt(env.SEARCHICUS_EXTRACT_CACHE_TTL_MS, DEFAULT_EXTRACT_CONFIG.cache.ttlMs),
+      maxEntries: positiveInt(env.SEARCHICUS_EXTRACT_CACHE_MAX_ENTRIES, DEFAULT_EXTRACT_CONFIG.cache.maxEntries),
+      maxChars: positiveInt(env.SEARCHICUS_EXTRACT_CACHE_MAX_CHARS, DEFAULT_EXTRACT_CONFIG.cache.maxChars),
+    },
   };
 }
 

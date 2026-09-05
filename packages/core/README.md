@@ -178,8 +178,10 @@ root README's "Extraction" section — particularly its network warning — befo
 enabling it.
 
 Each attempt is recorded as metadata only: status, timings, HTTP status,
-title, domain, sizes, and a digest of the Markdown. Page text is never stored,
-and the `extractions` table has nowhere to put it.
+title, domain, sizes, and a digest of the Markdown. Page text is never
+persisted, and the `extractions` table has nowhere to put it — though a parsed
+page is held in memory briefly so that reading its second window does not
+render it again. See the root README's "Extraction" for that bound.
 
 ## Reading the archive back
 
