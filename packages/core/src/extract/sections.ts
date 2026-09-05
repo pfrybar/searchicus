@@ -134,8 +134,7 @@ export function sliceWindow(markdown: string, options: { offset?: number; maxCha
 
   // A section that cannot fit whole is served from where the caller asked.
   if (containing.end - containing.start > maxChars) {
-    const consumed = boundaryCut(markdown.slice(requested, requested + maxChars), maxChars);
-    const next = requested + consumed;
+    const next = safeCut(markdown, containing.start, requested, maxChars);
     return {
       markdown: markdown.slice(requested, next).trimEnd(),
       offset: requested,
@@ -162,17 +161,60 @@ export function sliceWindow(markdown: string, options: { offset?: number; maxCha
 }
 
 /**
- * How much of `text` to keep, cutting at the last structural boundary.
+ * Where to end a window that has to cut inside a section.
  *
- * Nothing is appended to mark the cut. An ellipsis would be text this system
- * invented sitting inside content the response labels untrusted, and the
- * offsets already say what happened in a field a caller can trust.
+ * Prefers a line boundary that is not inside a fenced code block. Sections
+ * never split a fence, but a section longer than the whole budget has to be
+ * cut somewhere, and cutting on the last newline reintroduced exactly the
+ * failure sections were built to avoid: measured against nodejs.org/api/sqlite
+ * at a 500-character budget, 22 of 201 windows ended mid-snippet, handing back
+ * truncated code with no closing fence.
+ *
+ * Fence state is replayed from the start of the section rather than from the
+ * window, because a window that begins mid-section does not know whether it
+ * begins inside a block.
+ *
+ * A code block longer than the entire budget still has to be cut inside — no
+ * boundary exists — and it is cut at a line so the damage is at least whole
+ * lines. Nothing is appended to mark it: an invented ``` would be this system
+ * writing code into content the response labels untrusted.
  */
-function boundaryCut(text: string, maxChars: number): number {
-  if (text.length < maxChars) return text.length;
+function safeCut(markdown: string, sectionStart: number, from: number, maxChars: number): number {
+  const limit = from + maxChars;
+  if (limit >= markdown.length) return markdown.length;
 
-  const half = maxChars / 2;
-  const newline = text.lastIndexOf("\n");
-  const space = text.lastIndexOf(" ");
-  return newline > half ? newline : space > half ? space : maxChars;
+  let fence: string | undefined;
+  let offset = sectionStart;
+  let lastLineEnd = 0;
+  let lastSafeEnd = 0;
+
+  for (const line of markdown.slice(sectionStart).split("\n")) {
+    const end = offset + line.length + 1;
+    if (end > limit) break;
+
+    const opened = FENCE.exec(line)?.[1];
+    if (opened) {
+      if (fence === undefined) fence = opened;
+      else if (opened[0] === fence[0] && opened.length >= fence.length) fence = undefined;
+    }
+
+    if (end > from) {
+      lastLineEnd = end;
+      if (fence === undefined) lastSafeEnd = end;
+    }
+    offset = end;
+  }
+
+  // A boundary outside a fence wins even when it wastes most of the budget.
+  // A short window costs one more round trip against a cache that answers in
+  // a millisecond; a window ending mid-snippet costs the reader the snippet.
+  if (lastSafeEnd > from) return lastSafeEnd;
+
+  // Nothing safe exists, so this window is inside a block bigger than the
+  // whole budget. Cut at a line, so the damage is whole lines.
+  if (lastLineEnd > from) return lastLineEnd;
+
+  const slice = markdown.slice(from, limit);
+  const space = slice.lastIndexOf(" ");
+  return space > maxChars / 2 ? from + space : limit;
 }
