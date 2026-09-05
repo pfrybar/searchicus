@@ -377,6 +377,35 @@ gets a fresh context that is closed on every outcome. `launchPersistentContext`
 exposes no `Browser`, so this separation is structural rather than a rule
 someone has to remember.
 
+### Planned: reading only the part that answers the question
+
+Extraction returns a page's whole readable body up to `maxChars`, and for the
+corpus this gets pointed at that is usually too much of the wrong thing: of
+six ordinary reference pages measured, four exceed the 20,000 default and
+`nodejs.org/api/sqlite.html` is 82,632 characters. Raising the default is the
+obvious fix and the wrong one — it spends a caller's context on the 90% of a
+page that does not answer the question.
+
+The direction instead is to select before returning, as two optional
+parameters rather than a mode:
+
+- **`query`** — rank the page's sections against it and return the best ones
+  within the budget. When the request carries a `ref`, the query defaults to
+  the search that offered the result, so the common agent path (search, pick
+  result 3, read it) needs nothing extra.
+- **`offset`** — read further into a long page when there is no query to rank
+  by. Correct without any server-side cache, so a cache can be added later as
+  an optimisation or not at all.
+
+Both are additive, so nothing about today's request or response shape
+forecloses them. `totalChars` already ships, because a caller cannot decide
+whether to ask again without knowing how much it did not get.
+
+Behind both sits better text handling: a real tokenizer (already done — see
+`relevance.ts`) and a proper ranking function such as BM25 for choosing
+sections. Note that ranking sections and _gating_ a results page are different
+jobs and want different scorers; see AGENTS.md.
+
 ### Configuration
 
 | Variable                                   |     Default | Effect                                        |

@@ -137,8 +137,8 @@ export function SearchPage({ canExtract }: { canExtract: boolean }) {
                   {extraction?.ref === item.ref && extraction.status === "ready" && extraction.content && (
                     <div className="extraction">
                       <p className="untrusted">
-                        Untrusted page content
-                        {extraction.content.truncated ? " (truncated)" : ""} — {extraction.content.chars} characters
+                        Untrusted page content — {extraction.content.chars} characters
+                        {extraction.content.truncated ? ` of ${extraction.content.totalChars}, truncated` : ""}
                       </p>
                       {/*
                         Rendered as preformatted text on purpose. This is

@@ -90,17 +90,54 @@ export interface RelevanceReport {
   missing: string[];
 }
 
-/** Lowercases, strips punctuation and accents, and splits into tokens. */
+/**
+ * Word boundaries from ICU, not from a character class.
+ *
+ * The locale is pinned rather than left to the environment, so the same text
+ * tokenizes the same way wherever this runs — an archive shared between
+ * processes should not depend on anyone's LANG. Pinning costs nothing for the
+ * scripts that need the help: ICU breaks Chinese and Japanese with a
+ * dictionary rather than by locale, and "ja" was measured to give the same
+ * answer here.
+ */
+const WORD_SEGMENTER = new Intl.Segmenter("en", { granularity: "word" });
+
+/**
+ * Lowercases, folds accents, and splits into tokens.
+ *
+ * The split was `/[^a-z0-9]+/`, which treats every non-ASCII character as a
+ * separator. A Cyrillic, Greek, Arabic or CJK query therefore produced no
+ * tokens at all — and `queryTokenCoverage` reads no tokens as "nothing to
+ * check" and returns 1, so for those queries the off-target gate was not
+ * lenient, it was absent. No regex fixes this: Japanese is written without
+ * spaces between words, so finding them needs a dictionary, which is what
+ * ICU has and a character class never will.
+ *
+ * Accent folding happens *before* segmentation so "Café" and "Cafe" stay one
+ * token, and the range is the Latin combining block specifically — stripping
+ * marks wholesale would destroy scripts where they carry meaning rather than
+ * decorate a letter.
+ */
 export function tokenize(text: string): string[] {
-  return (
-    text
-      .normalize("NFKD")
-      // Combining diacritical marks, so "Café" and "Cafe" are the same token.
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(Boolean)
-  );
+  const folded = text
+    .normalize("NFKD")
+    // Combining marks, but only where they decorate a Latin letter, so
+    // "Café" and "Cafe" are one token. Stripping them everywhere folded
+    // Cyrillic "й" into "и", which is a different letter rather than an
+    // accented one — the equivalent of deciding "i" and "l" are the same.
+    .replace(/([A-Za-z])[\u0300-\u036f]+/g, "$1")
+    // Back to composed form. Decomposition is a step in folding, not a
+    // property tokens should carry: "й" left as "и" plus a combining breve
+    // looks identical and compares unequal, which is a trap for anything
+    // that later uses a token as a key.
+    .normalize("NFC")
+    .toLowerCase();
+
+  const tokens: string[] = [];
+  for (const { segment, isWordLike } of WORD_SEGMENTER.segment(folded)) {
+    if (isWordLike) tokens.push(segment);
+  }
+  return tokens;
 }
 
 /** The tokens of a query that actually carry its topic. */

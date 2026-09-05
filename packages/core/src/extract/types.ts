@@ -36,6 +36,15 @@ export interface ExtractResponse {
   truncated: boolean;
   /** Length of the Markdown actually returned. */
   chars: number;
+  /**
+   * Characters the page held before truncation.
+   *
+   * `truncated` says something was lost; this says how much. Without it a
+   * caller cannot tell a 5% trim from a 76% one, and so cannot decide whether
+   * to ask again with a larger budget or accept what it has — measured, four
+   * of six ordinary reference pages exceed the default.
+   */
+  totalChars: number;
   tookMs: number;
   /**
    * Always true, and deliberately impossible to omit.
