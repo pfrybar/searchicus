@@ -92,6 +92,39 @@ describe("isPublicAddress", () => {
     expect(isPublicAddress("::127.0.0.1")).toBe(false);
   });
 
+  it("judges a mapped address written in hex, which is the only form that arrives", () => {
+    // `new URL()` re-serializes an IPv6 host to hex groups, so the dotted
+    // spelling above never survives parsing: ::ffff:127.0.0.1 becomes
+    // ::ffff:7f00:1. Matching the dotted form alone left loopback and the
+    // cloud metadata address reachable through the one notation callers can
+    // actually send.
+    expect(isPublicAddress("::ffff:7f00:1")).toBe(false); // 127.0.0.1
+    expect(isPublicAddress("::ffff:a9fe:a9fe")).toBe(false); // 169.254.169.254
+    expect(isPublicAddress("::ffff:a00:1")).toBe(false); // 10.0.0.1
+    expect(isPublicAddress("::ffff:c0a8:101")).toBe(false); // 192.168.1.1
+    expect(isPublicAddress("::ffff:ac10:1")).toBe(false); // 172.16.0.1
+    expect(isPublicAddress("0:0:0:0:0:ffff:7f00:1")).toBe(false); // uncompressed
+    expect(isPublicAddress("::ffff:808:808")).toBe(true); // 8.8.8.8 really is public
+  });
+
+  it("unwraps every other encoding that fronts an IPv4 address", () => {
+    // 6to4 and Teredo are refused wholesale, public embedded address or not:
+    // both are deprecated, so the cost is a page nobody is serving.
+    expect(isPublicAddress("2002:7f00:1::")).toBe(false); // 6to4 for 127.0.0.1
+    expect(isPublicAddress("2002:a9fe:a9fe::")).toBe(false); // 6to4 for the metadata address
+    expect(isPublicAddress("2002:808:808::")).toBe(false); // 6to4 at all
+    expect(isPublicAddress("2001:0:0:0:0:0:7f00:1")).toBe(false); // Teredo
+    expect(isPublicAddress("64:ff9b::7f00:1")).toBe(false); // NAT64 for 127.0.0.1
+    expect(isPublicAddress("64:ff9b::808:808")).toBe(true); // NAT64 for 8.8.8.8
+    expect(isPublicAddress("64:ff9b:1::1")).toBe(false); // local-use NAT64, destination unreadable
+  });
+
+  it("refuses an address it cannot parse rather than defaulting to public", () => {
+    for (const value of ["::ffff:1::2", "12345::1", "gg::1", ":::1", "1:2:3:4:5:6:7:8:9"]) {
+      expect(isPublicAddress(value), value).toBe(false);
+    }
+  });
+
   it("accepts routable IPv6 and rejects anything that is not an address", () => {
     expect(isPublicAddress("2606:4700:4700::1111")).toBe(true);
     expect(isPublicAddress("example.com")).toBe(false);
