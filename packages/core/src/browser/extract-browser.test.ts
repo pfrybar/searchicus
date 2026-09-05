@@ -192,6 +192,60 @@ describe.skipIf(!available)("ExtractionBrowser (live Chromium)", () => {
     );
   });
 
+  it("lands on the destination, so its own relative assets resolve against it", async () => {
+    // The bug this pins: the destination's body used to be fulfilled against
+    // the *original* request, leaving the document's URL — and so its origin,
+    // and so the base for every relative URL in it — set to the address that
+    // only redirected. A page reached through a shortener then asked the
+    // shortener for its script, got a 404, and rendered as an empty shell:
+    // exactly the failure a browser was chosen to avoid.
+    const asked: { redirector: string[]; destination: string[] } = { redirector: [], destination: [] };
+
+    const destination = await listen(
+      createServer((req, res) => {
+        asked.destination.push(req.url ?? "");
+        if (req.url === "/article") {
+          res
+            .writeHead(200, { "content-type": "text/html" })
+            .end(`<html><body><div id="app">no script ran</div><script src="/app.js"></script></body></html>`);
+        } else if (req.url === "/app.js") {
+          res
+            .writeHead(200, { "content-type": "text/javascript" })
+            .end('document.getElementById("app").textContent = "the destination own script ran";');
+        } else res.writeHead(404).end("no");
+      }),
+    );
+
+    const redirector = await listen(
+      createServer((req, res) => {
+        asked.redirector.push(req.url ?? "");
+        if (req.url === "/go") res.writeHead(302, { location: `${destination}/article` }).end();
+        else res.writeHead(404).end("this host serves nothing but the redirect");
+      }),
+    );
+
+    const browser = new ExtractionBrowser({
+      config: {
+        ...DEFAULT_EXTRACT_CONFIG,
+        enabled: true,
+        dwell: false,
+        settleTimeoutMs: 100,
+        allowedPorts: new Set([80, 443, Number(new URL(redirector).port), Number(new URL(destination).port)]),
+      },
+      assertAddress: async () => undefined,
+    });
+    browsers.push(browser);
+
+    const page = await browser.render(`${redirector}/go`, never);
+
+    expect(page.finalUrl).toBe(`${destination}/article`);
+    expect(page.html).toContain("the destination own script ran");
+    // The redirector is asked for the redirect and nothing else; the
+    // destination serves its own page and its own script.
+    expect(asked.redirector).toEqual(["/go"]);
+    expect(asked.destination).toEqual(["/article", "/app.js"]);
+  });
+
   it("screens every redirect destination, not just the URL it was given", async () => {
     const origin = await serve({
       "/open-redirect": { body: "", status: 302, location: "http://metadata.internal/latest/meta-data/" },

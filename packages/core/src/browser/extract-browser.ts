@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page, type Route } from "playwright";
+import { chromium, type APIResponse, type Browser, type BrowserContext, type Page, type Route } from "playwright";
 
 import type { ExtractionArchive } from "../archive.js";
 import { assertPublicHost, parseExtractUrl } from "../extract/address.js";
@@ -104,10 +104,19 @@ export class ExtractionBrowser implements PageRenderer {
     try {
       await context.addInitScript(STEALTH_INIT);
       const page = await context.newPage();
-      const budget = this.#installPolicy(context, page);
+      const budget = await this.#installPolicy(context, page);
+
+      // The redirect chain is resolved and validated before the browser is
+      // pointed anywhere, so the navigation below goes straight to the real
+      // destination. Landing there rather than being handed its body at the
+      // original address is what gives the document the right origin — and
+      // therefore the right base for every relative URL in it.
+      const landing = await this.#resolveChain(context, url, budget);
+      budget.preloaded = landing;
+      budget.finalUrl = landing.url;
 
       const response = await page
-        .goto(url, { waitUntil: "domcontentloaded", timeout: this.#config.navigationTimeoutMs })
+        .goto(landing.url, { waitUntil: "domcontentloaded", timeout: this.#config.navigationTimeoutMs })
         .catch((err: unknown) => {
           // Chromium reports all three of these as the same routed-away
           // navigation error, so the reason has to be remembered here.
@@ -170,7 +179,7 @@ export class ExtractionBrowser implements PageRenderer {
    * moment later is not caught by anything below. The operator's outbound
    * network restriction remains the load-bearing control.
    */
-  #installPolicy(context: BrowserContext, page: Page): PageBudget {
+  async #installPolicy(context: BrowserContext, page: Page): Promise<PageBudget> {
     const budget: PageBudget = {
       bytes: 0,
       requests: 0,
@@ -183,7 +192,11 @@ export class ExtractionBrowser implements PageRenderer {
     // host's answer could change midway through a page.
     const resolved = new Map<string, Promise<void>>();
 
-    void context.route("**/*", async (route) => {
+    // Awaited, not fired and forgotten. This registration is the whole
+    // request policy, and letting a navigation start before it is in place
+    // would leave the ordering of two protocol messages as the only thing
+    // deciding whether the policy applied.
+    await context.route("**/*", async (route) => {
       try {
         await this.#screen(route, page, budget, resolved);
       } catch {
@@ -191,6 +204,12 @@ export class ExtractionBrowser implements PageRenderer {
         await route.abort("blockedbyclient").catch(() => undefined);
       }
     });
+
+    // WebSockets are not HTTP and never reach the handler above, so a page
+    // could otherwise open one to any address it liked. Nothing Defuddle
+    // reads arrives over a socket, so the whole protocol is refused: the
+    // handler never calls connectToServer(), and no connection is made.
+    await context.routeWebSocket("**", (socket) => socket.close());
 
     // Popups and downloads are refused rather than merely unhandled: an
     // unclosed popup keeps the context alive, and a download is content
@@ -234,9 +253,21 @@ export class ExtractionBrowser implements PageRenderer {
     // and never re-enters this handler — verified, not assumed. Continuing a
     // navigation would therefore leave every hop after the first unchecked,
     // and an open redirect on an ordinary site would be enough to reach a
-    // private address. The main document is fetched one hop at a time
-    // instead, with each destination screened before it is followed.
+    // private address. The main document is never continued, then: it is
+    // either the response already resolved for this render, or a later
+    // navigation followed one screened hop at a time.
     if (request.resourceType() === "document" && request.frame() === page.mainFrame()) {
+      const preloaded = budget.preloaded;
+      if (preloaded && preloaded.url === request.url()) {
+        // Fulfilled from the body fetched while resolving the chain, so the
+        // destination is read exactly once however many hops led to it.
+        budget.preloaded = undefined;
+        await route.fulfill({ response: preloaded.response });
+        return;
+      }
+
+      // A navigation the page started itself, which no earlier resolution
+      // covers. Followed hop by hop, with each destination screened.
       await this.#followDocument(route, budget, resolved);
       return;
     }
@@ -276,6 +307,64 @@ export class ExtractionBrowser implements PageRenderer {
 
     budget.finalUrl = target;
     await route.fulfill({ response });
+  }
+
+  /**
+   * Follows the redirect chain for the initial URL, screening every hop, and
+   * returns the destination together with the response already read from it.
+   *
+   * Done before navigation rather than during it because of what a redirect
+   * means to the browser. Fulfilling the destination's body against the
+   * original request leaves the document's URL — and so its origin, and so
+   * the base for every relative link, script and stylesheet in it — set to
+   * the address that only redirected. A page reached through a shortener
+   * then asks the shortener for its assets, gets 404s, and renders as an
+   * empty shell: the exact failure a browser was chosen to avoid.
+   *
+   * Uses the context's own request API, so the cookies, headers and identity
+   * are the ones the page itself would have sent.
+   */
+  async #resolveChain(context: BrowserContext, url: string, budget: PageBudget): Promise<PreloadedDocument> {
+    const resolved = new Map<string, Promise<void>>();
+    let target = url;
+
+    for (let hop = 0; ; hop++) {
+      // Screening and fetching fail for entirely different reasons, and the
+      // caller is told which: a refused address must never be reported as a
+      // page that would not load, or the difference between "we would not"
+      // and "it did not" is lost.
+      await this.#screenHost(target, resolved).catch((err: unknown) => {
+        budget.blocked = true;
+        throw err instanceof ExtractFailedError ? err : ExtractFailedError.blockedAddress(err);
+      });
+      budget.requests++;
+
+      const response = await context.request
+        .get(target, {
+          maxRedirects: 0,
+          timeout: this.#config.navigationTimeoutMs,
+          failOnStatusCode: false,
+        })
+        .catch((err: unknown) => {
+          throw new ExtractFailedError("navigation_failed", "That page could not be loaded.", err);
+        });
+
+      const location = redirectTarget(response);
+      if (!location) {
+        const length = Number(response.headers()["content-length"]);
+        if (Number.isFinite(length)) budget.bytes += length;
+        if (budget.bytes > this.#config.maxBytes) budget.exceeded = true;
+        return { url: target, response };
+      }
+
+      if (hop >= this.#config.maxRedirects) {
+        budget.redirectsExceeded = true;
+        throw new ExtractFailedError("navigation_failed", "That page redirected too many times.");
+      }
+
+      target = new URL(location, target).toString();
+      budget.redirects++;
+    }
   }
 
   /** Validates one URL's scheme, port, and destination address. */
@@ -359,8 +448,22 @@ interface PageBudget {
   blocked: boolean;
   exceeded: boolean;
   redirectsExceeded: boolean;
-  /** The last destination actually fetched; the browser is not told about hops. */
+  /** The destination the chain resolved to, reported as the extraction's finalUrl. */
   finalUrl?: string;
+  /** The destination's response, held until the navigation asks for it. */
+  preloaded?: PreloadedDocument;
+}
+
+/** A document already fetched, waiting to be handed to the navigation for it. */
+interface PreloadedDocument {
+  url: string;
+  response: APIResponse;
+}
+
+/** The Location of a redirect response, or undefined when it is not one. */
+function redirectTarget(response: APIResponse): string | undefined {
+  if (response.status() < 300 || response.status() >= 400) return undefined;
+  return response.headers()["location"];
 }
 
 function contentTypeOf(headers: Record<string, string> | undefined): { contentType: string } | undefined {
