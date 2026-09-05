@@ -280,12 +280,37 @@ describe("engineMetrics", () => {
       completed: 2,
       failed: 1,
       failures: [{ kind: "navigation_failed", count: 1 }],
+      // None of these were served from cache, so all of them count toward the
+      // median.
+      cached: 0,
       // Nearest-rank, like the engine percentiles: over [400, 600] the p50
       // is a measurement that happened, not the 500 between them.
       medianTookMs: 400,
       meanChars: 2000,
       domains: 3,
     });
+    await store.close();
+  });
+
+  it("keeps cached reads out of the median that says how long a read takes", async () => {
+    // A cached read is about a millisecond and a rendered one about five
+    // seconds, so a median over both drifts downward as the cache warms and
+    // answers neither question.
+    const store = archive();
+    await store.archive(record({ searchId: "s1", startedAt: "2026-09-04T10:00:00.000Z" }));
+
+    const base = { startedAt: "2026-09-04T10:00:30.000Z", requestedUrl: "https://a.test/1", domain: "a.test" };
+    await store.recordExtraction({ ...base, status: "completed", tookMs: 5000, cached: false });
+    await store.recordExtraction({ ...base, status: "completed", tookMs: 5200, cached: false });
+    for (const tookMs of [1, 1, 2, 2, 1]) {
+      await store.recordExtraction({ ...base, status: "completed", tookMs, cached: true });
+    }
+
+    const report = await store.engineMetrics();
+    expect(report.extractions.completed).toBe(7);
+    expect(report.extractions.cached).toBe(5);
+    // Over the two renders, not over all seven — which would have said 2ms.
+    expect(report.extractions.medianTookMs).toBe(5000);
     await store.close();
   });
 
@@ -320,6 +345,7 @@ describe("engineMetrics", () => {
         completed: 0,
         failed: 0,
         failures: [],
+        cached: 0,
         medianTookMs: null,
         meanChars: null,
         domains: 0,

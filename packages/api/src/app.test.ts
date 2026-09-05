@@ -295,6 +295,7 @@ describe("dashboard endpoints", () => {
       completed: 2,
       failed: 1,
       failures: [{ kind: "navigation_failed", count: 1 }],
+      cached: 1,
       medianTookMs: 5100,
       meanChars: 8400,
       domains: 2,

@@ -259,7 +259,10 @@ see the root README's warning before exposing this beyond localhost.
 `GET /metrics/engines` also carries totals for the window — how the fan-outs
 ended (completed, degraded, failed) and what was extracted over the same
 period — plus `overload`, the counts this **process** has refused since it
-started. Overload is deliberately never archived: work turned away never
+started. Extraction totals separate reads served from the page cache from
+reads that rendered, and `medianTookMs` counts only the latter: the two are
+about a millisecond and about five seconds, so a median over both would drift
+downward as the cache warms and answer neither question. Overload is deliberately never archived: work turned away never
 reached an engine or a page, and recording it made every engine read as
 broken on the dashboard built to judge engines. That does mean those two
 numbers reset on restart, unlike everything else there, and the UI says so.
