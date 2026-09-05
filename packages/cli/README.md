@@ -60,14 +60,17 @@ searchicus extract https://example.com/ --max-chars 500
 searchicus extract https://example.com/ --json
 ```
 
-| Option            | Effect                                                            |
-| ----------------- | ----------------------------------------------------------------- |
-| `-r, --ref <ref>` | Result ref from an earlier search. Must match the URL being read. |
-| `-m, --max-chars` | Markdown budget, 1–100000. Defaults to 20000.                     |
-| `--json`          | Print the raw response instead of formatted Markdown.             |
+| Option             | Effect                                                            |
+| ------------------ | ----------------------------------------------------------------- |
+| `-r, --ref <ref>`  | Result ref from an earlier search. Must match the URL being read. |
+| `-m, --max-chars`  | Markdown budget, 1–100000. Defaults to 20000.                     |
+| `-o, --offset <n>` | Start reading here. Use the `--offset` a previous run printed.    |
+| `--json`           | Print the raw response instead of formatted Markdown.             |
 
 Text output prints the title, final URL, ref, and size, then a line marking
-where our output stops and the page's own untrusted text begins.
+where our output stops and the page's own untrusted text begins. When a page
+is longer than the budget it also prints the `--offset` to pass back for the
+next window, which starts at the next section rather than mid-sentence.
 
 ### `paths`
 

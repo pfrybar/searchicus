@@ -10,6 +10,7 @@ import {
   type ExtractConfig,
 } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
+import { sliceWindow } from "./sections.js";
 import type {
   DocumentParser,
   ExtractRequest,
@@ -154,7 +155,11 @@ export class ExtractionService {
         this.#slots.release();
       }
 
-      const { markdown, truncated, totalChars } = truncateMarkdown(parsed.markdown, maxChars);
+      const window = sliceWindow(parsed.markdown, {
+        maxChars,
+        ...(request.offset === undefined ? {} : { offset: request.offset }),
+      });
+      const markdown = window.markdown;
       if (markdown.trim().length === 0) {
         throw new ExtractFailedError("no_content", "That page had no readable content to extract.");
       }
@@ -165,9 +170,11 @@ export class ExtractionService {
         ...(provenance ? { ref: provenance.ref } : {}),
         title: parsed.title,
         markdown,
-        truncated,
+        truncated: window.nextOffset !== undefined,
         chars: markdown.length,
-        totalChars,
+        totalChars: window.totalChars,
+        offset: window.offset,
+        ...(window.nextOffset === undefined ? {} : { nextOffset: window.nextOffset }),
         tookMs: Date.now() - started,
         untrusted: true,
       };
@@ -187,7 +194,7 @@ export class ExtractionService {
         ...(parsed.published === undefined ? {} : { published: parsed.published }),
         chars: markdown.length,
         wordCount: parsed.wordCount,
-        truncated,
+        truncated: window.nextOffset !== undefined,
         markdownSha256: createHash("sha256").update(markdown).digest("hex"),
       });
 
@@ -329,29 +336,6 @@ function resolveMaxChars(value: number | undefined): number {
     throw new ExtractRequestError("maxChars must be a positive integer.");
   }
   return Math.min(value, MAX_EXTRACT_MAX_CHARS);
-}
-
-/**
- * Cuts Markdown to a caller's budget at the nearest structural boundary.
- *
- * Nothing is appended. An ellipsis or a "[truncated]" marker would be text
- * this system invented sitting inside content the response labels untrusted,
- * and `truncated` already carries that fact in a field a caller can trust.
- */
-export function truncateMarkdown(
-  markdown: string,
-  maxChars: number,
-): { markdown: string; truncated: boolean; totalChars: number } {
-  const totalChars = markdown.length;
-  if (markdown.length <= maxChars) return { markdown, truncated: false, totalChars };
-
-  const cut = markdown.slice(0, maxChars);
-  const half = maxChars / 2;
-  const newline = cut.lastIndexOf("\n");
-  const space = cut.lastIndexOf(" ");
-  const end = newline > half ? newline : space > half ? space : maxChars;
-
-  return { markdown: cut.slice(0, end).trimEnd(), truncated: true, totalChars };
 }
 
 function domainOf(url: string): string | undefined {

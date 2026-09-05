@@ -69,13 +69,13 @@ export function SearchPage({ canExtract }: { canExtract: boolean }) {
     }
   }
 
-  async function handleExtract(ref: string, url: string) {
+  async function handleExtract(ref: string, url: string, offset?: number) {
     const signal = startRequest();
     setExtraction({ ref, status: "loading" });
     try {
       // The ref goes with the URL: it is what ties this read back to the
       // ranking that offered it, which is the signal the server is collecting.
-      const content = await extract({ url, ref }, signal);
+      const content = await extract({ url, ref, ...(offset === undefined ? {} : { offset }) }, signal);
       setExtraction({ ref, status: "ready", content });
     } catch (err) {
       if (signal.aborted) return;
@@ -146,6 +146,15 @@ export function SearchPage({ canExtract }: { canExtract: boolean }) {
                         HTML would hand that page the run of this one.
                       */}
                       <pre>{extraction.content.markdown}</pre>
+                      {extraction.content.nextOffset !== undefined && (
+                        <button
+                          type="button"
+                          className="extract"
+                          onClick={() => void handleExtract(item.ref, item.url, extraction.content?.nextOffset)}
+                        >
+                          Read on
+                        </button>
+                      )}
                     </div>
                   )}
                 </li>

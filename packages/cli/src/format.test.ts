@@ -90,6 +90,7 @@ describe("formatExtract", () => {
       markdown: "# An article\n\nSome prose.",
       truncated: false,
       totalChars: 4812,
+      offset: 0,
       chars: 25,
       tookMs: 812,
       untrusted: true,
@@ -104,7 +105,7 @@ describe("formatExtract", () => {
     expect(lines.at(-1)).toBe("# An article\n\nSome prose.");
   });
 
-  it("says when content was cut short, and omits a ref it never had", () => {
+  it("says how to read the rest, and omits a ref it never had", () => {
     const lines = formatExtract({
       url: "https://example.com/a",
       finalUrl: "https://example.com/a",
@@ -112,13 +113,19 @@ describe("formatExtract", () => {
       markdown: "x",
       truncated: true,
       totalChars: 35026,
+      offset: 0,
+      nextOffset: 19912,
       chars: 1,
       tookMs: 5,
       untrusted: true,
     });
 
-    expect(lines.join("\n")).toContain("(truncated)");
-    expect(lines.join("\n")).not.toContain("ref:");
+    const output = lines.join("\n");
+    // "truncated" told a reader something was missing; the offset tells them
+    // what to type to get it.
+    expect(output).toContain("more: --offset 19912");
+    expect(output).toContain("1 of 35026 chars from 0");
+    expect(output).not.toContain("ref:");
   });
 });
 

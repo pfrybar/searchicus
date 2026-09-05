@@ -77,4 +77,10 @@ export const ExtractRequestSchema = z.object({
     .max(MAX_EXTRACT_MAX_CHARS)
     .optional()
     .describe("Maximum characters of Markdown to return. Defaults to 20000."),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Where to start reading, from a previous response's nextOffset. Snaps to a section boundary."),
 }) satisfies z.ZodType<ExtractRequest>;

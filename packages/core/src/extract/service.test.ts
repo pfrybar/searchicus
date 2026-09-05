@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ArchivedResult, ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
-import { ExtractionService, truncateMarkdown } from "./service.js";
+import { ExtractionService } from "./service.js";
 import type { DocumentParser, PageRenderer, RenderedPage } from "./types.js";
 
 const PAGE_URL = "https://example.test/article";
@@ -354,37 +354,6 @@ describe("ExtractionService", () => {
 
     expect(renderer.closed).toBe(true);
     await expect(closing.extract({ url: PAGE_URL })).rejects.toBeInstanceOf(ExtractFailedError);
-  });
-});
-
-describe("truncateMarkdown", () => {
-  it("reports what the page held, so a caller knows how much it lost", () => {
-    // `truncated` alone cannot distinguish a 5% trim from a 76% one, and so
-    // cannot tell a caller whether asking again is worth a second render.
-    const long = "word ".repeat(400).trim();
-    const cut = truncateMarkdown(long, 100);
-    expect(cut.truncated).toBe(true);
-    expect(cut.totalChars).toBe(long.length);
-    expect(cut.markdown.length).toBeLessThanOrEqual(100);
-
-    const whole = truncateMarkdown("short", 100);
-    expect(whole).toEqual({ markdown: "short", truncated: false, totalChars: 5 });
-  });
-
-  it("leaves content within budget untouched", () => {
-    expect(truncateMarkdown("short", 100)).toEqual({ markdown: "short", truncated: false, totalChars: 5 });
-  });
-
-  it("prefers a line boundary, then a word boundary, then a hard cut", () => {
-    const paragraphs = `${"a".repeat(40)}\n${"b".repeat(40)}`;
-    expect(truncateMarkdown(paragraphs, 60).markdown).toBe("a".repeat(40));
-
-    const words = `${"a".repeat(40)} ${"b".repeat(40)}`;
-    expect(truncateMarkdown(words, 60).markdown).toBe("a".repeat(40));
-
-    // No boundary in the first half: cutting mid-token beats returning
-    // almost nothing.
-    expect(truncateMarkdown("z".repeat(200), 50).markdown).toHaveLength(50);
   });
 });
 

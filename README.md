@@ -404,6 +404,13 @@ turns off for `false`, `0`, `no` or `off` and stays on for anything else.
 Case and surrounding spaces do not matter, and an unrecognised value leaves
 the switch at its default — which for both directions is the safe one.
 
+A page longer than the budget is read a window at a time: the response says
+where the window started and where to continue, and those offsets snap to
+**section boundaries** so a window begins at a heading rather than mid-sentence
+— and never inside a fenced code block, which is where a naive character cut
+lands. `searchicus extract --offset`, the `offset` field on `POST /extract`,
+and a "Read on" button in the UI are the same mechanism.
+
 `maxChars` is the one limit a caller controls, since it only bounds the
 response (default 20,000, maximum 100,000). The byte budget is advisory: a
 chunked response reports no length, so a request-count cap and the end-to-end
