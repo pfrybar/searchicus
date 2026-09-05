@@ -266,8 +266,13 @@ describe("rate limiting", () => {
 
     await reg.searchAll({ query: "first" });
 
-    await expect(reg.searchAll({ query: "second" })).rejects.toBeInstanceOf(SearchOverloadedError);
-    expect(reg.overload).toEqual({ refused: 0, abandoned: 1 });
+    const refused = await reg.searchAll({ query: "second" }).catch((err: unknown) => err);
+    expect(refused).toBeInstanceOf(SearchOverloadedError);
+
+    // Refused rather than abandoned: with a 50ms budget and a 5s interval
+    // there was never a turn to wait for, so the answer comes at once
+    // instead of after the whole deadline has been spent discovering it.
+    expect(reg.overload).toEqual({ refused: 1, abandoned: 0 });
   });
 });
 

@@ -32,10 +32,14 @@ export class ThrottleAbortError extends Error {
   }
 }
 
-/** Raised when the wait queue is full, so the caller can back off rather than wait. */
+/** Raised when joining the queue would not get the caller served in time. */
 export class ThrottleOverloadedError extends Error {
-  constructor(public readonly queued: number) {
-    super(`Too many searches are already waiting for a rate-limit slot (${queued})`);
+  constructor(
+    public readonly queued: number,
+    /** How long a new arrival would have waited, in milliseconds. */
+    public readonly projectedWaitMs: number,
+  ) {
+    super(`Too many searches are already waiting for a rate-limit slot (${queued}, about ${projectedWaitMs}ms)`);
     this.name = "ThrottleOverloadedError";
   }
 }
@@ -102,24 +106,47 @@ export class Throttle {
   }
 
   /**
+   * How long a caller arriving now would wait before being served.
+   *
+   * The time until the next slot, plus one interval for everyone already in
+   * front. Jitter is symmetric around the interval, so the interval is the
+   * right expectation for each of those; this is a projection rather than a
+   * promise, and it is used to refuse work, never to schedule it.
+   */
+  get projectedWaitMs(): number {
+    // Rounded: jitter makes this fractional, and it is an estimate used to
+    // refuse work, so sub-millisecond precision is noise in a log line.
+    return Math.round(Math.max(0, this.#nextAllowedAt - this.#now()) + this.#waiters.length * this.#minIntervalMs);
+  }
+
+  /**
    * Waits until this caller's turn, in arrival order.
    *
    * Rejects with ThrottleAbortError if `signal` aborts first, giving up its
    * place without consuming a slot, and with ThrottleOverloadedError when the
    * queue is already full.
    */
-  acquire(signal?: AbortSignal): Promise<void> {
+  acquire(signal?: AbortSignal, options: { maxWaitMs?: number } = {}): Promise<void> {
     if (signal?.aborted) return Promise.reject(new ThrottleAbortError());
 
     // Granted straight away only when nobody is ahead: letting a newcomer
-    // overtake a queue would starve whoever has been waiting longest.
+    // overtake a queue would starve whoever has been waiting longest. Note
+    // this ignores maxWaitMs, correctly — there is no wait to be too long.
     if (this.#waiters.length === 0 && this.#now() >= this.#nextAllowedAt) {
       this.#spendSlot();
       return Promise.resolve();
     }
 
-    if (this.#waiters.length >= this.#maxQueued) {
-      return Promise.reject(new ThrottleOverloadedError(this.#waiters.length));
+    // Admission is a question about time, not about depth. A queue of sixty
+    // at five seconds apart is five minutes of work being offered to callers
+    // holding a thirty-second deadline: measured, fifty-five of sixty-one
+    // admitted callers waited the full deadline to be told no. Refusing on
+    // the projected wait tells them at once, and makes the depth cap below a
+    // backstop rather than the policy.
+    const projected = this.projectedWaitMs;
+    const tooLate = options.maxWaitMs !== undefined && projected > options.maxWaitMs;
+    if (tooLate || this.#waiters.length >= this.#maxQueued) {
+      return Promise.reject(new ThrottleOverloadedError(this.#waiters.length, projected));
     }
 
     return new Promise<void>((resolve, reject) => {

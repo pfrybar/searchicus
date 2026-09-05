@@ -113,6 +113,35 @@ describe("Throttle", () => {
     expect(order).toEqual(["left", "first", "last"]);
   });
 
+  it("refuses a caller the queue could not serve in time", async () => {
+    // Admission is a question about time, not depth. Sixty slots at five
+    // seconds apart is five minutes of work; a caller holding a thirty-second
+    // deadline should be told at once, not after thirty seconds of waiting.
+    const throttle = new Throttle({ minIntervalMs: 5_000, jitter: 0 });
+    await throttle.acquire();
+
+    // Two ahead: a newcomer would wait about 15s.
+    const waiting = [throttle.acquire(), throttle.acquire()];
+    for (const pending of waiting) void pending.catch(() => undefined);
+    expect(throttle.projectedWaitMs).toBeGreaterThan(14_000);
+    expect(throttle.projectedWaitMs).toBeLessThanOrEqual(15_000);
+
+    // Room for a 20s wait: admitted. Room for 10s: refused, immediately.
+    const admitted = throttle.acquire(undefined, { maxWaitMs: 20_000 });
+    void admitted.catch(() => undefined);
+    await expect(throttle.acquire(undefined, { maxWaitMs: 10_000 })).rejects.toBeInstanceOf(ThrottleOverloadedError);
+
+    const refusal = await throttle.acquire(undefined, { maxWaitMs: 0 }).catch((err: unknown) => err);
+    expect((refusal as ThrottleOverloadedError).projectedWaitMs).toBeGreaterThan(0);
+  });
+
+  it("still serves a caller immediately when there is no wait to be too long", async () => {
+    // maxWaitMs bounds a queue, not the work. An idle throttle owes nobody a
+    // refusal, however small the caller's remaining budget.
+    const throttle = new Throttle({ minIntervalMs: 5_000, jitter: 0 });
+    await expect(throttle.acquire(undefined, { maxWaitMs: 0 })).resolves.toBeUndefined();
+  });
+
   it("refuses a caller outright once the queue is full", async () => {
     // Waiting behind sixty callers is a promise nobody can keep, so the
     // honest answer is an immediate refusal the caller can act on.
