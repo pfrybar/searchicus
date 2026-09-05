@@ -69,7 +69,9 @@ function Totals({ report }: { report: EngineMetricsBody }) {
             <Stat
               label="median read"
               value={extractions.medianTookMs === null ? "—" : `${(extractions.medianTookMs / 1000).toFixed(1)}s`}
-              detail={extractions.meanChars === null ? undefined : `${Math.round(extractions.meanChars)} chars avg`}
+              // Rendered reads only. A cached read is about a millisecond, so
+              // a median over both would just drift down as the cache warms.
+              detail={extractions.cached > 0 ? `${extractions.cached} served from cache` : "rendered"}
             />
           </div>
         )}

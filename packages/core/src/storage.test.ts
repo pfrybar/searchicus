@@ -347,6 +347,47 @@ describe("SqliteSearchArchive", () => {
     await expect(archive.archive(record({ searchId: "later" }))).rejects.toThrow(/closed/);
   });
 
+  it("adds the cached column to an archive written before it, keeping the rows", async () => {
+    const filePath = temporaryDatabase();
+    const archive = new SqliteSearchArchive(filePath);
+    await archive.archive(record());
+    await archive.recordExtraction({
+      startedAt: "2026-09-04T16:00:30.000Z",
+      requestedUrl: "https://example.test/a",
+      status: "completed",
+      tookMs: 5000,
+      domain: "example.test",
+    });
+    await archive.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const rolled = new DatabaseSync(filePath);
+    // Wind the file back to schema 2 with the column dropped, which is what
+    // an archive written by the previous release looks like.
+    rolled.exec("ALTER TABLE extractions DROP COLUMN cached");
+    rolled.exec("PRAGMA user_version = 2");
+    rolled.close();
+
+    const upgraded = new SqliteSearchArchive(filePath);
+    const report = await upgraded.engineMetrics();
+    await upgraded.close();
+
+    // The row survives, and a read recorded before the column existed counts
+    // as a render rather than vanishing from the median.
+    expect(report.extractions.attempted).toBe(1);
+    expect(report.extractions.cached).toBe(0);
+    expect(report.extractions.medianTookMs).toBe(5000);
+
+    const db = new DatabaseSync(filePath);
+    try {
+      expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: ARCHIVE_SCHEMA_VERSION });
+      const columns = db.prepare("PRAGMA table_info(extractions)").all() as Array<{ name: string }>;
+      expect(columns.map((column) => column.name)).toContain("cached");
+    } finally {
+      db.close();
+    }
+  });
+
   it("refuses an archive written by a newer schema rather than corrupting it", async () => {
     const filePath = temporaryDatabase();
     const { DatabaseSync } = await import("node:sqlite");

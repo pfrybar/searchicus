@@ -71,6 +71,14 @@ export interface ExtractionArchiveRecord {
    * — without keeping the text itself.
    */
   readonly markdownSha256?: string;
+  /**
+   * Whether this read was served from the page cache rather than rendered.
+   *
+   * Recorded because the two are three orders of magnitude apart — 1ms
+   * against 5,900ms for the same document — so a timing that mixes them
+   * describes neither.
+   */
+  readonly cached?: boolean;
 }
 
 /**

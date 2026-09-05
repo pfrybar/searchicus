@@ -306,7 +306,9 @@ The UI has two dashboard pages beside the search box, both reading the local
 archive:
 
 - **Metrics** — totals for the window first: how the fan-outs ended, what was
-  read back out of them, and what this process turned away. Then per-engine
+  read back out of them (with reads served from cache counted separately, so
+  the median read time still describes rendering a page), and what this
+  process turned away. Then per-engine
   reliability, latency, and, more usefully, what each
   engine actually contributed: how many of its results reached the caller, how
   often it supplied the title shown, how many results **no other engine found**,

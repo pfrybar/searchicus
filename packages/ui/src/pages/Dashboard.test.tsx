@@ -59,6 +59,7 @@ function totals(overrides: Record<string, unknown> = {}) {
       completed: 3,
       failed: 1,
       failures: [{ kind: "navigation_failed", count: 1 }],
+      cached: 2,
       medianTookMs: 5100,
       meanChars: 8400,
       domains: 3,

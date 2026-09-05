@@ -75,6 +75,16 @@ export interface ExtractionTotals {
   failed: number;
   /** Failure kinds, commonest first. Never includes this server's own load. */
   failures: Array<{ kind: string; count: number }>;
+  /** Completed reads served from the page cache rather than rendered. */
+  cached: number;
+  /**
+   * Median time of a read that actually rendered.
+   *
+   * Cached reads are excluded rather than averaged in. They are about a
+   * millisecond against about five seconds, so a median over both answers
+   * neither "how long does reading a page take" nor "how fast is the cache" —
+   * it just drifts downward as the cache warms.
+   */
   medianTookMs: number | null;
   meanChars: number | null;
   /** Distinct hosts read, a rough measure of breadth rather than volume. */
@@ -154,6 +164,8 @@ export interface ArchivedExtraction {
   title: string | null;
   chars: number | null;
   tookMs: number;
+  /** Null for reads recorded before this was tracked. */
+  cached: boolean | null;
 }
 
 /** Everything stored about one search: what each engine said, and what shipped. */

@@ -32,7 +32,7 @@ import type { EngineFailureKind, EngineSearchOutcome, MergedSearchResponse, Sear
 import { defaultStorePath, searchArchiveEnabled } from "./paths.js";
 
 /** Current SQLite schema. Future changes are appended as numbered migrations. */
-export const ARCHIVE_SCHEMA_VERSION = 2;
+export const ARCHIVE_SCHEMA_VERSION = 3;
 /** Wait briefly for another API/CLI process holding the shared database lock. */
 export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -135,8 +135,8 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       `INSERT INTO extractions (
         created_at, search_id, result_ref, requested_url, final_url, status, error_kind,
         http_status, content_type, redirects, took_ms, title, domain, language, author,
-        published, chars, word_count, truncated, markdown_sha256
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        published, chars, word_count, truncated, markdown_sha256, cached
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.startedAt,
       record.searchId ?? null,
@@ -158,6 +158,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       record.wordCount ?? null,
       record.truncated === undefined ? null : Number(record.truncated),
       record.markdownSha256 ?? null,
+      record.cached === undefined ? null : Number(record.cached),
     );
   }
 
@@ -273,6 +274,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       completed: 0,
       failed: 0,
       failures: [],
+      cached: 0,
       medianTookMs: null,
       meanChars: null,
       domains: 0,
@@ -283,6 +285,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       attempted: number;
       completed: number;
       failed: number;
+      cached: number;
       domains: number;
       chars: number | null;
     }>(
@@ -290,6 +293,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
            count(*) AS attempted,
            sum(status = 'completed') AS completed,
            sum(status = 'failed') AS failed,
+           sum(cached = 1) AS cached,
            count(DISTINCT domain) AS domains,
            avg(chars) AS chars
          FROM extractions WHERE created_at >= ?`),
@@ -304,8 +308,13 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       since,
     );
 
+    // `cached IS NOT 1` rather than `cached = 0`: rows written before the
+    // column existed are NULL, and for as long as there was no cache they
+    // were all renders.
     const took = rows<{ took_ms: number }>(
-      db.prepare("SELECT took_ms FROM extractions WHERE created_at >= ? AND status = 'completed' ORDER BY took_ms"),
+      db.prepare(`SELECT took_ms FROM extractions
+                  WHERE created_at >= ? AND status = 'completed' AND cached IS NOT 1
+                  ORDER BY took_ms`),
       since,
     ).map((row) => row.took_ms);
 
@@ -314,6 +323,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       completed: Number(summary.completed ?? 0),
       failed: Number(summary.failed ?? 0),
       failures: kinds.map((row) => ({ kind: row.error_kind ?? "unknown", count: Number(row.n) })),
+      cached: Number(summary.cached ?? 0),
       medianTookMs: percentile(took, 0.5),
       meanChars: summary.chars === null ? null : round(Number(summary.chars)),
       domains: Number(summary.domains),
@@ -357,7 +367,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     const outcomes = this.#outcomesFor(db, [searchId], true).get(searchId) ?? [];
     const extractions = rows<ExtractionRow>(
       db.prepare(
-        `SELECT created_at, result_ref, requested_url, final_url, status, error_kind, title, chars, took_ms
+        `SELECT created_at, result_ref, requested_url, final_url, status, error_kind, title, chars, took_ms, cached
          FROM extractions WHERE search_id = ? ORDER BY extraction_id`,
       ),
       searchId,
@@ -377,6 +387,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
         title: extraction.title,
         chars: extraction.chars,
         tookMs: extraction.took_ms,
+        cached: extraction.cached === null ? null : extraction.cached === 1,
       })),
     };
   }
@@ -649,6 +660,16 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
         db.exec("CREATE INDEX IF NOT EXISTS searches_recent ON searches (started_at DESC, search_id DESC)");
       }
 
+      if (version < 3) {
+        // A read served from the page cache takes about a millisecond and a
+        // rendered one about five seconds, so a median over both describes
+        // neither. Rows written before this column existed stay NULL, which
+        // is honest — "not recorded" rather than a guess — and the queries
+        // below treat anything that is not a 1 as a render, which is what
+        // those rows were for as long as there was no cache.
+        db.exec("ALTER TABLE extractions ADD COLUMN cached INTEGER CHECK (cached IN (0, 1))");
+      }
+
       db.exec(`PRAGMA user_version = ${ARCHIVE_SCHEMA_VERSION}`);
       db.exec("COMMIT");
     } catch (err) {
@@ -768,6 +789,7 @@ interface ExtractionRow {
   title: string | null;
   chars: number | null;
   took_ms: number;
+  cached: number | null;
 }
 
 interface MutableMetrics {

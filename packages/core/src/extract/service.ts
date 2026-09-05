@@ -131,6 +131,7 @@ export class ExtractionService {
       // screened — because a cache is an optimisation and not a bypass.
       const cacheKey = url.toString();
       let page = this.#cache?.get(cacheKey);
+      const cached = page !== undefined;
 
       if (!page) {
         // Queue time counts against the deadline, so giving up here is giving
@@ -220,6 +221,7 @@ export class ExtractionService {
         chars: markdown.length,
         wordCount: page.wordCount,
         truncated: window.nextOffset !== undefined,
+        cached,
         markdownSha256: createHash("sha256").update(markdown).digest("hex"),
       });
 
