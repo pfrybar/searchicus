@@ -1,7 +1,9 @@
-import { ExtractionService, type SearchEngineRegistry } from "@searchicus/core";
+import { causeOf, createLogger, ExtractionService, type SearchEngineRegistry } from "@searchicus/core";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { Router, type Request, type Response } from "express";
 import { createMcpServer } from "./server.js";
+
+const log = createLogger("mcp");
 
 /**
  * The MCP Streamable HTTP endpoint, mounted at /mcp by createApp().
@@ -37,7 +39,7 @@ export function createMcpRouter(
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
-      console.error("Error handling MCP request:", err);
+      log.error("error handling MCP request", { cause: causeOf(err) });
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: "2.0",

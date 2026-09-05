@@ -64,6 +64,13 @@ HTML. If routing is added later, scope a fallback to non-API paths.
 Static files are matched _after_ the API routes, so a stray file in the UI
 build can never shadow an endpoint.
 
+## Logging
+
+One line per request on stderr, at a level that follows the status code, plus
+whatever the search and extraction layers report beneath it. `SEARCHICUS_LOG`
+(`debug`|`info`|`warn`|`error`|`silent`, default `info`) controls the lot,
+including the startup banner. See the root README's "Logging" section.
+
 ## HTTP API
 
 Every endpoint below is served at **both** `/api/...` and the bare root path.

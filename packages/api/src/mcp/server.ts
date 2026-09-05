@@ -6,6 +6,8 @@ import {
   ExtractionDisabledError,
   ExtractionService,
   ExtractRequestError,
+  causeOf,
+  createLogger,
   ExtractRequestSchema,
   SearchEngineRegistry,
   SearchRequestSchema,
@@ -13,6 +15,8 @@ import {
   UnknownEngineError,
 } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+const log = createLogger("mcp");
 
 /**
  * Builds an McpServer exposing the registry as MCP tools. app.ts creates a
@@ -36,12 +40,20 @@ export function createMcpServer(
       inputSchema: SearchRequestSchema.shape,
     },
     async (request) => {
+      // Query text at debug only; see accessLog in app.ts for why.
+      log.debug("tool search", { query: request.query, limit: request.limit, engines: request.engines?.join(",") });
       try {
         const response = await registry.search(request);
+        log.info("tool search", {
+          results: response.results.length,
+          tookMs: response.tookMs,
+          degraded: response.degraded,
+        });
         return {
           content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
         };
       } catch (err) {
+        log.warn("tool search failed", { cause: causeOf(err) });
         // Name the bad id: an agent that picked it from list_engines can
         // correct itself, where a generic failure invites a blind retry.
         if (err instanceof UnknownEngineError) {
@@ -74,8 +86,10 @@ export function createMcpServer(
       inputSchema: ExtractRequestSchema.shape,
     },
     async (request) => {
+      log.debug("tool extract", { url: request.url, ref: request.ref, maxChars: request.maxChars });
       try {
         const { markdown, ...meta } = await extraction.extract(request);
+        log.info("tool extract", { chars: meta.chars, truncated: meta.truncated, tookMs: meta.tookMs });
         // Two blocks rather than one JSON object: escaping a whole article
         // into a JSON string inflates it and makes it markedly harder to
         // read, while the metadata is exactly what wants to stay structured.
@@ -109,6 +123,7 @@ export function createMcpServer(
     },
     async () => {
       const engines = registry.list().map((engine) => ({ id: engine.id, name: engine.name }));
+      log.info("tool list_engines", { engines: engines.length });
       return { content: [{ type: "text", text: JSON.stringify(engines, null, 2) }] };
     },
   );

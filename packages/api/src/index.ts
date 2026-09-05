@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { createDefaultSearchArchive, defaultDataDir, envOptOut } from "@searchicus/core";
+import { createDefaultSearchArchive, createLogger, defaultDataDir, envOptOut, getLogLevel } from "@searchicus/core";
 import { createBrowserExtraction, createBrowserRegistry } from "@searchicus/core/browser";
 import { createApp, defaultUiDir } from "./app.js";
 import { shutdownOn } from "./shutdown.js";
+
+const log = createLogger("api");
 
 const port = Number(process.env.PORT ?? 3000);
 
@@ -35,19 +37,18 @@ const archive = createDefaultSearchArchive();
 const registry = createBrowserRegistry("api", { archive });
 const extraction = createBrowserExtraction({ archive });
 const server = createApp(registry, { mcp, ui: ui && uiDir, extraction, insights: archive }).listen(port, host, () => {
-  console.log(`searchicus API listening on http://${host}:${port}`);
-  console.log(`  search API at /api (also at the root, for compatibility)`);
-  console.log(mcp ? `  MCP (Streamable HTTP) at /mcp` : "  MCP endpoint disabled");
-  console.log(
-    extraction.enabled ? "  extraction enabled at /api/extract" : "  extraction disabled (SEARCHICUS_EXTRACT_ENABLED)",
-  );
-  console.log(
-    archive ? "  dashboard data at /api/metrics/engines and /api/searches" : "  archive disabled: no dashboard data",
-  );
-  // Printed because the failure this guards against was silent: two data
-  // roots, each working perfectly, and nothing to say which one was in use.
-  console.log(`  persistent state in ${defaultDataDir()}`);
-  console.log(ui ? `  UI served from ${uiDir}` : "  UI not served (no build found)");
+  // Through the logger, not console: the banner is diagnostics, so it
+  // belongs on the same stream and behind the same switch as everything
+  // else this process reports. `SEARCHICUS_LOG` controls the lot.
+  log.info("listening", { url: `http://${host}:${port}`, level: getLogLevel() });
+  log.info("routes", { search: "/api and /", mcp: mcp ? "/mcp" : "disabled", ui: ui ? uiDir : "not served" });
+  log.info("features", {
+    extract: extraction.enabled ? "enabled" : "disabled (SEARCHICUS_EXTRACT_ENABLED)",
+    dashboard: archive ? "enabled" : "disabled (no archive)",
+  });
+  // Reported because the failure this guards against was silent: two data
+  // roots, each working perfectly, and nothing to say which was in use.
+  log.info("persistent state", { dataDir: defaultDataDir() });
 });
 
 shutdownOn(server, {

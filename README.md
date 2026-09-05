@@ -247,25 +247,54 @@ one platform's Chromium also isn't valid for another's.
 
 ### Configuration
 
-| Variable                 | Default                             | Effect                                                                 |
-| ------------------------ | ----------------------------------- | ---------------------------------------------------------------------- |
-| `PORT`                   | `3000`                              | Port to listen on.                                                     |
-| `HOST`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication. |
-| `SEARCHICUS_DATA_DIR`    | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.     |
-| `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                |
-| `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                   |
-| `SEARCHICUS_STORE`       | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.           |
-| `SEARCHICUS_TIMEZONE`    | `America/Chicago`                   | IANA time zone the browser reports.                                    |
-| `SEARCHICUS_LOCALE`      | `en-US`                             | Locale the browser reports.                                            |
-| `SEARCHICUS_EXTRACT_*`   | extraction disabled                 | Rendered extraction; see "Extraction" below.                           |
-| `MCP_ENABLED`            | on                                  | Off serves the search API alone; `/mcp` then 404s.                     |
-| `SERVE_UI`               | on when a build exists              | `false` skips the static UI.                                           |
-| `UI_DIST_DIR`            | `packages/ui/dist`                  | Alternate UI build directory.                                          |
+| Variable                 | Default                             | Effect                                                                   |
+| ------------------------ | ----------------------------------- | ------------------------------------------------------------------------ |
+| `PORT`                   | `3000`                              | Port to listen on.                                                       |
+| `HOST`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.   |
+| `SEARCHICUS_DATA_DIR`    | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.       |
+| `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                  |
+| `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                     |
+| `SEARCHICUS_STORE`       | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.             |
+| `SEARCHICUS_LOG`         | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr. |
+| `SEARCHICUS_TIMEZONE`    | `America/Chicago`                   | IANA time zone the browser reports.                                      |
+| `SEARCHICUS_LOCALE`      | `en-US`                             | Locale the browser reports.                                              |
+| `SEARCHICUS_EXTRACT_*`   | extraction disabled                 | Rendered extraction; see "Extraction" below.                             |
+| `MCP_ENABLED`            | on                                  | Off serves the search API alone; `/mcp` then 404s.                       |
+| `SERVE_UI`               | on when a build exists              | `false` skips the static UI.                                             |
+| `UI_DIST_DIR`            | `packages/ui/dist`                  | Alternate UI build directory.                                            |
 
 The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the
 client expects, and a mismatch fails at launch rather than at build. Bump both
 together.
+
+## Logging
+
+Everything the server reports — the startup banner included — goes to
+**stderr**, at a level set by `SEARCHICUS_LOG` (`debug`, `info`, `warn`,
+`error`, `silent`; default `info`). stderr rather than stdout so the CLI's
+`--json` output stays pipeable into `jq` with logging turned all the way up.
+
+```
+2026-09-05T20:56:30.083Z INFO  browser   chromium launched profile=/data/profile/api
+2026-09-05T20:56:38.105Z INFO  api       POST /search status=200 ms=8306 bytes=1621
+2026-09-05T20:56:42.583Z WARN  extract   extraction failed url=http://127.0.0.1/admin kind=blocked_address cause="…"
+2026-09-05T20:56:42.620Z INFO  mcp       tool list_engines engines=4
+2026-09-05T20:56:42.635Z WARN  api       POST /search status=400 ms=1 bytes=93
+```
+
+One line per request at a level that follows the status, so `warn` leaves a
+healthy server quiet and still shows every 4xx and 5xx. Beneath that, the
+things that used to fail silently now say so: an engine giving up, a browser
+failing to launch, an archive write vanishing, a page the address policy
+refused, an extraction failing — the last of these logs the **real** cause,
+which the caller deliberately never sees, since a specific enough error
+would let someone map internal network space by probing.
+
+**Query text is never logged above `debug`.** It lives in a request body, it
+is the sensitive part of this system, and logs get copied and shipped far
+more casually than a database file. The same reasoning as the archive warning
+below, applied to the other place queries can leak.
 
 ## Dashboard
 

@@ -1,6 +1,8 @@
 import {
   AllEnginesFailedError,
   type ArchiveInsights,
+  causeOf,
+  createLogger,
   createDefaultRegistry,
   ExtractFailedError,
   ExtractionBusyError,
@@ -21,6 +23,8 @@ import { createMcpRouter } from "./mcp/router.js";
 const MCP_PATH = "/mcp";
 /** Ceiling on a request body, comfortably above any legitimate one. */
 const JSON_BODY_LIMIT = "64kb";
+
+const log = createLogger("api");
 
 /**
  * The built UI, resolved relative to this module — which lands on
@@ -80,6 +84,7 @@ export function createApp(
 ): Express {
   const { mcp = true, ui = false, extraction = new ExtractionService(), insights } = options;
   const app = express();
+  app.use(accessLog);
   // Explicit rather than inherited. Every body this API accepts is a query,
   // a URL and a handful of ids; the shared core schemas bound each field, and
   // this bounds the whole. body-parser's own default is the same order of
@@ -120,7 +125,7 @@ export function createApp(
     // JSON-RPC error objects, not this API's `{ error }` shape.
     if (isMcpRequest(req)) {
       const malformed = isMalformedJsonError(err);
-      if (!malformed) console.error("Unhandled MCP error:", err);
+      if (!malformed) log.error("unhandled MCP error", { cause: causeOf(err) });
       res.status(malformed ? 400 : 500).json({
         jsonrpc: "2.0",
         error: malformed
@@ -144,11 +149,38 @@ export function createApp(
       return;
     }
 
-    console.error("Unhandled API error:", err);
+    log.error("unhandled API error", { path: req.originalUrl.split("?")[0], cause: causeOf(err) });
     res.status(500).json({ error: "Internal server error" });
   });
 
   return app;
+}
+
+/**
+ * One line per request, once the response is done.
+ *
+ * Level follows the status, so `SEARCHICUS_LOG=warn` leaves a quiet server
+ * quiet and still shows every 4xx and 5xx. Query text is deliberately absent:
+ * it lives in the body, it is the sensitive part of this system, and logs get
+ * copied and shipped far more casually than a database file does. The MCP
+ * tool logger records it at debug for the same reason.
+ */
+function accessLog(req: Request, res: Response, next: NextFunction): void {
+  const started = Date.now();
+  res.on("finish", () => {
+    const fields = { status: res.statusCode, ms: Date.now() - started, bytes: res.getHeader("content-length") };
+    const line = `${req.method} ${req.originalUrl.split("?")[0]}`;
+    if (res.statusCode >= 500) log.error(line, fields);
+    else if (res.statusCode >= 400) log.warn(line, fields);
+    else log.info(line, fields);
+  });
+  // A client that hangs up never fires `finish`, and a search abandoned
+  // mid-flight is exactly the event worth seeing.
+  res.on("close", () => {
+    if (!res.writableEnded)
+      log.warn(`${req.method} ${req.originalUrl.split("?")[0]}`, { status: "client gone", ms: Date.now() - started });
+  });
+  next();
 }
 
 /** The search and extract endpoints, mounted at both / and /api. */
