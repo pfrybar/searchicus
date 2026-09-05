@@ -108,6 +108,40 @@ describe("sliceWindow", () => {
     expect(second.markdown).not.toBe(first.markdown);
   });
 
+  it("does not end a window inside a fenced code block", () => {
+    // Sections never split a fence, but a section longer than the budget has
+    // to be cut somewhere, and cutting on the last newline put the cut inside
+    // snippets: 22 of 201 windows of nodejs.org/api/sqlite at a 500-character
+    // budget handed back code with no closing fence.
+    const prose = "Prose long enough that this section cannot fit inside one window of the budget below.";
+    const doc = ["## One", "", prose, "", "```js", "const a = 1;", "const b = 2;", "```", "", prose].join("\n");
+
+    let offset: number | undefined = 0;
+    let guard = 0;
+    while (offset !== undefined && guard++ < 50) {
+      const window: ReturnType<typeof sliceWindow> = sliceWindow(doc, { offset, maxChars: 120 });
+      const fences = (window.markdown.match(/^ {0,3}```/gm) ?? []).length;
+      expect(fences % 2, `window at ${window.offset} ends inside a fence`).toBe(0);
+      offset = window.nextOffset;
+    }
+    expect(guard).toBeLessThan(50);
+  });
+
+  it("cuts inside a block only when the block is bigger than the budget", () => {
+    // No boundary exists, so this is the one case that must cut inside — at a
+    // line, so the damage is whole lines rather than half a statement.
+    const huge = ["## One", "", "```js", ...Array.from({ length: 200 }, (_, i) => `const x${i} = ${i};`), "```"].join(
+      "\n",
+    );
+    const window = sliceWindow(huge, { maxChars: 300 });
+    expect(window.nextOffset).toBeGreaterThan(0);
+
+    const allowed = /^(## One|```js|const x\d+ = \d+;|)$/;
+    for (const line of window.markdown.split("\n")) {
+      expect(allowed.test(line), `partial line: ${JSON.stringify(line)}`).toBe(true);
+    }
+  });
+
   it("clamps an offset past the end instead of failing", () => {
     const window = sliceWindow(doc, { offset: 10_000, maxChars: 100 });
     expect(window.offset).toBeLessThanOrEqual(doc.length);
