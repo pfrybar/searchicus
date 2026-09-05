@@ -240,19 +240,20 @@ one platform's Chromium also isn't valid for another's.
 
 ### Configuration
 
-| Variable                 | Default                        | Effect                                                             |
-| ------------------------ | ------------------------------ | ------------------------------------------------------------------ |
-| `PORT`                   | `3000`                         | Port to listen on.                                                 |
-| `SEARCHICUS_DATA_DIR`    | `/data` in the image           | Persistent-state root: `searches.sqlite` and `profile/<surface>/`. |
-| `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>` | Chromium user-data directory override. One per process.            |
-| `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`   | Search archive SQLite file override.                               |
-| `SEARCHICUS_STORE`       | enabled                        | Set to `false` to disable best-effort archival.                    |
-| `SEARCHICUS_TIMEZONE`    | `America/Chicago`              | IANA time zone the browser reports.                                |
-| `SEARCHICUS_LOCALE`      | `en-US`                        | Locale the browser reports.                                        |
-| `SEARCHICUS_EXTRACT_*`   | extraction disabled            | Rendered extraction; see "Extraction" below.                       |
-| `MCP_ENABLED`            | on                             | `false` serves the search API alone; `/mcp` then 404s.             |
-| `SERVE_UI`               | on when a build exists         | `false` skips the static UI.                                       |
-| `UI_DIST_DIR`            | `packages/ui/dist`             | Alternate UI build directory.                                      |
+| Variable                 | Default                             | Effect                                                                 |
+| ------------------------ | ----------------------------------- | ---------------------------------------------------------------------- |
+| `PORT`                   | `3000`                              | Port to listen on.                                                     |
+| `HOST`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication. |
+| `SEARCHICUS_DATA_DIR`    | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.     |
+| `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                |
+| `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                   |
+| `SEARCHICUS_STORE`       | enabled                             | Set to `false` to disable best-effort archival.                        |
+| `SEARCHICUS_TIMEZONE`    | `America/Chicago`                   | IANA time zone the browser reports.                                    |
+| `SEARCHICUS_LOCALE`      | `en-US`                             | Locale the browser reports.                                            |
+| `SEARCHICUS_EXTRACT_*`   | extraction disabled                 | Rendered extraction; see "Extraction" below.                           |
+| `MCP_ENABLED`            | on                                  | `false` serves the search API alone; `/mcp` then 404s.                 |
+| `SERVE_UI`               | on when a build exists              | `false` skips the static UI.                                           |
+| `UI_DIST_DIR`            | `packages/ui/dist`                  | Alternate UI build directory.                                          |
 
 The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the

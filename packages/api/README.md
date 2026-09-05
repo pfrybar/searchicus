@@ -28,7 +28,11 @@ npm run dev -w @searchicus/api     # tsx watch, reloads on change
 npm run build -w @searchicus/api && npm run start -w @searchicus/api
 ```
 
-Listens on `PORT` (default `3000`).
+Listens on `PORT` (default `3000`) at `HOST` (default `127.0.0.1`). Loopback
+is the default because this server has no authentication and its dashboard
+endpoints serve every query ever made through it; set `HOST=0.0.0.0` to accept
+connections from elsewhere. The Docker image sets that already, since a
+container listening only on its own loopback cannot be reached at all.
 
 The server builds its registry with `createBrowserRegistry("api")`, giving it
 its own Chromium profile at `.searchicus/profile/api/` and a shared archive at
@@ -131,7 +135,10 @@ An invalid request returns `400` with `{ "error": "Invalid search request", "det
 
 A single request fans out to every selected engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
-default). A partial engine failure still returns `200` with `degraded: true`;
+default). A client that disconnects mid-search gives up its place in that
+queue and stops the browser work behind it. When the queue is full (60 waiting
+by default) further requests get `503` with a `Retry-After` instead of a place
+in a line too long to be worth joining. A partial engine failure still returns `200` with `degraded: true`;
 the response deliberately does not identify the failed engine. Every
 completed fan-out, including a total failure, is queued for best-effort local
 archival; persistence failures never change this HTTP contract. If every
@@ -161,7 +168,9 @@ Request body:
 `url` is required and must be an absolute `http`/`https` URL. `ref` is
 optional; when supplied it must resolve to an archived search result whose URL
 matches `url`, since a ref is provenance rather than a label a caller can
-attach to anything. `maxChars` defaults to `20000` and caps at `100000`.
+attach to anything. `maxChars` defaults to `20000`; above `100000` it is a
+`400` rather than a silent clamp, so a caller asking for more than it can have
+is told, not quietly given less.
 
 Response:
 

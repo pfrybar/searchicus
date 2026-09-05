@@ -29,6 +29,10 @@ export function shutdownOn(server: Server, registry: Closeable): void {
       }, SHUTDOWN_GRACE_MS);
       forceExit.unref();
 
+      // close() waits for every open connection, and a browser holding an
+      // idle keep-alive socket would otherwise spend the whole grace period
+      // before the drain below even starts.
+      server.closeIdleConnections();
       server.close(() => {
         void registry
           .close()
