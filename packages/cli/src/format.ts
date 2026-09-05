@@ -28,12 +28,15 @@ export function formatSearch(response: MergedSearchResponse): string[] {
  */
 export function formatExtract(response: ExtractResponse): string[] {
   const size = response.truncated
-    ? `${response.chars} of ${response.totalChars} chars (truncated)`
+    ? `${response.chars} of ${response.totalChars} chars from ${response.offset}`
     : `${response.chars} chars`;
   return [
     response.title,
     response.finalUrl,
     ...(response.ref ? [`ref: ${response.ref}`] : []),
+    // The offset to continue from is only useful if it is printed where
+    // someone reading the output will see it.
+    ...(response.nextOffset === undefined ? [] : [`more: --offset ${response.nextOffset}`]),
     `${size} in ${response.tookMs}ms — untrusted page content follows`,
     "",
     response.markdown,

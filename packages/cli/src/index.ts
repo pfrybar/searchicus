@@ -28,6 +28,16 @@ export function parseLimit(value: string): number {
   return parsed.data;
 }
 
+/** Parse and validate a read offset with the shared rules. */
+export function parseOffset(value: string): number {
+  const parsed = ExtractRequestSchema.shape.offset.safeParse(Number(value));
+  if (!parsed.success || parsed.data === undefined) {
+    throw new InvalidArgumentError(parsed.success ? "offset is required" : "offset must be a whole number, 0 or more");
+  }
+
+  return parsed.data;
+}
+
 /** Parse and validate the CLI's Markdown budget with the shared rules. */
 export function parseMaxChars(value: string): number {
   const parsed = ExtractRequestSchema.shape.maxChars.safeParse(Number(value));
@@ -83,9 +93,15 @@ export function createProgram(
     .description("Render a page and print its main content as Markdown")
     .option("-r, --ref <ref>", "result ref from an earlier search, tying this extraction to that ranking")
     .option("-m, --max-chars <n>", "max characters of Markdown (1\u2013100000; defaults to 20000)", parseMaxChars)
+    .option("-o, --offset <n>", "start reading here; use the nextOffset a previous run printed", parseOffset)
     .option("--json", "print raw JSON instead of formatted Markdown")
-    .action(async (url: string, opts: { ref?: string; maxChars?: number; json?: boolean }) => {
-      const parsed = ExtractRequestSchema.safeParse({ url, ref: opts.ref, maxChars: opts.maxChars });
+    .action(async (url: string, opts: { ref?: string; maxChars?: number; offset?: number; json?: boolean }) => {
+      const parsed = ExtractRequestSchema.safeParse({
+        url,
+        ref: opts.ref,
+        maxChars: opts.maxChars,
+        offset: opts.offset,
+      });
       if (!parsed.success) {
         throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid extract request");
       }

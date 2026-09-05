@@ -20,6 +20,14 @@ export interface ExtractRequest {
   ref?: string;
   /** Maximum characters of Markdown to return. Defaults to 20,000. */
   maxChars?: number;
+  /**
+   * Where to start reading, in characters from the top of the document.
+   *
+   * Snapped back to the start of the section it lands in, so a window never
+   * begins mid-sentence. Pass back the `nextOffset` of a previous response to
+   * continue; omit it to start at the beginning.
+   */
+  offset?: number;
 }
 
 /** Readable page content, plus the provenance needed to interpret it. */
@@ -32,10 +40,24 @@ export interface ExtractResponse {
   ref?: string;
   title: string;
   markdown: string;
-  /** True when `maxChars` cut the content short. */
+  /** True when content remains beyond this window. See `nextOffset`. */
   truncated: boolean;
   /** Length of the Markdown actually returned. */
   chars: number;
+  /**
+   * Where this window starts, after snapping to a section boundary.
+   *
+   * A caller that asked for an offset mid-section gets the start of that
+   * section back, so a window never begins mid-sentence — the exception
+   * being a section too long to return whole, which is served from exactly
+   * where it was asked for because snapping would repeat it forever.
+   */
+  offset: number;
+  /**
+   * Where to continue reading. Absent once the end has been reached, which
+   * is the same thing `truncated: false` says.
+   */
+  nextOffset?: number;
   /**
    * Characters the page held before truncation.
    *

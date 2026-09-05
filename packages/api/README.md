@@ -179,7 +179,7 @@ Disabled unless `SEARCHICUS_EXTRACT_ENABLED=true`. See the root README's
 Request body:
 
 ```json
-{ "url": "https://example.com/article", "ref": "00m2ebw9mbyib-3", "maxChars": 20000 }
+{ "url": "https://example.com/article", "ref": "00m2ebw9mbyib-3", "maxChars": 20000, "offset": 0 }
 ```
 
 `url` is required and must be an absolute `http`/`https` URL. `ref` is
@@ -201,14 +201,25 @@ Response:
   "truncated": false,
   "chars": 4812,
   "totalChars": 4812,
+  "offset": 0,
   "tookMs": 7340,
   "untrusted": true
 }
 ```
 
 `chars` is what was returned and `totalChars` what the page held, so a caller
-can tell a 5% trim from a 95% one and decide whether asking again with a
-larger budget is worth a second render.
+can tell a 5% trim from a 95% one.
+
+Long pages are read a window at a time rather than by raising the budget.
+`offset` says where to start and `nextOffset` where to continue; pass the
+latter back to get the next window, and its absence means the end. Offsets are
+characters, but they **snap to section boundaries**, so a window starts where a
+heading does rather than mid-sentence — a raw character cut lands inside fenced
+code, which for technical documentation is the difference between a usable
+answer and a confusing one. The exception is a single section longer than the
+whole budget: it cannot be returned whole, so it is cut at a line or word
+boundary and the offset is honoured exactly, because snapping would return the
+same prefix forever.
 
 `untrusted` is always present and always `true`: the Markdown is arbitrary web
 content and must be treated as data to evaluate, never as instructions.
