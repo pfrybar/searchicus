@@ -29,7 +29,7 @@ import type { EngineFailureKind, EngineSearchOutcome, MergedSearchResponse, Sear
 import { defaultStorePath, searchArchiveEnabled } from "./paths.js";
 
 /** Current SQLite schema. Future changes are appended as numbered migrations. */
-export const ARCHIVE_SCHEMA_VERSION = 1;
+export const ARCHIVE_SCHEMA_VERSION = 2;
 /** Wait briefly for another API/CLI process holding the shared database lock. */
 export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -538,6 +538,20 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
           CREATE INDEX extractions_by_domain ON extractions (domain, created_at);
         `);
       }
+
+      if (version < 2) {
+        // Every dashboard read opens with "the most recent N searches", and
+        // without this SQLite answered it by scanning the whole table into a
+        // temporary B-tree to sort — three times per metrics request, growing
+        // with the archive. That is precisely the cost the bounded window was
+        // meant to avoid, and bounding the window does not help when finding
+        // the window is the expensive part.
+        //
+        // Column order matches the ORDER BY exactly, including the
+        // directions, so the index is walked rather than sorted.
+        db.exec("CREATE INDEX IF NOT EXISTS searches_recent ON searches (started_at DESC, search_id DESC)");
+      }
+
       db.exec(`PRAGMA user_version = ${ARCHIVE_SCHEMA_VERSION}`);
       db.exec("COMMIT");
     } catch (err) {
