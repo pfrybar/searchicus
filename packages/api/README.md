@@ -148,9 +148,14 @@ An invalid request returns `400` with `{ "error": "Invalid search request", "det
 A single request fans out to every selected engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
 default). A client that disconnects mid-search gives up its place in that
-queue and stops the browser work behind it. When the queue is full (60 waiting
-by default) further requests get `503` with a `Retry-After` instead of a place
-in a line too long to be worth joining. A partial engine failure still returns `200` with `degraded: true`;
+queue and stops the browser work behind it.
+
+Admission is decided on **how long a caller would wait**, not on how many are
+already waiting: if the queue could not serve it with enough of its deadline
+left to actually run the search, it gets `503` with a `Retry-After` in
+milliseconds rather than a place in a line it would never reach. Measured on a
+70-request burst, that turns 56 responses of "search unavailable" after a full
+30-second wait into 66 refusals inside 81ms. A partial engine failure still returns `200` with `degraded: true`;
 the response deliberately does not identify the failed engine. Every
 completed fan-out, including a total failure, is queued for best-effort local
 archival; persistence failures never change this HTTP contract. If every

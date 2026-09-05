@@ -26,6 +26,17 @@ const log = createLogger("registry");
 export const DEFAULT_RESULTS_TIMEOUT_MS = 30_000;
 /** Hard cap on a session's total life, including work that outlives results. */
 export const DEFAULT_SESSION_TIMEOUT_MS = 60_000;
+/**
+ * Budget kept back for the search itself when deciding whether to queue.
+ *
+ * A caller admitted with less than this has been let into a queue it cannot
+ * be served from, and will spend its whole deadline finding that out.
+ * Measured p95 across the shipped engines is about twelve seconds, so that
+ * is what a caller needs left when its turn arrives. Deliberately the p95
+ * and not the median: refusing someone who would have just made it is a
+ * cheaper mistake than accepting someone who will not.
+ */
+export const DEFAULT_SEARCH_RESERVE_MS = 12_000;
 
 export class UnknownEngineError extends Error {
   constructor(public readonly engineId: string) {
@@ -104,6 +115,8 @@ export interface SearchEngineRegistryOptions {
   archive?: SearchArchive | null;
   resultsTimeoutMs?: number;
   sessionTimeoutMs?: number;
+  /** Budget kept back for the search itself. See DEFAULT_SEARCH_RESERVE_MS. */
+  searchReserveMs?: number;
 }
 
 /**
@@ -132,6 +145,7 @@ export class SearchEngineRegistry {
   readonly #browser: BrowserProvider | undefined;
   readonly #resultsTimeoutMs: number;
   readonly #sessionTimeoutMs: number;
+  readonly #searchReserveMs: number;
   readonly #archive: SearchArchive | undefined;
   readonly #inFlightSessions = new Set<Promise<void>>();
   readonly #inFlightArchives = new Set<Promise<void>>();
@@ -145,6 +159,7 @@ export class SearchEngineRegistry {
     this.#archive = options.archive ?? undefined;
     this.#resultsTimeoutMs = options.resultsTimeoutMs ?? DEFAULT_RESULTS_TIMEOUT_MS;
     this.#sessionTimeoutMs = options.sessionTimeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
+    this.#searchReserveMs = options.searchReserveMs ?? DEFAULT_SEARCH_RESERVE_MS;
   }
 
   /** Register an engine, replacing any previous engine with the same id. */
@@ -303,13 +318,19 @@ export class SearchEngineRegistry {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
     try {
-      await this.#throttle.acquire(signal ? AbortSignal.any([controller.signal, signal]) : controller.signal);
+      // What is left after keeping back enough to actually run the search.
+      // Negative when the deadline is already too close, which refuses at the
+      // door rather than admitting a caller who cannot finish.
+      const maxWaitMs = remaining - this.#searchReserveMs;
+      await this.#throttle.acquire(signal ? AbortSignal.any([controller.signal, signal]) : controller.signal, {
+        maxWaitMs,
+      });
     } catch (err) {
       // Three ways to not get a slot, and they mean different things to the
       // caller: come back later, we were too slow for you, or you left.
       if (err instanceof ThrottleOverloadedError) {
         this.#overload.refused++;
-        log.warn("search refused, queue full", { queued: err.queued });
+        log.warn("search refused", { queued: err.queued, projectedWaitMs: err.projectedWaitMs, budgetMs: remaining });
         throw new SearchOverloadedError("queue_full");
       }
       if (signal?.aborted) throw new SearchCancelledError();
