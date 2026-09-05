@@ -69,6 +69,13 @@ searchicus extract https://example.com/ --json
 Text output prints the title, final URL, ref, and size, then a line marking
 where our output stops and the page's own untrusted text begins.
 
+### `paths`
+
+Prints where this machine keeps its Chromium profile and search archive, with
+`--json` for machine-readable output. Useful because those locations resolve
+from the application root and the environment, so "which archive am I looking
+at" is otherwise a question you can only answer by guessing.
+
 ### `engines`
 
 Lists the engines currently registered, with `--json` for machine-readable output.

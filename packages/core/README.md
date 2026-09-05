@@ -38,7 +38,7 @@ server, UI):
 Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 
 - `BrowserSession` — the single long-lived Chromium instance.
-- `createDefaultBrowserSession(surface)` — **fill in browser configuration here.**
+- `createDefaultBrowserSession(surface)` — the configured session each surface uses.
 - `createBrowserRegistry(surface)` — a default registry with a real browser
   and the default local archive attached.
 
@@ -85,9 +85,11 @@ persistent context is what carries cookies, dismissed consent banners, and
 cache between searches — and, since `launchPersistentContext` keeps a real
 profile directory on disk, across process restarts too.
 
-Persistent state defaults to `.searchicus/`: each surface gets its own
-profile under `profile/<surface>/`, and the application archive is the sibling
-`searches.sqlite`. Chromium profiles are single-writer, so surfaces do not
+Persistent state defaults to `.searchicus/` at the application root — found
+from the installed files, not from the working directory, so every surface
+resolves the same archive however its process was started. Each surface gets
+its own profile under `profile/<surface>/`, and the application archive is the
+sibling `searches.sqlite`. Chromium profiles are single-writer, so surfaces do not
 share cookies; the archive uses WAL mode and is safe for API and CLI to share.
 Set `SEARCHICUS_DATA_DIR` to move both together, or use
 `SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component override.

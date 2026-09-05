@@ -106,9 +106,14 @@ Two consequences shape the API:
   entry to `searchAll()`, so a single query still hits every engine in
   parallel while consecutive searches are spaced apart (5s ±30% by default).
 
-Persistent state is rooted at `.searchicus/`: each surface gets its own
-Chromium profile under `profile/<surface>/`, while `searches.sqlite` is the
-shared application archive beside it. Profiles remain isolated because a
+Persistent state is rooted at `.searchicus/` **beside this repository**, not
+beside whatever directory you happen to be standing in: the root is resolved
+from the installed files, so `npm run dev -w @searchicus/api` and a CLI run
+from anywhere reach the same archive. (They did not always — resolving from
+the working directory gave the API `packages/api/.searchicus` and quietly made
+the shared archive two databases.) Each surface gets its own Chromium profile
+under `profile/<surface>/`, while `searches.sqlite` is the shared application
+archive beside it. Profiles remain isolated because a
 user-data directory is single-writer; the archive uses SQLite WAL mode so API
 and CLI processes can share it. `SEARCHICUS_DATA_DIR` moves both together;
 `SEARCHICUS_PROFILE_DIR` and `SEARCHICUS_STORE_PATH` override one component.

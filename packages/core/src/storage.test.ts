@@ -85,6 +85,42 @@ describe("persistent data paths", () => {
     expect(defaultStorePath()).toBe("/var/lib/searchicus/searches.sqlite");
   });
 
+  it("resolves the same state root however the process was started", async () => {
+    // The regression: defaultDataDir() used process.cwd(), and `npm run -w
+    // <package>` sets that to the package directory. The API resolved
+    // packages/api/.searchicus while the CLI resolved the repository root, so
+    // the archive they are designed to share was silently two databases — and
+    // nothing complained, because each one worked perfectly on its own.
+    //
+    // This has to be a real process per working directory: the resolution is
+    // a property of where the process started, which one test run cannot
+    // observe from inside itself.
+    const printer = fileURLToPath(new URL("./__fixtures__/print-paths.mjs", import.meta.url));
+    const root = fileURLToPath(new URL("../../..", import.meta.url));
+
+    const resolve = async (cwd: string): Promise<{ cwd: string; dataDir: string; store: string }> => {
+      const { stdout } = await execFileAsync(process.execPath, ["--no-warnings=ExperimentalWarning", printer], {
+        cwd,
+        // The ambient value would mask exactly what this is testing.
+        env: { ...process.env, SEARCHICUS_DATA_DIR: undefined, SEARCHICUS_STORE_PATH: undefined },
+      });
+      return JSON.parse(stdout) as { cwd: string; dataDir: string; store: string };
+    };
+
+    const [fromRoot, fromPackage, fromElsewhere] = await Promise.all([
+      resolve(root),
+      resolve(path.join(root, "packages", "api")),
+      resolve(tmpdir()),
+    ]);
+
+    // Different working directories, deliberately.
+    expect(new Set([fromRoot.cwd, fromPackage.cwd, fromElsewhere.cwd]).size).toBe(3);
+    // One archive.
+    expect(fromPackage.store).toBe(fromRoot.store);
+    expect(fromElsewhere.store).toBe(fromRoot.store);
+    expect(fromRoot.dataDir).toBe(path.join(root, ".searchicus"));
+  });
+
   it("allows a component-specific path override and disables storage on any explicit no", () => {
     vi.stubEnv("SEARCHICUS_DATA_DIR", "/data");
     vi.stubEnv("SEARCHICUS_PROFILE_DIR", "/browser/api");
