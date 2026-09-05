@@ -39,29 +39,26 @@ export function parseExtractUrl(value: string, config: ExtractConfig): URL {
   try {
     url = new URL(value);
   } catch {
-    throw new ExtractRequestError("invalid_url", "url must be an absolute http or https URL.");
+    throw new ExtractRequestError("url must be an absolute http or https URL.");
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new ExtractRequestError("invalid_url", `url must use http or https, not ${url.protocol.replace(":", "")}.`);
+    throw new ExtractRequestError(`url must use http or https, not ${url.protocol.replace(":", "")}.`);
   }
 
   // Credentials in a URL are a request to authenticate somewhere on the
   // caller's behalf, which this endpoint does not do for anyone.
   if (url.username || url.password) {
-    throw new ExtractRequestError("invalid_url", "url must not contain credentials.");
+    throw new ExtractRequestError("url must not contain credentials.");
   }
 
   if (!url.hostname) {
-    throw new ExtractRequestError("invalid_url", "url must have a hostname.");
+    throw new ExtractRequestError("url must have a hostname.");
   }
 
   const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
   if (!config.allowedPorts.has(port)) {
-    throw new ExtractRequestError(
-      "invalid_url",
-      `url must use an allowed port (${[...config.allowedPorts].join(", ")}).`,
-    );
+    throw new ExtractRequestError(`url must use an allowed port (${[...config.allowedPorts].join(", ")}).`);
   }
 
   return url;

@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue, StatementSync } from "node:sqlite";
 import {
   boundedLimit,
   creditMergedResult,
@@ -172,15 +172,18 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     const window = boundedLimit(options.window, DEFAULT_METRICS_WINDOW);
     const db = await this.#open();
 
-    const searches = db
-      .prepare(
+    const searches = rows<WindowedSearchRow>(
+      db.prepare(
         `SELECT search_id, started_at, merged_response_json FROM searches
          ORDER BY started_at DESC, search_id DESC LIMIT ?`,
-      )
-      .all(window) as unknown as Array<{ search_id: string; started_at: string; merged_response_json: string | null }>;
+      ),
+      window,
+    );
 
+    // count(*) always returns a row; ?? 0 is so an unreachable absence reads
+    // as zero rather than reaching the response as NaN.
     const totalSearches = Number(
-      (db.prepare("SELECT count(*) AS total FROM searches").get() as { total: number }).total,
+      firstRow<{ total: number }>(db.prepare("SELECT count(*) AS total FROM searches"))?.total ?? 0,
     );
     const metrics = new Map<string, MutableMetrics>();
     const latencies = new Map<string, number[]>();
@@ -194,7 +197,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       return entry;
     };
 
-    for (const row of db.prepare(WINDOWED_ENGINE_RESULTS).all(window) as unknown as EngineResultRow[]) {
+    for (const row of rows<EngineResultRow>(db.prepare(WINDOWED_ENGINE_RESULTS), window)) {
       const entry = at(row.engine_id);
       entry.searches++;
       if (row.succeeded) {
@@ -212,10 +215,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
 
     // Which refs were extracted, so a merged result can be marked as read.
     const extracted = new Set<string>();
-    for (const row of db.prepare(WINDOWED_EXTRACTED_REFS).all(window) as Array<{
-      search_id: string;
-      result_ref: string;
-    }>) {
+    for (const row of rows<ExtractedRefRow>(db.prepare(WINDOWED_EXTRACTED_REFS), window)) {
       extracted.add(`${row.search_id}\u0000${row.result_ref}`);
     }
 
@@ -245,41 +245,41 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
 
     // Keyset pagination on (started_at, search_id): stable while new searches
     // arrive, where an OFFSET would quietly repeat or skip rows.
-    const rows = (options.before
-      ? db
-          .prepare(
+    const page = options.before
+      ? rows<SearchRow>(
+          db.prepare(
             `SELECT * FROM searches WHERE (started_at, search_id) < (
                  SELECT started_at, search_id FROM searches WHERE search_id = ?
                ) ORDER BY started_at DESC, search_id DESC LIMIT ?`,
-          )
-          .all(options.before, limit)
-      : db
-          .prepare("SELECT * FROM searches ORDER BY started_at DESC, search_id DESC LIMIT ?")
-          .all(limit)) as unknown as SearchRow[];
+          ),
+          options.before,
+          limit,
+        )
+      : rows<SearchRow>(db.prepare("SELECT * FROM searches ORDER BY started_at DESC, search_id DESC LIMIT ?"), limit);
 
-    if (rows.length === 0) return [];
+    if (page.length === 0) return [];
 
-    const ids = rows.map((row) => row.search_id);
+    const ids = page.map((row) => row.search_id);
     const outcomes = this.#outcomesFor(db, ids, false);
     const counts = this.#extractionCounts(db, ids);
 
-    return rows.map((row) => this.#summarize(row, outcomes.get(row.search_id) ?? [], counts.get(row.search_id) ?? 0));
+    return page.map((row) => this.#summarize(row, outcomes.get(row.search_id) ?? [], counts.get(row.search_id) ?? 0));
   }
 
   /** Everything stored about one search, including each engine's own page. */
   async searchDetail(searchId: string): Promise<SearchDetail | undefined> {
     const db = await this.#open();
-    const row = db.prepare("SELECT * FROM searches WHERE search_id = ?").get(searchId) as unknown as
-      SearchRow | undefined;
+    const row = firstRow<SearchRow>(db.prepare("SELECT * FROM searches WHERE search_id = ?"), searchId);
     if (!row) return undefined;
 
     const outcomes = this.#outcomesFor(db, [searchId], true).get(searchId) ?? [];
-    const extractions = db
-      .prepare(
+    const extractions = rows<ExtractionRow>(
+      db.prepare(
         `SELECT created_at, result_ref, requested_url, final_url, status, error_kind, title, chars, took_ms
          FROM extractions WHERE search_id = ? ORDER BY extraction_id`,
-      )
-      .all(searchId) as unknown as ExtractionRow[];
+      ),
+      searchId,
+    );
 
     return {
       ...this.#summarize(row, outcomes, extractions.length),
@@ -322,16 +322,17 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     if (searchIds.length === 0) return new Map();
 
     const placeholders = searchIds.map(() => "?").join(", ");
-    const rows = db
-      .prepare(
+    const found = rows<EngineResultRow>(
+      db.prepare(
         `SELECT search_id, engine_id, succeeded, took_ms, result_count, coverage, match, error_kind, error_message
                 ${withResults ? ", raw_response_json" : ""}
          FROM engine_results WHERE search_id IN (${placeholders}) ORDER BY engine_position`,
-      )
-      .all(...searchIds) as unknown as EngineResultRow[];
+      ),
+      ...searchIds,
+    );
 
     const grouped = new Map<string, ArchivedEngineOutcome[]>();
-    for (const row of rows) {
+    for (const row of found) {
       const outcome: ArchivedEngineOutcome = {
         engineId: row.engine_id,
         ok: row.succeeded === 1,
@@ -356,13 +357,14 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     if (searchIds.length === 0) return new Map();
 
     const placeholders = searchIds.map(() => "?").join(", ");
-    const rows = db
-      .prepare(
+    const counts = rows<{ search_id: string; total: number }>(
+      db.prepare(
         `SELECT search_id, count(*) AS total FROM extractions
          WHERE search_id IN (${placeholders}) GROUP BY search_id`,
-      )
-      .all(...searchIds) as unknown as Array<{ search_id: string; total: number }>;
-    return new Map(rows.map((row) => [row.search_id, Number(row.total)]));
+      ),
+      ...searchIds,
+    );
+    return new Map(counts.map((row) => [row.search_id, Number(row.total)]));
   }
 
   async close(): Promise<void> {
@@ -611,6 +613,27 @@ const WINDOWED_EXTRACTED_REFS = `
   WHERE x.result_ref IS NOT NULL AND x.status = 'completed'
 `;
 
+/**
+ * Reads rows as one of the shapes declared below.
+ *
+ * The double cast is not avoidable and not laziness: node:sqlite types every
+ * row as `Record<string, SQLOutputValue>`, which has no overlap with these
+ * interfaces, so a single `as` will not compile. Going through `unknown` in
+ * one place beats seven, and gives the assertion somewhere to be explained.
+ *
+ * What is being asserted is real work: these interfaces track the DDL in
+ * #migrate by hand, and nothing checks that they still agree. A column
+ * renamed there is a silent `undefined` here.
+ */
+function rows<T>(statement: StatementSync, ...params: SQLInputValue[]): T[] {
+  return statement.all(...params) as unknown as T[];
+}
+
+/** The single-row form of {@link rows}. */
+function firstRow<T>(statement: StatementSync, ...params: SQLInputValue[]): T | undefined {
+  return statement.get(...params) as unknown as T | undefined;
+}
+
 interface SearchRow {
   search_id: string;
   started_at: string;
@@ -620,6 +643,19 @@ interface SearchRow {
   merged_response_json: string | null;
   took_ms: number;
   degraded: number | null;
+}
+
+/** The three columns engineMetrics reads from each search in its window. */
+interface WindowedSearchRow {
+  search_id: string;
+  started_at: string;
+  merged_response_json: string | null;
+}
+
+/** One ref that was extracted at least once, within that same window. */
+interface ExtractedRefRow {
+  search_id: string;
+  result_ref: string;
 }
 
 interface EngineResultRow {

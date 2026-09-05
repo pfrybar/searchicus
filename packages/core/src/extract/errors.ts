@@ -19,12 +19,17 @@ export class ExtractionDisabledError extends Error {
  * The caller's request is wrong, and saying exactly how is safe: these
  * failures describe input the caller already holds, so a precise message
  * discloses nothing and lets them fix it without guessing.
+ *
+ * The message is the whole payload, deliberately. This carried a `kind` from
+ * ExtractFailureKind too, which nothing ever read: these are raised before an
+ * extraction attempt exists, so they never reach the archive, and every front
+ * door answers them with the message. An unread label is not free — it drifted
+ * without anyone noticing, and a maxChars complaint shipped as "invalid_url".
+ * If a stable machine-readable code is wanted for the 400, it should be
+ * designed for that surface rather than inherited from the archive's union.
  */
 export class ExtractRequestError extends Error {
-  constructor(
-    readonly kind: Extract<ExtractFailureKind, "invalid_url" | "unknown_ref" | "ref_url_mismatch">,
-    message: string,
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = "ExtractRequestError";
   }
@@ -41,7 +46,7 @@ export class ExtractRequestError extends Error {
  */
 export class ExtractFailedError extends Error {
   constructor(
-    readonly kind: Exclude<ExtractFailureKind, "invalid_url" | "unknown_ref" | "ref_url_mismatch">,
+    readonly kind: ExtractFailureKind,
     message: string,
     cause?: unknown,
   ) {
