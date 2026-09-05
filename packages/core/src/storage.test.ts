@@ -85,7 +85,7 @@ describe("persistent data paths", () => {
     expect(defaultStorePath()).toBe("/var/lib/searchicus/searches.sqlite");
   });
 
-  it("allows a component-specific path override and disables storage only on false", () => {
+  it("allows a component-specific path override and disables storage on any explicit no", () => {
     vi.stubEnv("SEARCHICUS_DATA_DIR", "/data");
     vi.stubEnv("SEARCHICUS_PROFILE_DIR", "/browser/api");
     vi.stubEnv("SEARCHICUS_STORE_PATH", "/archive/searches.sqlite");
@@ -96,7 +96,16 @@ describe("persistent data paths", () => {
     expect(searchArchiveEnabled()).toBe(false);
     expect(createDefaultSearchArchive()).toBeUndefined();
 
-    vi.stubEnv("SEARCHICUS_STORE", "0");
+    // "0" used to leave archiving on, because this switch understood only the
+    // literal string "false" while MCP_ENABLED beside it read "0" as off.
+    // One vocabulary now, so the same word means the same thing everywhere.
+    for (const value of ["0", "no", "off", "FALSE"]) {
+      vi.stubEnv("SEARCHICUS_STORE", value);
+      expect(searchArchiveEnabled(), value).toBe(false);
+    }
+
+    // Anything that is not a no leaves archiving on, which is the default.
+    vi.stubEnv("SEARCHICUS_STORE", "yes");
     expect(searchArchiveEnabled()).toBe(true);
     expect(createDefaultSearchArchive()).toBeInstanceOf(SqliteSearchArchive);
   });

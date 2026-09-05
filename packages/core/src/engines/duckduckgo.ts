@@ -2,7 +2,7 @@ import type { Locator, Page } from "playwright";
 import type { SearchContext } from "../context.js";
 import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../types.js";
 import { type BrowserSearchSpec, runBrowserSearch } from "./flow.js";
-import { EXTRACT_TIMEOUT_MS, collapse, readCollapsed, readSnippet } from "./parse.js";
+import { collapse, EXTRACT_TIMEOUT_MS, isWebUrl, readCollapsed, readSnippet } from "./parse.js";
 
 /**
  * DuckDuckGo, driven through a real browser the way a person would drive it.
@@ -102,7 +102,7 @@ export async function parseDuckDuckGoResults(results: Locator): Promise<SearchRe
     const title = collapse(rawTitle);
     // Organic links are direct, so this is a plain sanity check rather than
     // the guard against a half-decoded redirect that Bing's parser needs.
-    if (!href?.startsWith("http") || !title) continue;
+    if (!isWebUrl(href) || !title) continue;
 
     parsed.push({
       title,

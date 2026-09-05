@@ -31,6 +31,22 @@ export class UnknownEngineError extends Error {
   }
 }
 
+/** An engine did not produce results before the fan-out's deadline. */
+export class EngineTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EngineTimeoutError";
+  }
+}
+
+/** Work was asked of a registry that is shutting down. */
+export class RegistryClosedError extends Error {
+  constructor(message = "SearchEngineRegistry is closed") {
+    super(message);
+    this.name = "RegistryClosedError";
+  }
+}
+
 /** Every selected engine failed before returning a result response. */
 export class AllEnginesFailedError extends Error {
   constructor() {
@@ -236,7 +252,7 @@ export class SearchEngineRegistry {
     if (!this.#throttle) return;
 
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("Timed out waiting for a rate-limit slot");
+    if (remaining <= 0) throw new EngineTimeoutError("Timed out waiting for a rate-limit slot");
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
@@ -259,7 +275,7 @@ export class SearchEngineRegistry {
     deadline: number,
     signal?: AbortSignal,
   ): Promise<SearchResponse> {
-    if (this.#closed) throw new Error("SearchEngineRegistry is closed");
+    if (this.#closed) throw new RegistryClosedError();
 
     const engine = this.engines.get(engineId);
     if (!engine) throw new UnknownEngineError(engineId);
@@ -399,30 +415,42 @@ function createSearchId(): string {
   return randomBytes(8).readBigUInt64BE().toString(36).padStart(13, "0");
 }
 
-/** Converts raw errors into stable archive metric categories. */
+/**
+ * Converts raw errors into stable archive metric categories.
+ *
+ * Everything this package raises itself is matched by type. The two checks
+ * that are not are deliberate:
+ *
+ * - `BrowserUnavailableError` is matched by name because importing it would
+ *   pull `browser/session.ts`, and with it Playwright, into core's main entry
+ *   — the one thing this package's layout exists to prevent.
+ * - Playwright's own timeouts are ordinary Errors carrying "Timeout 30000ms
+ *   exceeded", so a message match is the only handle on them. It runs last,
+ *   where it can only refine "unknown".
+ */
 function classifyFailure(err: unknown): EngineFailureKind {
   if (err instanceof NoResultsError) return "no_results";
   if (err instanceof OffTargetResultsError) return "off_target";
   if (err instanceof SearchBoxUnavailableError) return "search_box_unavailable";
   if (err instanceof UnknownEngineError) return "unknown_engine";
   if (err instanceof ThrottleOverloadedError) return "overloaded";
-  if (err instanceof ThrottleAbortError) return "timeout";
+  if (err instanceof ThrottleAbortError || err instanceof EngineTimeoutError) return "timeout";
+  if (err instanceof RegistryClosedError) return "closed";
+  if (err instanceof Error && err.name === "BrowserUnavailableError") return "browser_unavailable";
 
   const message = err instanceof Error ? err.message : String(err);
-  if (err instanceof Error && err.name === "BrowserUnavailableError") return "browser_unavailable";
   if (/timed out|timeout/i.test(message)) return "timeout";
-  if (/registry is closed/i.test(message)) return "closed";
   return "unknown";
 }
 
 /** Rejects if `promise` hasn't settled by `deadline`. */
 async function withDeadline<T>(promise: Promise<T>, deadline: number, message: string): Promise<T> {
   const remaining = deadline - Date.now();
-  if (remaining <= 0) throw new Error(message);
+  if (remaining <= 0) throw new EngineTimeoutError(message);
 
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), remaining);
+    timer = setTimeout(() => reject(new EngineTimeoutError(message)), remaining);
   });
 
   try {

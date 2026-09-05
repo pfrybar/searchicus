@@ -2,7 +2,7 @@ import type { Locator, Page } from "playwright";
 import type { SearchContext } from "../context.js";
 import type { SearchEngine, SearchQuery, SearchResult, SearchSession } from "../types.js";
 import { type BrowserSearchSpec, runBrowserSearch } from "./flow.js";
-import { EXTRACT_TIMEOUT_MS, collapse, readCollapsed, readSnippet } from "./parse.js";
+import { collapse, EXTRACT_TIMEOUT_MS, isWebUrl, readCollapsed, readSnippet } from "./parse.js";
 
 /**
  * Bing, driven through a real browser the way a person would drive it.
@@ -83,7 +83,7 @@ export async function parseBingResults(results: Locator): Promise<SearchResult[]
     ]);
 
     const title = collapse(rawTitle);
-    if (!href?.startsWith("http") || !title) continue;
+    if (!isWebUrl(href) || !title) continue;
 
     parsed.push({
       title,

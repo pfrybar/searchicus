@@ -317,6 +317,10 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
 
   /** Per-engine outcomes for a set of searches, optionally with their pages. */
   #outcomesFor(db: DatabaseSync, searchIds: string[], withResults: boolean): Map<string, ArchivedEngineOutcome[]> {
+    // `IN ()` is a syntax error, not an empty result. Callers happen to guard
+    // this today; the guard belongs with the SQL that needs it.
+    if (searchIds.length === 0) return new Map();
+
     const placeholders = searchIds.map(() => "?").join(", ");
     const rows = db
       .prepare(
@@ -341,12 +345,16 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
         outcome.error = row.error_message;
         outcome.results = parseJson<{ results?: SearchResult[] }>(row.raw_response_json ?? null)?.results ?? [];
       }
-      grouped.set(row.search_id, [...(grouped.get(row.search_id) ?? []), outcome]);
+      const group = grouped.get(row.search_id);
+      if (group) group.push(outcome);
+      else grouped.set(row.search_id, [outcome]);
     }
     return grouped;
   }
 
   #extractionCounts(db: DatabaseSync, searchIds: string[]): Map<string, number> {
+    if (searchIds.length === 0) return new Map();
+
     const placeholders = searchIds.map(() => "?").join(", ");
     const rows = db
       .prepare(

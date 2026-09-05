@@ -92,6 +92,25 @@ export async function readCollapsed(el: Locator, timeout = EXTRACT_TIMEOUT_MS): 
 }
 
 /** Collapses runs of whitespace, since textContent preserves the markup's. */
+/**
+ * True only for an absolute http(s) URL, narrowing away a missing one.
+ *
+ * A result's URL is read straight off the page's markup, so the scheme is
+ * whatever the site put there. `startsWith("http")` was the old test and let
+ * through anything merely beginning with those four letters; parsing decides
+ * it properly, and also drops the relative hrefs the old test happened to
+ * exclude by accident rather than by intent.
+ */
+export function isWebUrl(href: string | null | undefined): href is string {
+  if (!href) return false;
+  try {
+    const { protocol } = new URL(href);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function collapse(text: string | null): string {
   return (text ?? "").replace(/\s+/g, " ").trim();
 }

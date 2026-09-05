@@ -223,14 +223,14 @@ function createSearchRouter(
   // query made, every result seen — which is a good deal more sensitive than
   // a single result list, so they are only mounted when an archive is
   // actually configured and they are read-only.
-  router.get("/metrics/engines", async (_req, res, next) => {
+  router.get("/metrics/engines", async (req, res, next) => {
     if (!insights) {
       res.status(503).json({ error: NO_ARCHIVE });
       return;
     }
 
     try {
-      res.json(await insights.engineMetrics({ window: optionalInt(_req.query.window) }));
+      res.json(await insights.engineMetrics({ window: optionalInt(req.query.window) }));
     } catch (err) {
       next(err);
     }

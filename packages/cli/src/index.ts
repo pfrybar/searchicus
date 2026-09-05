@@ -24,12 +24,6 @@ export function parseLimit(value: string): number {
   return parsed.data;
 }
 
-/**
- * Creates the CLI program. Supplying a registry makes command behavior easy
- * to exercise in tests without relying on module-level state. Its default is
- * core's browser-free registry, which can list registered engines but cannot
- * run browser-backed ones; executable CLI usage injects createBrowserRegistry().
- */
 /** Parse and validate the CLI's Markdown budget with the shared rules. */
 export function parseMaxChars(value: string): number {
   const parsed = ExtractRequestSchema.shape.maxChars.safeParse(Number(value));
@@ -44,6 +38,12 @@ export function parseMaxChars(value: string): number {
   return parsed.data;
 }
 
+/**
+ * Creates the CLI program. Supplying a registry makes command behavior easy
+ * to exercise in tests without relying on module-level state. Its default is
+ * core's browser-free registry, which can list registered engines but cannot
+ * run browser-backed ones; executable CLI usage injects createBrowserRegistry().
+ */
 export function createProgram(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   extraction: ExtractionService = new ExtractionService(),
