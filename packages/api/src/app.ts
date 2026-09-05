@@ -3,6 +3,7 @@ import {
   type ArchiveInsights,
   createDefaultRegistry,
   ExtractFailedError,
+  ExtractionBusyError,
   ExtractionDisabledError,
   ExtractionService,
   ExtractRequestError,
@@ -212,7 +213,7 @@ function createSearchRouter(
     }
 
     try {
-      res.json(await extraction.extract(parsed.data));
+      res.json(await extraction.extract(parsed.data, { signal: abortOnDisconnect(res) }));
     } catch (err) {
       // Three distinct answers, because they call for three different
       // reactions: fix the request, ask an operator, or try again later.
@@ -224,6 +225,14 @@ function createSearchRouter(
         res.status(503).json({ error: err.message });
         return;
       }
+      // Also 503, but for the opposite reason: this server does extract, it
+      // is simply full. Retry-After distinguishes "come back" from "an
+      // operator has to change something", which the message cannot.
+      if (err instanceof ExtractionBusyError) {
+        res.status(503).set("retry-after", "30").json({ error: err.message });
+        return;
+      }
+      if (clientGone(res)) return;
       // Already written to be safe to return verbatim; see ExtractFailedError.
       if (err instanceof ExtractFailedError) {
         res.status(502).json({ error: err.message });

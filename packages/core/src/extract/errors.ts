@@ -36,6 +36,22 @@ export class ExtractRequestError extends Error {
 }
 
 /**
+ * Extraction was refused before it started, because too many callers are
+ * already waiting.
+ *
+ * Separate from ExtractFailedError on purpose: nothing was attempted, so
+ * there is no page outcome to record and recording one would put the server's
+ * own load into a table that exists to describe documents. A caller should
+ * retry rather than conclude the URL cannot be read.
+ */
+export class ExtractionBusyError extends Error {
+  constructor(public readonly queued: number) {
+    super(`Too many extractions are already queued (${queued}). Try again shortly.`);
+    this.name = "ExtractionBusyError";
+  }
+}
+
+/**
  * Extraction ran and did not produce content.
  *
  * Messages here are written to be safe to return verbatim. The failure is

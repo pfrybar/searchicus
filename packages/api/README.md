@@ -200,7 +200,12 @@ content and must be treated as data to evaluate, never as instructions.
 | -----: | ---------------------------------------------------------------------------------- |
 |  `400` | The request is wrong — bad URL, disallowed port, or a ref that does not check out. |
 |  `502` | Extraction ran and failed. The message is generic by design.                       |
-|  `503` | Extraction is not enabled on this server.                                          |
+|  `503` | Extraction is not enabled on this server, or its queue is full.                    |
+
+The two `503`s are told apart by `Retry-After`: a full queue sets it, because
+waiting helps. A disabled endpoint does not, because only an operator can
+change that. A client that disconnects mid-extraction gives up its place in
+the queue and stops the render behind it.
 
 A `502` never names a resolved address, a DNS answer, or a browser error: a
 specific enough failure would let a caller map internal network space by

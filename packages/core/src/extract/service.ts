@@ -8,7 +8,7 @@ import {
   MAX_EXTRACT_MAX_CHARS,
   type ExtractConfig,
 } from "./config.js";
-import { ExtractFailedError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
+import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
 import type {
   DocumentParser,
   ExtractRequest,
@@ -50,6 +50,7 @@ export class ExtractionService {
   readonly #parse: DocumentParser | undefined;
   readonly #lookup: AddressLookup | undefined;
   readonly #slots: Semaphore;
+  readonly #pendingWrites = new Set<Promise<void>>();
   #closed = false;
 
   constructor(options: ExtractionServiceOptions = {}) {
@@ -58,7 +59,7 @@ export class ExtractionService {
     this.#archive = options.archive ?? undefined;
     this.#parse = options.parse;
     this.#lookup = options.lookup;
-    this.#slots = new Semaphore(this.#config.maxConcurrent);
+    this.#slots = new Semaphore(this.#config.maxConcurrent, this.#config.maxQueued);
   }
 
   /** Whether this deployment will actually extract. Front doors report it. */
@@ -70,7 +71,7 @@ export class ExtractionService {
     return this.#config;
   }
 
-  async extract(request: ExtractRequest): Promise<ExtractResponse> {
+  async extract(request: ExtractRequest, options: { signal?: AbortSignal } = {}): Promise<ExtractResponse> {
     if (this.#closed) throw new ExtractFailedError("cancelled", "Extraction is shutting down.");
     const renderer = this.#renderer;
     if (!this.#config.enabled || !renderer) throw new ExtractionDisabledError();
@@ -93,6 +94,10 @@ export class ExtractionService {
 
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), this.#config.timeoutMs);
+    // A caller that has gone away should not keep a browser rendering on its
+    // behalf, nor hold a place in the queue ahead of someone still waiting.
+    const onCallerGone = (): void => controller.abort();
+    options.signal?.addEventListener("abort", onCallerGone, { once: true });
     try {
       // Cheap rejection before a browser is involved. The renderer re-checks
       // every request it routes; this only avoids paying for a context to
@@ -161,6 +166,11 @@ export class ExtractionService {
       // the only way it happens, and that is worth surviving.
       if (err instanceof ExtractRequestError) throw err;
 
+      // Nor is a refusal at the door: nothing was rendered, so there is no
+      // page outcome, and recording one would put this server's own load into
+      // a table that exists to describe documents.
+      if (err instanceof ExtractionBusyError) throw err;
+
       const failure = asExtractFailure(err, controller.signal);
       this.#record({
         ...base,
@@ -172,11 +182,26 @@ export class ExtractionService {
       throw failure;
     } finally {
       clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", onCallerGone);
     }
   }
 
+  /** Waits for archive writes this service has already started. */
+  async drain(): Promise<void> {
+    while (this.#pendingWrites.size > 0) await Promise.allSettled([...this.#pendingWrites]);
+  }
+
+  /**
+   * Stops admitting work, waits for what it already owes the archive, then
+   * tears the browser down.
+   *
+   * The order is the point. Whoever owns the shared archive closes it after
+   * this resolves, so a write still in flight here would meet a closed
+   * database — and be swallowed.
+   */
   async close(): Promise<void> {
     this.#closed = true;
+    await this.drain();
     await this.#renderer?.close();
   }
 
@@ -221,9 +246,25 @@ export class ExtractionService {
     return createWorkerParser();
   }
 
-  /** Archive writes never change an extraction's success or its failure. */
+  /**
+   * Archive writes never change an extraction's success or its failure — but
+   * they are still work this service owns.
+   *
+   * Untracked, a write started as the response went out could still be in
+   * flight when shutdown closed the shared archive underneath it, and the
+   * failure is swallowed here, so the record vanished with nothing said. The
+   * search registry already tracked its own writes; this is the same promise
+   * kept for extraction.
+   */
   #record(record: ExtractionArchiveRecord): void {
-    void this.#archive?.recordExtraction(record).catch(() => undefined);
+    const archive = this.#archive;
+    if (!archive) return;
+
+    const write: Promise<void> = archive
+      .recordExtraction(record)
+      .catch(() => undefined)
+      .finally(() => this.#pendingWrites.delete(write));
+    this.#pendingWrites.add(write);
   }
 }
 
@@ -273,13 +314,19 @@ function domainOf(url: string): string | undefined {
   }
 }
 
-/** Counting semaphore with a FIFO queue, cancellable while waiting. */
+/** Counting semaphore with a bounded FIFO queue, cancellable while waiting. */
 class Semaphore {
   #available: number;
+  readonly #maxQueued: number;
   #waiters: { resolve: () => void; reject: (err: unknown) => void }[] = [];
 
-  constructor(limit: number) {
+  constructor(limit: number, maxQueued: number) {
     this.#available = Math.max(1, limit);
+    this.#maxQueued = Math.max(1, maxQueued);
+  }
+
+  get queued(): number {
+    return this.#waiters.length;
   }
 
   acquire(signal: AbortSignal): Promise<void> {
@@ -288,6 +335,9 @@ class Semaphore {
       this.#available--;
       return Promise.resolve();
     }
+    // Bounded so a burst cannot hold one timer, one abort listener and one
+    // pending request per caller, for as many callers as care to arrive.
+    if (this.#waiters.length >= this.#maxQueued) return Promise.reject(new ExtractionBusyError(this.#waiters.length));
 
     return new Promise<void>((resolve, reject) => {
       const waiter = {

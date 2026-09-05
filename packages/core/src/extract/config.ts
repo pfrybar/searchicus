@@ -18,6 +18,17 @@ export interface ExtractConfig {
   readonly enabled: boolean;
   /** Maximum extraction contexts open at once, across the whole process. */
   readonly maxConcurrent: number;
+  /**
+   * Callers that may wait for one of those, before further ones are refused.
+   *
+   * A render is seconds of browser work, so at the default of two at a time
+   * most of a long queue would reach the front only after its own deadline
+   * had passed — a place in it is a promise that cannot be kept. The cap is
+   * mostly about state rather than latency: without it a burst holds one
+   * timer, one abort listener and one pending request per caller, for as many
+   * callers as arrive.
+   */
+  readonly maxQueued: number;
   /** Deadline for reaching `domcontentloaded`. */
   readonly navigationTimeoutMs: number;
   /** Fixed pause after `domcontentloaded`, before the DOM is captured. */
@@ -42,6 +53,7 @@ export interface ExtractConfig {
 export const DEFAULT_EXTRACT_CONFIG: ExtractConfig = {
   enabled: false,
   maxConcurrent: 2,
+  maxQueued: 32,
   navigationTimeoutMs: 10_000,
   settleTimeoutMs: 2_000,
   // The stages have to fit inside this: navigation (10s) plus the settle (2s)
@@ -67,6 +79,7 @@ export function extractConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Extr
     // because a value was ambiguous. See envOptIn.
     enabled: envOptIn(env.SEARCHICUS_EXTRACT_ENABLED),
     maxConcurrent: positiveInt(env.SEARCHICUS_EXTRACT_MAX_CONCURRENT, DEFAULT_EXTRACT_CONFIG.maxConcurrent),
+    maxQueued: positiveInt(env.SEARCHICUS_EXTRACT_MAX_QUEUED, DEFAULT_EXTRACT_CONFIG.maxQueued),
     navigationTimeoutMs: positiveInt(
       env.SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS,
       DEFAULT_EXTRACT_CONFIG.navigationTimeoutMs,
