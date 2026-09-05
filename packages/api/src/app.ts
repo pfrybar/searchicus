@@ -9,6 +9,7 @@ import {
   ExtractRequestSchema,
   SearchEngineRegistry,
   SearchRequestSchema,
+  ThrottleOverloadedError,
   UnknownEngineError,
 } from "@searchicus/core";
 import express, { Router, type Express, type NextFunction, type Request, type Response } from "express";
@@ -162,7 +163,7 @@ function createSearchRouter(
     }
 
     try {
-      res.json(await registry.search(parsed.data));
+      res.json(await registry.search(parsed.data, { signal: abortOnDisconnect(res) }));
     } catch (err) {
       // A bad engine id is the caller's mistake, so it must not share the 502
       // that means "the backends are down". GET /engines already lists every
@@ -175,6 +176,16 @@ function createSearchRouter(
         res.status(502).json({ error: "Search unavailable" });
         return;
       }
+      // Not 502: the backends are fine, this server is simply full. Saying so
+      // with a Retry-After lets a client back off instead of hammering a
+      // queue that is already too long to join.
+      if (err instanceof ThrottleOverloadedError) {
+        res.status(503).set("retry-after", "30").json({ error: "Too many searches in progress. Try again shortly." });
+        return;
+      }
+      // A client that hung up gets no response and no error log: it asked
+      // for the search to stop, and it did.
+      if (clientGone(res)) return;
       next(err);
     }
   });
@@ -263,6 +274,29 @@ function createSearchRouter(
 }
 
 const NO_ARCHIVE = "No search archive is configured, so there is no history to show.";
+
+/**
+ * A signal that fires when the client gives up on this request.
+ *
+ * Searches are rate limited as whole fan-outs, and a caller waiting in that
+ * queue holds a place in it. A browser tab closed mid-search would otherwise
+ * keep that place — and the browser page behind it — until the deadline,
+ * while the person who closed it is no longer waiting for anything.
+ */
+function abortOnDisconnect(res: Response): AbortSignal {
+  const controller = new AbortController();
+  res.on("close", () => {
+    // `close` also fires on an ordinary completed response, which is not a
+    // disconnect and must not look like one.
+    if (!res.writableEnded) controller.abort();
+  });
+  return controller.signal;
+}
+
+/** True once the client is gone, in which case there is nobody left to answer. */
+function clientGone(res: Response): boolean {
+  return res.destroyed && !res.writableEnded;
+}
 
 /** Reads a numeric query parameter, leaving validation to the insights layer. */
 function optionalInt(value: unknown): number | undefined {

@@ -2,12 +2,24 @@
 export const DEFAULT_MIN_INTERVAL_MS = 5_000;
 /** Default jitter, as a fraction of the interval: 0.3 => 5s becomes 3.5s–6.5s. */
 export const DEFAULT_JITTER = 0.3;
+/**
+ * Default ceiling on callers waiting for a slot.
+ *
+ * A queue is a promise about the future, and at 5s apart a sixtieth caller is
+ * being promised a turn five minutes from now — long past any deadline it
+ * still has. Past this point refusing immediately is the honest answer, and
+ * the one that lets a caller retry or shed load rather than hold a connection
+ * open waiting for a turn it will never take.
+ */
+export const DEFAULT_MAX_QUEUED = 60;
 
 export interface ThrottleOptions {
   /** Minimum spacing between the *starts* of consecutive searches. */
   minIntervalMs?: number;
   /** Random spread applied to the interval, as a fraction of it (0 disables). */
   jitter?: number;
+  /** Callers that may wait at once before further ones are refused outright. */
+  maxQueued?: number;
   /** Injectable clock/RNG, so tests don't depend on wall time or luck. */
   now?: () => number;
   random?: () => number;
@@ -18,6 +30,21 @@ export class ThrottleAbortError extends Error {
     super(message);
     this.name = "ThrottleAbortError";
   }
+}
+
+/** Raised when the wait queue is full, so the caller can back off rather than wait. */
+export class ThrottleOverloadedError extends Error {
+  constructor(public readonly queued: number) {
+    super(`Too many searches are already waiting for a rate-limit slot (${queued})`);
+    this.name = "ThrottleOverloadedError";
+  }
+}
+
+interface Waiter {
+  resolve: () => void;
+  reject: (err: unknown) => void;
+  signal: AbortSignal | undefined;
+  onAbort: (() => void) | undefined;
 }
 
 /**
@@ -35,46 +62,106 @@ export class ThrottleAbortError extends Error {
  * Jitter is on by default. A metronomic request every 5.000s is itself a
  * recognizable signature, and the point of the persistent browser profile is
  * to look like ordinary use.
+ *
+ * **A slot is spent when it is granted, never when it is requested.** An
+ * earlier version reserved a timestamp up front and kept it when the caller
+ * gave up, on the reasoning that returning it would let an abandoned search's
+ * replacement start immediately. The cost of that was far worse than the
+ * problem: abandoned callers pushed the reservation horizon further out every
+ * time, so a burst of unauthenticated requests left the throttle handing out
+ * slots minutes into the future and every legitimate search in between failed.
+ * Callers waiting in line hold no slot, so a caller that leaves the queue
+ * costs the next one nothing.
  */
 export class Throttle {
   readonly #minIntervalMs: number;
   readonly #jitter: number;
+  readonly #maxQueued: number;
   readonly #now: () => number;
   readonly #random: () => number;
-  /** Earliest time the next caller may start. Reserved synchronously. */
+  /** Earliest time the next slot may be granted. */
   #nextAllowedAt = 0;
+  #waiters: Waiter[] = [];
+  #timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: ThrottleOptions = {}) {
     this.#minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
     this.#jitter = options.jitter ?? DEFAULT_JITTER;
+    this.#maxQueued = options.maxQueued ?? DEFAULT_MAX_QUEUED;
     this.#now = options.now ?? Date.now;
     this.#random = options.random ?? Math.random;
 
     if (this.#minIntervalMs < 0) throw new RangeError("minIntervalMs must not be negative");
     if (this.#jitter < 0 || this.#jitter > 1) throw new RangeError("jitter must be between 0 and 1");
+    if (this.#maxQueued < 1) throw new RangeError("maxQueued must be at least 1");
+  }
+
+  /** Callers currently waiting for a slot. */
+  get queued(): number {
+    return this.#waiters.length;
   }
 
   /**
-   * Waits until this caller's turn. The slot is reserved synchronously
-   * before awaiting, so concurrent callers queue in call order rather than
-   * racing for the same instant.
+   * Waits until this caller's turn, in arrival order.
    *
-   * Rejects with ThrottleAbortError if `signal` aborts first — the reserved
-   * slot is deliberately *not* returned to the pool, since giving it back
-   * would let an abandoned search's replacement start immediately and defeat
-   * the spacing.
+   * Rejects with ThrottleAbortError if `signal` aborts first, giving up its
+   * place without consuming a slot, and with ThrottleOverloadedError when the
+   * queue is already full.
    */
-  async acquire(signal?: AbortSignal): Promise<void> {
-    const startAt = Math.max(this.#now(), this.#nextAllowedAt);
-    this.#nextAllowedAt = startAt + this.#nextInterval();
+  acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new ThrottleAbortError());
 
-    const waitMs = startAt - this.#now();
-    if (waitMs <= 0) {
-      signal?.throwIfAborted();
-      return;
+    // Granted straight away only when nobody is ahead: letting a newcomer
+    // overtake a queue would starve whoever has been waiting longest.
+    if (this.#waiters.length === 0 && this.#now() >= this.#nextAllowedAt) {
+      this.#spendSlot();
+      return Promise.resolve();
     }
 
-    return sleep(waitMs, signal);
+    if (this.#waiters.length >= this.#maxQueued) {
+      return Promise.reject(new ThrottleOverloadedError(this.#waiters.length));
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const waiter: Waiter = { resolve, reject, signal, onAbort: undefined };
+      waiter.onAbort = (): void => {
+        this.#waiters = this.#waiters.filter((queued) => queued !== waiter);
+        reject(new ThrottleAbortError());
+        // The head of the queue may have just left; whoever is now first
+        // should not wait behind a departed caller's timer.
+        this.#schedule();
+      };
+
+      signal?.addEventListener("abort", waiter.onAbort, { once: true });
+      this.#waiters.push(waiter);
+      this.#schedule();
+    });
+  }
+
+  /** Marks a slot as taken now, and sets when the next one may be. */
+  #spendSlot(): void {
+    this.#nextAllowedAt = this.#now() + this.#nextInterval();
+  }
+
+  /** Arms a single timer for the moment the queue head may proceed. */
+  #schedule(): void {
+    if (this.#timer !== undefined || this.#waiters.length === 0) return;
+
+    const wait = Math.max(0, this.#nextAllowedAt - this.#now());
+    this.#timer = setTimeout(() => {
+      this.#timer = undefined;
+      this.#grantOne();
+    }, wait);
+  }
+
+  #grantOne(): void {
+    const waiter = this.#waiters.shift();
+    if (waiter) {
+      if (waiter.onAbort && waiter.signal) waiter.signal.removeEventListener("abort", waiter.onAbort);
+      this.#spendSlot();
+      waiter.resolve();
+    }
+    this.#schedule();
   }
 
   /** The configured interval with jitter applied, never negative. */

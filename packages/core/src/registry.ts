@@ -7,7 +7,7 @@ import { DuckDuckGoSearchEngine } from "./engines/duckduckgo.js";
 import { NoResultsError, OffTargetResultsError, SearchBoxUnavailableError } from "./engines/errors.js";
 import { StartpageSearchEngine } from "./engines/startpage.js";
 import { rankResults } from "./ranking.js";
-import { Throttle, ThrottleAbortError, type ThrottleOptions } from "./throttle.js";
+import { Throttle, ThrottleAbortError, ThrottleOverloadedError, type ThrottleOptions } from "./throttle.js";
 import type {
   EngineFailureKind,
   EngineSearchOutcome,
@@ -148,7 +148,7 @@ export class SearchEngineRegistry {
    * AllEnginesFailedError when the bad id was the only one named, and a
    * silent `degraded: true` when it wasn't.
    */
-  async search(request: SearchRequest): Promise<MergedSearchResponse> {
+  async search(request: SearchRequest, options: { signal?: AbortSignal } = {}): Promise<MergedSearchResponse> {
     const { engines: requestedEngineIds, limit, ...query } = request;
     for (const engineId of requestedEngineIds ?? []) {
       if (!this.engines.has(engineId)) throw new UnknownEngineError(engineId);
@@ -157,7 +157,7 @@ export class SearchEngineRegistry {
     const started = Date.now();
     const searchId = createSearchId();
     const engineIds = requestedEngineIds ?? this.list().map((engine) => engine.id);
-    const outcomes = await this.searchAll(query, engineIds);
+    const outcomes = await this.searchAll(query, engineIds, options.signal);
     const tookMs = Date.now() - started;
     const response = outcomes.some((outcome) => outcome.ok)
       ? {
@@ -195,13 +195,19 @@ export class SearchEngineRegistry {
   async searchAll(
     query: SearchQuery,
     engineIds: string[] = this.list().map((engine) => engine.id),
+    signal?: AbortSignal,
   ): Promise<EngineSearchOutcome[]> {
     const started = Date.now();
     const deadline = started + this.#resultsTimeoutMs;
 
     try {
-      await this.#awaitSlot(deadline);
+      await this.#awaitSlot(deadline, signal);
     } catch (err) {
+      // An overloaded throttle is the one entry failure that is not about
+      // the backends at all, so it is not dressed up as every engine having
+      // failed: the caller should back off and retry, not conclude that
+      // search is broken.
+      if (err instanceof ThrottleOverloadedError) throw err;
       return engineIds.map((engineId) => this.#failedOutcome(engineId, Date.now() - started, err));
     }
 
@@ -209,7 +215,7 @@ export class SearchEngineRegistry {
       engineIds.map(async (engineId): Promise<EngineSearchOutcome> => {
         const started = Date.now();
         try {
-          const response = await this.#runEngine(engineId, query, deadline);
+          const response = await this.#runEngine(engineId, query, deadline, signal);
           return { engineId, ok: true, tookMs: Date.now() - started, response };
         } catch (err) {
           return this.#failedOutcome(engineId, Date.now() - started, err);
@@ -218,8 +224,15 @@ export class SearchEngineRegistry {
     );
   }
 
-  /** Waits for the shared rate-limit slot, bounded by the results deadline. */
-  async #awaitSlot(deadline: number): Promise<void> {
+  /**
+   * Waits for the shared rate-limit slot, bounded by the results deadline and
+   * by the caller's own signal.
+   *
+   * Passing the caller's signal down is what makes a disconnected client
+   * cheap: the throttle spends a slot when it grants one, so a caller that
+   * leaves the queue hands its place to whoever is behind it.
+   */
+  async #awaitSlot(deadline: number, signal?: AbortSignal): Promise<void> {
     if (!this.#throttle) return;
 
     const remaining = deadline - Date.now();
@@ -228,7 +241,7 @@ export class SearchEngineRegistry {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
     try {
-      await this.#throttle.acquire(controller.signal);
+      await this.#throttle.acquire(signal ? AbortSignal.any([controller.signal, signal]) : controller.signal);
     } finally {
       clearTimeout(timer);
     }
@@ -240,21 +253,34 @@ export class SearchEngineRegistry {
    * settles — including when it rejects, so late failures never surface as
    * unhandled rejections.
    */
-  async #runEngine(engineId: string, query: SearchQuery, deadline: number): Promise<SearchResponse> {
+  async #runEngine(
+    engineId: string,
+    query: SearchQuery,
+    deadline: number,
+    signal?: AbortSignal,
+  ): Promise<SearchResponse> {
     if (this.#closed) throw new Error("SearchEngineRegistry is closed");
 
     const engine = this.engines.get(engineId);
     if (!engine) throw new UnknownEngineError(engineId);
 
     const controller = new AbortController();
+    // A caller that has gone away should not leave a browser page working on
+    // its behalf for the rest of the session budget.
+    const onCallerGone = (): void => controller.abort();
+    signal?.addEventListener("abort", onCallerGone, { once: true });
     const scope = new EngineRunScope(this.#browser, controller.signal);
-    const sessionTimer = setTimeout(() => controller.abort(), this.#sessionTimeoutMs);
+    const sessionTimer = setTimeout(() => {
+      signal?.removeEventListener("abort", onCallerGone);
+      controller.abort();
+    }, this.#sessionTimeoutMs);
 
     let outcome: SearchResponse | SearchSession;
     try {
       outcome = await withDeadline(engine.search(query, scope), deadline, `Engine "${engineId}" timed out`);
     } catch (err) {
       clearTimeout(sessionTimer);
+      signal?.removeEventListener("abort", onCallerGone);
       controller.abort();
       await scope.releaseAll();
       throw err;
@@ -264,6 +290,7 @@ export class SearchEngineRegistry {
     // results; only a SearchSession keeps the lease open past this point.
     if (!isSearchSession(outcome)) {
       clearTimeout(sessionTimer);
+      signal?.removeEventListener("abort", onCallerGone);
       await scope.releaseAll();
       return outcome;
     }
@@ -274,6 +301,7 @@ export class SearchEngineRegistry {
         .catch(() => undefined)
         .finally(() => {
           clearTimeout(sessionTimer);
+          signal?.removeEventListener("abort", onCallerGone);
           return scope.releaseAll();
         }),
     );
@@ -377,6 +405,7 @@ function classifyFailure(err: unknown): EngineFailureKind {
   if (err instanceof OffTargetResultsError) return "off_target";
   if (err instanceof SearchBoxUnavailableError) return "search_box_unavailable";
   if (err instanceof UnknownEngineError) return "unknown_engine";
+  if (err instanceof ThrottleOverloadedError) return "overloaded";
   if (err instanceof ThrottleAbortError) return "timeout";
 
   const message = err instanceof Error ? err.message : String(err);

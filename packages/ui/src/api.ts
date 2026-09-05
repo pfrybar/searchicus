@@ -30,11 +30,21 @@ export async function listEngines(): Promise<EngineInfo[]> {
   return res.json() as Promise<EngineInfo[]>;
 }
 
-export async function search(request: SearchRequest): Promise<SearchResponseBody> {
+/**
+ * Runs a search, cancellable through `signal`.
+ *
+ * Cancelling is not only a local tidy-up: searches are rate limited as whole
+ * fan-outs, so a request the browser abandons would otherwise keep its place
+ * in the server's queue — and the browser page behind it — for the full
+ * deadline. Aborting the fetch closes the connection, which is what the
+ * server watches for.
+ */
+export async function search(request: SearchRequest, signal?: AbortSignal): Promise<SearchResponseBody> {
   const res = await fetch(`${API_BASE}/search`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request),
+    ...(signal ? { signal } : {}),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<SearchResponseBody>;
@@ -42,11 +52,12 @@ export async function search(request: SearchRequest): Promise<SearchResponseBody
 
 export type ExtractResponseBody = ExtractResponse;
 
-export async function extract(request: ExtractRequest): Promise<ExtractResponseBody> {
+export async function extract(request: ExtractRequest, signal?: AbortSignal): Promise<ExtractResponseBody> {
   const res = await fetch(`${API_BASE}/extract`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request),
+    ...(signal ? { signal } : {}),
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<ExtractResponseBody>;
