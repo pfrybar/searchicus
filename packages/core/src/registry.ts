@@ -557,7 +557,9 @@ function classifyFailure(err: unknown): EngineFailureKind {
   if (err instanceof OffTargetResultsError) return "off_target";
   if (err instanceof SearchBoxUnavailableError) return "search_box_unavailable";
   if (err instanceof UnknownEngineError) return "unknown_engine";
-  if (err instanceof ThrottleOverloadedError) return "overloaded";
+  // No branch for being overloaded: a search that was refused a slot never
+  // becomes an engine outcome, so it never reaches this function. See
+  // SearchOverloadedError.
   if (err instanceof ThrottleAbortError || err instanceof EngineTimeoutError) return "timeout";
   if (err instanceof RegistryClosedError) return "closed";
   if (err instanceof Error && err.name === "BrowserUnavailableError") return "browser_unavailable";
