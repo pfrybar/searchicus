@@ -78,6 +78,61 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /extract/i })).not.toBeInTheDocument();
   });
 
+  it("outlines and finds within a result without exposing provider details", async () => {
+    mockFetchSequence([
+      { url: "/api/health", body: { status: "ok", extract: true } },
+      { url: "/api/search", body: searchResponse() },
+      {
+        url: "/api/outline",
+        body: {
+          url: "https://example.com/cats",
+          finalUrl: "https://example.com/cats",
+          title: "Cats 101",
+          totalChars: 200,
+          navigable: true,
+          sections: [{ heading: "Care", depth: 0, offset: 0, chars: 180 }],
+          tookMs: 20,
+        },
+      },
+      {
+        url: "/api/find",
+        body: {
+          url: "https://example.com/cats",
+          finalUrl: "https://example.com/cats",
+          title: "Cats 101",
+          query: "cats",
+          totalChars: 200,
+          navigable: true,
+          tookMs: 10,
+          untrusted: true,
+          matches: [
+            {
+              path: ["Care"],
+              offset: 0,
+              coverage: 1,
+              markdown: "## Care\n\nCats need care.",
+              chars: 24,
+              sectionChars: 24,
+              truncated: false,
+            },
+          ],
+        },
+      },
+    ]);
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
+    fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+    await screen.findByText("Cats 101");
+
+    fireEvent.click(screen.getByRole("button", { name: /^outline$/i }));
+    expect(await screen.findByText("Care", { exact: false })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^find$/i }));
+    expect(await screen.findByText("Cats need care.", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/untrusted page content/i)).toBeInTheDocument();
+  });
+
   it("extracts a result and shows its content as text, not as markup", async () => {
     mockFetchSequence([
       { url: "/api/health", body: { status: "ok", extract: true } },

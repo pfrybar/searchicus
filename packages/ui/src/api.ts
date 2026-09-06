@@ -2,6 +2,10 @@ import type {
   EngineMetricsReport,
   ExtractRequest,
   ExtractResponse,
+  FindRequest,
+  FindResponse,
+  OutlineRequest,
+  OutlineResponse,
   PublicSearchResponse,
   SearchDetail,
   SearchRequest,
@@ -50,6 +54,32 @@ export async function extract(request: ExtractRequest, signal?: AbortSignal): Pr
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json() as Promise<ExtractResponseBody>;
+}
+
+export type FindResponseBody = FindResponse;
+
+export async function find(request: FindRequest, signal?: AbortSignal): Promise<FindResponseBody> {
+  const res = await fetch(`${API_BASE}/find`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+    ...(signal ? { signal } : {}),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<FindResponseBody>;
+}
+
+export type OutlineResponseBody = OutlineResponse;
+
+export async function outline(request: OutlineRequest, signal?: AbortSignal): Promise<OutlineResponseBody> {
+  const res = await fetch(`${API_BASE}/outline`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+    ...(signal ? { signal } : {}),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json() as Promise<OutlineResponseBody>;
 }
 
 /** What this deployment can actually do, so the UI can hide what it cannot. */
