@@ -537,3 +537,48 @@ describe("ExtractionService page cache", () => {
     expect(rendered).toEqual([PAGE_URL, "https://example.test/blocking"]);
   });
 });
+
+describe("ExtractionService.outline", () => {
+  const doc = ["# Guide", "", "Intro.", "", "## First", "", "Body one.", "", "## Second", "", "Body two."].join("\n");
+  const outlineParse: DocumentParser = async () => ({ title: "Guide", markdown: doc, wordCount: 8 });
+
+  it("describes structure without returning content", async () => {
+    const page = await service({ parse: outlineParse }).outline({ url: PAGE_URL });
+    expect(page.sections.map((s) => s.heading)).toEqual(["Guide", "First", "Second"]);
+    expect(page.totalChars).toBe(doc.length);
+    expect(page).not.toHaveProperty("markdown");
+  });
+
+  it("shares the render with a read, so outlining then reading costs one render", async () => {
+    const renderer = new FakeRenderer();
+    const extraction = service({ renderer, parse: outlineParse });
+
+    const page = await extraction.outline({ url: PAGE_URL });
+    const second = page.sections[1];
+    const read = await extraction.extract({ url: PAGE_URL, offset: second?.offset, maxChars: 200 });
+
+    expect(read.markdown.startsWith("## First")).toBe(true);
+    expect(renderer.rendered).toEqual([PAGE_URL]);
+  });
+
+  it("is not archived, because nothing was read", async () => {
+    // Otherwise structure probes would count among the reads the extraction
+    // metrics exist to describe.
+    const archive = new FakeArchive();
+    await service({ archive, parse: outlineParse }).outline({ url: PAGE_URL });
+    await settle();
+    expect(archive.extractions).toHaveLength(0);
+  });
+
+  it("checks the ref exactly as a read does", async () => {
+    const archive = new FakeArchive({ "abc123-1": { searchId: "abc123", ref: "abc123-1", url: PAGE_URL, rank: 1 } });
+    const extraction = service({ archive, parse: outlineParse });
+    await expect(extraction.outline({ url: PAGE_URL, ref: "abc123-9" })).rejects.toBeInstanceOf(ExtractRequestError);
+    await expect(extraction.outline({ url: PAGE_URL, ref: "abc123-1" })).resolves.toMatchObject({ ref: "abc123-1" });
+  });
+
+  it("refuses when extraction is switched off", async () => {
+    const off = new ExtractionService();
+    await expect(off.outline({ url: PAGE_URL })).rejects.toBeInstanceOf(ExtractionDisabledError);
+  });
+});

@@ -7,12 +7,13 @@ import {
   ExtractionService,
   ExtractRequestSchema,
   MAX_SEARCH_LIMIT,
+  OutlineRequestSchema,
   SearchEngineRegistry,
   SearchRequestSchema,
 } from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
-import { formatExtract, formatSearch } from "./format.js";
+import { formatExtract, formatOutline, formatSearch } from "./format.js";
 
 /** Parse and validate the CLI's final merged-result limit with the shared rules. */
 export function parseLimit(value: string): number {
@@ -114,6 +115,27 @@ export function createProgram(
       }
 
       console.log(formatExtract(response).join("\n"));
+    });
+
+  program
+    .command("outline <url>")
+    .description("List a page's sections and the offsets to read them")
+    .option("-r, --ref <ref>", "result ref from an earlier search, tying this read to that ranking")
+    .option("--json", "print raw JSON instead of a table of contents")
+    .action(async (url: string, opts: { ref?: string; json?: boolean }) => {
+      const parsed = OutlineRequestSchema.safeParse({ url, ref: opts.ref });
+      if (!parsed.success) {
+        throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid outline request");
+      }
+
+      const page = await extraction.outline(parsed.data);
+
+      if (opts.json) {
+        console.log(JSON.stringify(page, null, 2));
+        return;
+      }
+
+      console.log(formatOutline(page).join("\n"));
     });
 
   program

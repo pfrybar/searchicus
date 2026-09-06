@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sliceWindow, splitSections } from "./sections.js";
+import { buildOutline, sliceWindow, splitSections } from "./sections.js";
 
 const doc = [
   "Preamble before any heading.",
@@ -146,5 +146,30 @@ describe("sliceWindow", () => {
     const window = sliceWindow(doc, { offset: 10_000, maxChars: 100 });
     expect(window.offset).toBeLessThanOrEqual(doc.length);
     expect(window.nextOffset).toBeUndefined();
+  });
+});
+
+describe("buildOutline", () => {
+  it("addresses sections by the offset extract already takes", () => {
+    const { sections } = buildOutline(doc);
+    // No second addressing scheme: read a heading, pass its offset back.
+    for (const section of sections) {
+      expect(sliceWindow(doc, { offset: section.offset, maxChars: 10_000 }).offset).toBe(section.offset);
+    }
+    expect(sections.map((s) => s.heading)).toEqual([null, "Title", "First", "Second"]);
+    expect(sections.map((s) => s.depth)).toEqual([0, 0, 1, 1]);
+  });
+
+  it("says when a page has too little structure to navigate by", () => {
+    // "(preamble) 68297c" is technically an outline and useless as one. Three
+    // of twenty-seven real result pages look like this.
+    expect(buildOutline("just one long paragraph, no headings at all").navigable).toBe(false);
+    expect(buildOutline("").navigable).toBe(false);
+
+    const dominated = `# One\n\n${"x".repeat(5000)}\n\n## Two\n\nshort\n\n## Three\n\nshort`;
+    expect(buildOutline(dominated).sections.length).toBeGreaterThanOrEqual(3);
+    expect(buildOutline(dominated).navigable).toBe(false);
+
+    expect(buildOutline(doc).navigable).toBe(true);
   });
 });

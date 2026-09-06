@@ -15,6 +15,7 @@ export * from "./extract/types.js";
 export * from "./extract/errors.js";
 export * from "./extract/config.js";
 export * from "./extract/address.js";
+export * from "./extract/page-cache.js";
 export * from "./extract/sections.js";
 export * from "./extract/service.js";
 export * from "./engines/errors.js";

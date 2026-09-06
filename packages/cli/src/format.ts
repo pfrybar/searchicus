@@ -1,4 +1,4 @@
-import type { ExtractResponse, MergedSearchResponse } from "@searchicus/core";
+import type { ExtractResponse, MergedSearchResponse, OutlineResponse } from "@searchicus/core";
 
 /** Render one merged search response as a compact, attributable result list. */
 export function formatSearch(response: MergedSearchResponse): string[] {
@@ -16,6 +16,24 @@ export function formatSearch(response: MergedSearchResponse): string[] {
     if (result.snippet) lines.push(`   ${result.snippet}`);
   });
 
+  return lines;
+}
+
+/** Render a page's outline as an indented table of contents. */
+export function formatOutline(page: OutlineResponse): string[] {
+  const lines = [
+    page.title,
+    page.finalUrl,
+    `${page.totalChars} chars in ${page.sections.length} sections${page.navigable ? "" : " — too little structure to navigate, read it instead"}`,
+    "",
+    " offset   chars  section",
+  ];
+  for (const s of page.sections) {
+    // Offset first: it is the thing you copy into the next command.
+    lines.push(
+      `${String(s.offset).padStart(7)}  ${String(s.chars).padStart(6)}  ${"  ".repeat(s.depth)}${s.heading ?? "(untitled)"}`,
+    );
+  }
   return lines;
 }
 

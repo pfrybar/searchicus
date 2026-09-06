@@ -246,6 +246,45 @@ curl -s localhost:3000/extract -H 'content-type: application/json' \
   -d '{"url":"https://example.com/","maxChars":500}' | jq
 ```
 
+### `POST /outline`
+
+A page's structure, without its content. Same enablement, provenance and
+address rules as `/extract`.
+
+```json
+{ "url": "https://www.sqlite.org/wal.html" }
+```
+
+```json
+{
+  "title": "Write-Ahead Logging",
+  "totalChars": 35026,
+  "navigable": true,
+  "sections": [
+    { "heading": "1. Overview", "depth": 0, "offset": 84, "chars": 3646 },
+    { "heading": "2.1. Checkpointing", "depth": 1, "offset": 4840, "chars": 1109 }
+  ]
+}
+```
+
+Sections are addressed by the **`offset` that `extract` already takes** — read
+a heading, pass its offset back — so there is no second addressing scheme and
+no handle to keep. `depth` is for indentation; the path is implied by it.
+
+`navigable` is false when the page has too little structure to be worth
+navigating: fewer than three sections, or one holding more than half the
+document. The sections are still returned, because "one section of 68,000
+characters" is information, but a caller should read rather than navigate.
+
+Outlining then reading costs **one render** — the parsed page is cached, so
+the read that follows is served from memory. Measured against
+`sqlite.org/wal.html`: an 835-character outline (2.4% of the document) plus two
+1,580-character windows found an answer that cost 23,338 characters across 22
+calls when paging from the top.
+
+Outlines are not archived: nothing was read, and counting structure probes as
+reads would distort the extraction metrics.
+
 ### Dashboard endpoints
 
 Read-only views over the local archive, serving the UI's Metrics and History

@@ -410,6 +410,13 @@ turns off for `false`, `0`, `no` or `off` and stays on for anything else.
 Case and surrounding spaces do not matter, and an unrecognised value leaves
 the switch at its default — which for both directions is the safe one.
 
+`searchicus outline <url>` (and `POST /outline`, and the `outline` MCP tool)
+lists a page's sections and the offset to read each, so an agent can see what
+a long page contains — and what it does not — before spending context on it.
+Sections are addressed by the same offsets `extract` takes, so there is no
+second addressing scheme; outlining then reading costs one render, because the
+parsed page is already in memory.
+
 A page longer than the budget is read a window at a time: the response says
 where the window started and where to continue, and those offsets snap to
 **section boundaries** so a window begins at a heading rather than mid-sentence

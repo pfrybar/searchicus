@@ -99,6 +99,54 @@ export function splitSections(markdown: string): Section[] {
   return sections;
 }
 
+/** One entry in a page's outline: a heading, and where to read it. */
+export interface OutlineSection {
+  /** The heading itself, or null for content before the first one. */
+  readonly heading: string | null;
+  /** Nesting level, 0-based. Render as indentation rather than repeating the path. */
+  readonly depth: number;
+  /** Pass to `extract` as `offset` to read this section. */
+  readonly offset: number;
+  readonly chars: number;
+}
+
+/**
+ * Whether an outline is worth navigating by.
+ *
+ * A page with two sections, or one section holding most of it, produces an
+ * outline that is technically correct and useless — "(preamble) 68297c" is
+ * not navigation. Measured against real search results, three of twenty-seven
+ * pages look like this, so it is worth saying rather than leaving a caller to
+ * infer it from a one-entry list.
+ */
+const MIN_USEFUL_SECTIONS = 3;
+const DOMINANT_SECTION_SHARE = 0.5;
+
+/**
+ * Describes a document's structure, addressed by the same offsets `extract`
+ * takes.
+ *
+ * Offsets rather than indices deliberately: an index would need a second
+ * addressing scheme and a lookup table, where an offset is what the read
+ * method already accepts. The outline is self-describing — read a heading,
+ * pass its offset back.
+ */
+export function buildOutline(markdown: string): { sections: OutlineSection[]; navigable: boolean } {
+  const sections = splitSections(markdown).map((section) => ({
+    heading: section.headings.at(-1) ?? null,
+    depth: Math.max(0, section.headings.length - 1),
+    offset: section.start,
+    chars: section.end - section.start,
+  }));
+
+  const biggest = Math.max(0, ...sections.map((s) => s.chars));
+  const navigable =
+    sections.length >= MIN_USEFUL_SECTIONS &&
+    (markdown.length === 0 || biggest / markdown.length < DOMINANT_SECTION_SHARE);
+
+  return { sections, navigable };
+}
+
 /**
  * Returns the window of `markdown` starting at or before `offset`.
  *

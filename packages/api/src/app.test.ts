@@ -194,6 +194,31 @@ describe("request limits", () => {
   });
 });
 
+describe("POST /outline", () => {
+  it("returns a page's structure, addressed by the offsets extract takes", async () => {
+    const res = await request(createApp(testRegistry(), { extraction: testExtraction() }))
+      .post("/outline")
+      .send({
+        url: "https://example.com/a",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.sections.length).toBeGreaterThan(0);
+    expect(res.body.sections[0]).toMatchObject({ offset: expect.any(Number), chars: expect.any(Number) });
+    expect(res.body).not.toHaveProperty("markdown");
+  });
+
+  it("rejects a bad request and reports a disabled deployment separately", async () => {
+    const app = createApp(testRegistry(), { extraction: testExtraction() });
+    expect((await request(app).post("/outline").send({})).status).toBe(400);
+    // A malformed URL is the caller's to fix, exactly as it is for a read.
+    expect((await request(app).post("/outline").send({ url: "not a url" })).status).toBe(400);
+
+    const off = createApp(testRegistry());
+    expect((await request(off).post("/outline").send({ url: "https://example.com/" })).status).toBe(503);
+  });
+});
+
 describe("POST /extract", () => {
   function extractApp(renderer?: PageRenderer) {
     return createApp(testRegistry(), { extraction: testExtraction({}, renderer) });
