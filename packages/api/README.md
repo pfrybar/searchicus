@@ -295,9 +295,24 @@ and it is comparable across queries — which the internal ranking score is
 not, so the score is deliberately not published. Ordering comes from the
 score; `coverage` is the number worth acting on.
 
-Sections come back whole. `offset` reads one in place with `extract`, and
-`chars < sectionChars` is exactly `truncated`, which happens only to the last
-match the budget reaches.
+Sections come back whole where they fit — measured across real reference
+pages, one section in 134 exceeds the default budget. `offset` reads a match
+in place with `extract`, and `sectionChars` says how much the enclosing
+section holds.
+
+When a section is too large to return whole, it is **not** cut from the top.
+It was chosen because the query terms are in it, so cutting from the start
+would return a window picked without reference to where they are — asking
+`sqlite.org/pragma.html` for `busy_timeout` used to score a 93,820-character
+section on a term 90,000 characters in and hand back the 2,570 characters
+about `analysis_limit`. Instead the section is split at its blank lines and
+the same scoring runs over those blocks, so what comes back is the matching
+part. Blocks that turn out to be adjacent are merged into one excerpt, since
+two halves of a passage should not arrive as two unrelated quotations.
+
+`coverage` is therefore measured on the text actually returned, not on the
+section it came from. A number describing content that was not delivered is
+worse than no number at all.
 
 An empty `matches` is a `200`. The caller asked a question and got a true
 answer, and an error would tell an agent to retry something that will keep

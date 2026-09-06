@@ -274,6 +274,102 @@ describe("findSections", () => {
   });
 });
 
+describe("findSections inside an oversized section", () => {
+  /** The shape that started this: one section far bigger than any budget. */
+  const buried = [
+    "# Reference",
+    "",
+    "## List Of Everything",
+    "",
+    filler("analysis_limit and what it does", 12),
+    "",
+    filler("auto_vacuum and its modes", 12),
+    "",
+    `The busy_timeout pragma sets how long a connection waits on a lock. ${filler("busy timeouts", 6)}`,
+    "",
+    filler("cache_size and memory use", 12),
+  ].join("\n");
+
+  it("returns the part of the section that matches, not its opening", () => {
+    // Previously this scored the section on a term near its end and then
+    // returned its beginning — text chosen without reference to the query.
+    // Against sqlite.org/pragma.html that meant answering a `busy_timeout`
+    // question with the paragraph about `analysis_limit`.
+    const [match] = matchesIn(buried, "busy_timeout", 900);
+
+    expect(match?.markdown).toContain("busy_timeout pragma sets how long");
+    expect(match?.markdown).not.toContain("analysis_limit");
+    expect(match?.truncated).toBe(true);
+    expect(match?.offset).toBeGreaterThan(0);
+  });
+
+  it("reports coverage of what it returned, so the number is about the text you got", () => {
+    const [match] = matchesIn(buried, "busy_timeout", 900);
+
+    // The old number described the whole section, most of which was never
+    // sent. Now it describes the excerpt, and it is high because the excerpt
+    // is the matching part rather than in spite of it.
+    expect(match?.coverage).toBe(1);
+    expect(match?.markdown).toContain("busy_timeout");
+  });
+
+  it("still reads the offset back to the same text with extract", () => {
+    const [match] = matchesIn(buried, "busy_timeout", 900);
+    const at = match?.offset ?? 0;
+
+    expect(buried.slice(at, at + (match?.chars ?? 0))).toBe(match?.markdown);
+  });
+
+  it("merges chosen blocks that turn out to be neighbours", () => {
+    // Merging is presentation, not selection: blocks are picked on score and
+    // any that are adjacent are emitted as one excerpt, so a passage split
+    // across a blank line does not arrive as two unrelated quotations.
+    const page = [
+      "# Guide",
+      "",
+      "## Everything",
+      "",
+      filler("unrelated matters", 30),
+      "",
+      "Checkpoint starvation stalls the log.",
+      "",
+      "That starvation is why the checkpoint never completes.",
+      "",
+      filler("other unrelated matters", 30),
+    ].join("\n");
+
+    // Small enough that the section cannot come back whole, so the blocks
+    // are what get chosen.
+    const matches = matchesIn(page, "checkpoint starvation", 400);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.markdown).toContain("stalls the log");
+    expect(matches[0]?.markdown).toContain("never completes");
+    // One excerpt, not two, and the blank line between them is kept.
+    expect(matches[0]?.markdown).not.toContain("unrelated");
+  });
+
+  it("does not pad the budget with blocks that hold none of the query", () => {
+    const page = [
+      "# Guide",
+      "",
+      "## Everything",
+      "",
+      `Checkpoint starvation is the problem. ${filler("starvation", 4)}`,
+      "",
+      filler("something else entirely", 120),
+    ].join("\n");
+
+    // Budget is ample; the point is that leftover room is not filled with
+    // text that happens to fit.
+    const matches = matchesIn(page, "checkpoint starvation", 4_000);
+    const text = matches.map((match) => match.markdown).join("\n");
+
+    expect(text).toContain("Checkpoint starvation is the problem");
+    expect(text).not.toContain("something else entirely");
+  });
+});
+
 describe("findSections navigable", () => {
   it("reports the same structure verdict outline does", () => {
     // One predicate, one split. If these ever disagree, a caller is being
