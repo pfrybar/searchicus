@@ -11,7 +11,7 @@
  * incoherent.
  */
 import { contentTokens, countTokenMatches, tokenize } from "../relevance.js";
-import { safeCut, splitSections, type Section } from "./sections.js";
+import { isNavigable, safeCut, splitSections, type Section } from "./sections.js";
 
 /**
  * How much a query term in a heading counts for, against one in the body.
@@ -96,15 +96,30 @@ interface ScoredSection {
 /**
  * The best sections of a document for a query, best first, within a budget.
  *
- * Returns an empty list for a query with no content words and for a document
+ * Returns no matches for a query with no content words and for a document
  * where nothing clears the coverage floor. Both are answers rather than
  * errors: the caller asked a question, and "this page does not discuss that"
  * is a true one.
+ *
+ * `navigable` is the same predicate `outline` reports, and it is what
+ * separates that true answer from a useless one. A page with no real
+ * structure has one enormous section, so there is nothing for section
+ * matching to grip: an empty result there means "this page could not be
+ * searched this way", not "this page lacks the information". Found by
+ * evaluation — agents could not tell the two apart and stopped looking.
  */
-export function findSections(markdown: string, query: string, maxChars: number): FindMatch[] {
+export function findSections(
+  markdown: string,
+  query: string,
+  maxChars: number,
+): { matches: FindMatch[]; navigable: boolean } {
   const terms = contentTokens(query);
   const sections = splitSections(markdown);
-  if (terms.length === 0 || sections.length === 0) return [];
+  const navigable = isNavigable(
+    sections.map((section) => section.end - section.start),
+    markdown.length,
+  );
+  if (terms.length === 0 || sections.length === 0) return { matches: [], navigable };
 
   const tokens = sections.map(sectionTokens);
   const lengths = sections.map((section) => Math.max(section.end - section.start, LENGTH_FLOOR));
@@ -169,7 +184,7 @@ export function findSections(markdown: string, query: string, maxChars: number):
     // sections in the same order.
     .sort((a, b) => b.score - a.score || a.section.start - b.section.start);
 
-  return select(markdown, ranked, maxChars);
+  return { matches: select(markdown, ranked, maxChars), navigable };
 }
 
 /**

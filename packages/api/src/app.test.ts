@@ -226,7 +226,12 @@ describe("POST /find", () => {
     const res = await request(findApp()).post("/find").send({ url: "https://example.com/a", query: "readable prose" });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ query: "readable prose", untrusted: true, totalChars: expect.any(Number) });
+    expect(res.body).toMatchObject({
+      query: "readable prose",
+      untrusted: true,
+      totalChars: expect.any(Number),
+      navigable: expect.any(Boolean),
+    });
     expect(res.body.matches[0]).toMatchObject({
       offset: expect.any(Number),
       coverage: expect.any(Number),

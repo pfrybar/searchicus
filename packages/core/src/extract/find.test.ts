@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { FindMatch } from "./find.js";
 import { countTokenMatches } from "../relevance.js";
 import { COVERAGE_FLOOR, findSections, LENGTH_FLOOR, MIN_MATCH_CHARS } from "./find.js";
+import { buildOutline } from "./sections.js";
+
+/** Most tests here are about which sections come back, not about structure. */
+const matchesIn = (markdown: string, query: string, maxChars: number): FindMatch[] =>
+  findSections(markdown, query, maxChars).matches;
 
 /** Prose long enough that a section is not scored as a heading fragment. */
 function filler(topic: string, sentences = 6): string {
@@ -27,7 +33,7 @@ const PAGE = [
 
 describe("findSections", () => {
   it("returns the section that answers the query, not the one that repeats the topic", () => {
-    const matches = findSections(PAGE, "checkpoint starvation", 6_000);
+    const matches = matchesIn(PAGE, "checkpoint starvation", 6_000);
 
     expect(matches[0]?.path).toEqual(["Write-Ahead Logging", "Checkpointing"]);
     expect(matches[0]?.markdown).toContain("Checkpoint starvation happens");
@@ -38,13 +44,13 @@ describe("findSections", () => {
     // sections: "database" is everywhere here and locates nothing, while
     // "starvation" appears once and locates the answer exactly. Without
     // in-page IDF the longest section mentioning "database" would win.
-    const matches = findSections(PAGE, "database starvation", 6_000);
+    const matches = matchesIn(PAGE, "database starvation", 6_000);
 
     expect(matches[0]?.path.at(-1)).toBe("Checkpointing");
   });
 
   it("carries the whole heading path, since a ranked list has no order to imply it", () => {
-    const matches = findSections(PAGE, "checkpoint starvation", 6_000);
+    const matches = matchesIn(PAGE, "checkpoint starvation", 6_000);
 
     // "Checkpointing" alone would be ambiguous on a page with several
     // chapters. In an outline the reader infers the path from position;
@@ -53,14 +59,14 @@ describe("findSections", () => {
   });
 
   it("returns whole sections, and says so", () => {
-    const matches = findSections(PAGE, "checkpoint starvation", 6_000);
+    const matches = matchesIn(PAGE, "checkpoint starvation", 6_000);
 
     expect(matches[0]?.truncated).toBe(false);
     expect(matches[0]?.chars).toBe(matches[0]?.sectionChars);
   });
 
   it("cuts only the last section the budget reaches", () => {
-    const matches = findSections(PAGE, "checkpoint starvation database overview", 700);
+    const matches = matchesIn(PAGE, "checkpoint starvation database overview", 700);
 
     expect(matches.length).toBeGreaterThan(0);
     expect(matches.slice(0, -1).every((match) => !match.truncated)).toBe(true);
@@ -94,7 +100,7 @@ describe("findSections", () => {
       filler("checkpoint starvation once more", 20),
     ].join("\n");
 
-    const matches = findSections(page, "checkpoint starvation", 1_500);
+    const matches = matchesIn(page, "checkpoint starvation", 1_500);
 
     expect(matches.length).toBeGreaterThan(0);
     for (const match of matches) {
@@ -116,7 +122,7 @@ describe("findSections", () => {
       "It stalls the log.",
     ].join("\n");
 
-    const [match] = findSections(page, "checkpoint starvation", 6_000);
+    const [match] = matchesIn(page, "checkpoint starvation", 6_000);
 
     expect(match?.truncated).toBe(false);
     expect(match?.chars).toBeLessThan(MIN_MATCH_CHARS);
@@ -136,7 +142,7 @@ describe("findSections", () => {
       filler("checkpoint starvation and how it stalls the log", 40),
     ].join("\n");
 
-    const matches = findSections(page, "checkpoint starvation", 600);
+    const matches = matchesIn(page, "checkpoint starvation", 600);
 
     expect(matches).toHaveLength(1);
     expect(matches[0]?.truncated).toBe(true);
@@ -148,7 +154,7 @@ describe("findSections", () => {
   });
 
   it("spends no more than the budget", () => {
-    const matches = findSections(PAGE, "checkpoint starvation database overview", 6_000);
+    const matches = matchesIn(PAGE, "checkpoint starvation database overview", 6_000);
     const returned = matches.reduce((total, match) => total + match.chars, 0);
 
     expect(returned).toBeLessThanOrEqual(6_000);
@@ -158,25 +164,25 @@ describe("findSections", () => {
     // The off-target failure one layer down. Returning the best three
     // sections here would be a confident answer to a question this document
     // cannot answer.
-    expect(findSections(PAGE, "kubernetes ingress controller", 6_000)).toEqual([]);
+    expect(matchesIn(PAGE, "kubernetes ingress controller", 6_000)).toEqual([]);
   });
 
   it("returns nothing for a query with no content words", () => {
     // Coverage reports 1 for a query with no tokens — "nothing to be
     // off-target about" — so scoring one would rank the page arbitrarily
     // and call it a match.
-    expect(findSections(PAGE, "the and of", 6_000)).toEqual([]);
+    expect(matchesIn(PAGE, "the and of", 6_000)).toEqual([]);
   });
 
   it("reports coverage as the fraction of query words present", () => {
-    const [match] = findSections(PAGE, "checkpoint starvation", 6_000);
+    const [match] = matchesIn(PAGE, "checkpoint starvation", 6_000);
 
     expect(match?.coverage).toBe(1);
-    expect(findSections(PAGE, "checkpoint starvation kubernetes", 6_000)[0]?.coverage).toBeCloseTo(0.67, 2);
+    expect(matchesIn(PAGE, "checkpoint starvation kubernetes", 6_000)[0]?.coverage).toBeCloseTo(0.67, 2);
   });
 
   it("keeps every match at or above the coverage floor", () => {
-    const matches = findSections(PAGE, "checkpoint starvation overview", 6_000);
+    const matches = matchesIn(PAGE, "checkpoint starvation overview", 6_000);
 
     expect(matches.length).toBeGreaterThan(0);
     expect(matches.every((match) => match.coverage >= COVERAGE_FLOOR)).toBe(true);
@@ -195,7 +201,7 @@ describe("findSections", () => {
       `Checkpoint starvation is what happens here. ${filler("starving checkpoints")}`,
     ].join("\n");
 
-    const matches = findSections(page, "checkpoint starvation", 6_000);
+    const matches = matchesIn(page, "checkpoint starvation", 6_000);
 
     expect(matches[0]?.path.at(-1)).toBe("Details");
     expect(matches[0]?.chars).toBeGreaterThan(LENGTH_FLOOR);
@@ -214,7 +220,7 @@ describe("findSections", () => {
       `${filler("other things", 6)} Checkpointing is mentioned once here.`,
     ].join("\n");
 
-    expect(findSections(page, "checkpointing", 6_000)[0]?.path.at(-1)).toBe("Checkpointing");
+    expect(matchesIn(page, "checkpointing", 6_000)[0]?.path.at(-1)).toBe("Checkpointing");
   });
 
   it("scores an unstructured page as the single section it is", () => {
@@ -222,7 +228,7 @@ describe("findSections", () => {
     // section, so find returns one truncated match and is no better than a
     // read. Worth pinning, because it is what `navigable: false` predicts.
     const page = `${filler("checkpoint starvation", 60)}`;
-    const matches = findSections(page, "checkpoint starvation", 600);
+    const matches = matchesIn(page, "checkpoint starvation", 600);
 
     expect(matches).toHaveLength(1);
     expect(matches[0]?.truncated).toBe(true);
@@ -242,7 +248,7 @@ describe("findSections", () => {
       "```",
     ].join("\n");
 
-    const [match] = findSections(page, "checkpoint starvation", 700);
+    const [match] = matchesIn(page, "checkpoint starvation", 700);
     const fences = (match?.markdown.match(/```/g) ?? []).length;
 
     expect(match?.truncated).toBe(true);
@@ -250,21 +256,50 @@ describe("findSections", () => {
   });
 
   it("is stable: the same page and query select the same sections in the same order", () => {
-    const once = findSections(PAGE, "checkpoint database overview", 2_000);
-    const twice = findSections(PAGE, "checkpoint database overview", 2_000);
+    const once = matchesIn(PAGE, "checkpoint database overview", 2_000);
+    const twice = matchesIn(PAGE, "checkpoint database overview", 2_000);
 
     expect(once.map((match) => match.offset)).toEqual(twice.map((match) => match.offset));
   });
 
   it("survives a document with no headings at all and a query it matches", () => {
-    const matches = findSections(filler("checkpoint starvation", 20), "checkpoint starvation", 6_000);
+    const matches = matchesIn(filler("checkpoint starvation", 20), "checkpoint starvation", 6_000);
 
     expect(matches).toHaveLength(1);
     expect(matches[0]?.path).toEqual([]);
   });
 
   it("returns nothing for an empty document", () => {
-    expect(findSections("", "checkpoint starvation", 6_000)).toEqual([]);
+    expect(matchesIn("", "checkpoint starvation", 6_000)).toEqual([]);
+  });
+});
+
+describe("findSections navigable", () => {
+  it("reports the same structure verdict outline does", () => {
+    // One predicate, one split. If these ever disagree, a caller is being
+    // told two different things about the same page.
+    for (const page of [PAGE, filler("one long block of prose", 60), "", "# Only\n\nA heading and a line."]) {
+      expect(findSections(page, "prose sentence", 6_000).navigable).toBe(buildOutline(page).navigable);
+    }
+  });
+
+  it("says a page had no structure to search, so a miss can be read correctly", () => {
+    // The failure this exists for: an unstructured page returns one match
+    // that is the top of one enormous section, wearing a confident coverage
+    // score. Agents could not tell that from a targeted selection.
+    const flat = filler("checkpoint starvation and the log", 80);
+    const found = findSections(flat, "checkpoint starvation", 1_000);
+
+    expect(found.navigable).toBe(false);
+    expect(found.matches).toHaveLength(1);
+    expect(found.matches[0]?.truncated).toBe(true);
+  });
+
+  it("says a structured page was searchable, so a miss means what it says", () => {
+    const found = findSections(PAGE, "kubernetes ingress controller", 6_000);
+
+    expect(found.navigable).toBe(true);
+    expect(found.matches).toEqual([]);
   });
 });
 

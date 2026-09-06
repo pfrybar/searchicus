@@ -151,7 +151,11 @@ describe("find tool", () => {
 
     expect(result.isError).toBeFalsy();
     expect(result.content).toHaveLength(1);
-    expect(textOf(result)).toMatch(/outline|extract/);
+    expect(textOf(result)).toMatch(/extract/);
+    // The fixture page is a couple of lines, so it is not searchable by
+    // section — and the answer has to say that rather than blaming the query.
+    expect(textOf(result)).toMatch(/too little structure/);
+    expect(textOf(result)).toMatch(/says nothing about whether it covers/);
   });
 
   it("warns in its own description that an empty result proves nothing", async () => {
@@ -163,6 +167,12 @@ describe("find tool", () => {
     // "this page does not contain that" and stopping.
     expect(find?.description).toMatch(/does NOT prove/i);
     expect(find?.description).toMatch(/untrusted/i);
+    // The two things the evaluation showed agents get wrong unaided: they
+    // pick find by page length rather than structure, and they ask in full
+    // sentences, which is exactly when the coverage gate stops matching.
+    expect(find?.description).toMatch(/structure/i);
+    expect(find?.description).toMatch(/navigable: false/);
+    expect(find?.description).toMatch(/few, distinctive words/i);
   });
 });
 
