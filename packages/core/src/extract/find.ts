@@ -413,13 +413,40 @@ function coverageOf(text: string, terms: string[]): number {
  */
 export function findContentTokens(query: string): string[] {
   const terms = new Set<string>();
-  for (const token of contentTokens(query)) terms.add(stemFindToken(token));
+  for (const token of contentTokens(unescapeMarkdown(query))) terms.add(stemFindToken(token));
   return [...terms];
 }
 
 /** Applies the same scoped normalization to document terms and query terms. */
 function findTokens(text: string): string[] {
-  return tokenize(text).map(stemFindToken);
+  return tokenize(unescapeMarkdown(text)).map(stemFindToken);
+}
+
+/**
+ * A backslash escape, as CommonMark defines it: any ASCII punctuation
+ * character. Deliberately not "any backslash" — `\d` inside a code block is a
+ * regex, not an escaped letter, and stripping that would corrupt snippets.
+ */
+const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])/g;
+
+/**
+ * Undoes Markdown's escaping before tokenizing.
+ *
+ * A rendered page writes `busy\_timeout`, because a bare underscore would be
+ * emphasis. ICU then splits at the backslash into "busy" and "_timeout",
+ * while the caller's `busy_timeout` stays one token — so exact comparison
+ * fails and a page documenting the pragma in full returns nothing. The old
+ * bidirectional prefix rule hid this by matching "busy", which is to say it
+ * got the right answer for a reason that was never sound.
+ *
+ * Applied to both sides, because the invariant that matters is that the query
+ * and the document are compared as the same characters.
+ *
+ * Tokenization only. The Markdown handed back to a caller is untouched, so
+ * escapes still render as their authors intended.
+ */
+function unescapeMarkdown(text: string): string {
+  return text.includes("\\") ? text.replace(MARKDOWN_ESCAPE, "$1") : text;
 }
 
 /** Stem ordinary ASCII-Latin prose only; everything else remains exact. */

@@ -394,6 +394,70 @@ describe("findSections inside an oversized section", () => {
   });
 });
 
+describe("findSections and Markdown escaping", () => {
+  /** How a renderer actually writes an identifier: the underscore escaped. */
+  const escaped = [
+    "# Pragmas",
+    "",
+    "## analysis\\_limit",
+    "",
+    filler("the analysis limit and what it bounds", 12),
+    "",
+    "## busy\\_timeout",
+    "",
+    `**PRAGMA busy\\_timeout;** sets how long a connection waits on a lock. ${filler("waiting", 6)}`,
+  ].join("\n");
+
+  it("finds an identifier the page wrote with an escaped underscore", () => {
+    // Regression: rendered Markdown escapes `_`, so ICU split the document's
+    // `busy\_timeout` into "busy" and "_timeout" while the query stayed one
+    // token. Exact comparison then missed a page documenting it in full. The
+    // old prefix rule matched "busy" — the right answer for an unsound
+    // reason, which is why replacing that rule exposed this.
+    const [match] = matchesIn(escaped, "busy_timeout", 6_000);
+
+    // The path is the document's own heading text, escape and all: only the
+    // token stream is normalized, never what comes back.
+    expect(match?.path.at(-1)).toBe("busy\\_timeout");
+    expect(match?.coverage).toBe(1);
+  });
+
+  it("accepts a query written the escaped way too", () => {
+    // Both sides are normalized, because the invariant is that the query and
+    // the document are compared as the same characters.
+    expect(matchesIn(escaped, "busy\\_timeout", 6_000)[0]?.path.at(-1)).toBe("busy\\_timeout");
+  });
+
+  it("still tells two identifiers on the same page apart", () => {
+    // Unescaping must not blur them back together.
+    expect(matchesIn(escaped, "analysis_limit", 6_000)[0]?.path.at(-1)).toBe("analysis\\_limit");
+  });
+
+  it("leaves a backslash that is not a Markdown escape alone", () => {
+    // `\d` in a code block is a regex, not an escaped letter. Stripping every
+    // backslash would corrupt snippets and silently change what matches.
+    const page = [
+      "# Guide",
+      "",
+      "## Matching digits",
+      "",
+      `Use the pattern \`\\d+\` to match digits. ${filler("digit matching", 8)}`,
+    ].join("\n");
+
+    expect(matchesIn(page, "digits", 6_000)).toHaveLength(1);
+    // The returned Markdown is never rewritten — only tokenization is.
+    expect(matchesIn(page, "digits", 6_000)[0]?.markdown).toContain("\\d+");
+  });
+
+  it("does not rewrite the Markdown it returns", () => {
+    const [match] = matchesIn(escaped, "busy_timeout", 6_000);
+
+    // Escapes still render as their author intended; only the token stream
+    // was normalized.
+    expect(match?.markdown).toContain("busy\\_timeout");
+  });
+});
+
 describe("findSections navigable", () => {
   it("reports the same structure verdict outline does", () => {
     // One predicate, one split. If these ever disagree, a caller is being
