@@ -247,25 +247,30 @@ docker run --rm --init --shm-size=1g \
 **Use a named volume for the data root, never a host bind mount.** Chromium
 profiles are SQLite databases, and SQLite locking over virtiofs/9p — which is
 what a macOS or Windows bind mount is — is unreliable. A profile written by
-one platform's Chromium also isn't valid for another's.
+one platform's Chromium also isn't valid for another's. After an ungraceful
+stop Chromium can leave a `SingletonLock` behind: searchicus names a lock from
+a different hostname and explains the manual fix. Set
+`SEARCHICUS_PROFILE_UNLOCK=true` only where one process is known to own the
+profile; it removes that stale lock and retries Chromium once.
 
 ### Configuration
 
-| Variable                 | Default                             | Effect                                                                   |
-| ------------------------ | ----------------------------------- | ------------------------------------------------------------------------ |
-| `PORT`                   | `3000`                              | Port to listen on.                                                       |
-| `HOST`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.   |
-| `SEARCHICUS_DATA_DIR`    | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.       |
-| `SEARCHICUS_PROFILE_DIR` | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                  |
-| `SEARCHICUS_STORE_PATH`  | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                     |
-| `SEARCHICUS_STORE`       | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.             |
-| `SEARCHICUS_LOG`         | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr. |
-| `SEARCHICUS_TIMEZONE`    | `America/Chicago`                   | IANA time zone the browser reports.                                      |
-| `SEARCHICUS_LOCALE`      | `en-US`                             | Locale the browser reports.                                              |
-| `SEARCHICUS_EXTRACT_*`   | extraction disabled                 | Rendered extraction; see "Extraction" below.                             |
-| `MCP_ENABLED`            | on                                  | Off serves the search API alone; `/mcp` then 404s.                       |
-| `SERVE_UI`               | on when a build exists              | `false` skips the static UI.                                             |
-| `UI_DIST_DIR`            | `packages/ui/dist`                  | Alternate UI build directory.                                            |
+| Variable                    | Default                             | Effect                                                                                                              |
+| --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                      | `3000`                              | Port to listen on.                                                                                                  |
+| `HOST`                      | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.                                              |
+| `SEARCHICUS_DATA_DIR`       | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.                                                  |
+| `SEARCHICUS_PROFILE_DIR`    | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                                                             |
+| `SEARCHICUS_PROFILE_UNLOCK` | disabled                            | `true` removes a foreign-host stale `SingletonLock` and retries launch; only set for a known single-writer profile. |
+| `SEARCHICUS_STORE_PATH`     | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                                                                |
+| `SEARCHICUS_STORE`          | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.                                                        |
+| `SEARCHICUS_LOG`            | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                            |
+| `SEARCHICUS_TIMEZONE`       | `America/Chicago`                   | IANA time zone the browser reports.                                                                                 |
+| `SEARCHICUS_LOCALE`         | `en-US`                             | Locale the browser reports.                                                                                         |
+| `SEARCHICUS_EXTRACT_*`      | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                        |
+| `MCP_ENABLED`               | on                                  | Off serves the search API alone; `/mcp` then 404s.                                                                  |
+| `SERVE_UI`                  | on when a build exists              | `false` skips the static UI.                                                                                        |
+| `UI_DIST_DIR`               | `packages/ui/dist`                  | Alternate UI build directory.                                                                                       |
 
 The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the

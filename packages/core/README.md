@@ -104,6 +104,13 @@ share cookies; the archive uses WAL mode and is safe for API and CLI to share.
 Set `SEARCHICUS_DATA_DIR` to move both together, or use
 `SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component override.
 
+An ungraceful host or container stop can leave Chromium's `SingletonLock`
+behind. If it names a different hostname, launch failure explains the exact
+lock path and the manual fix; searchicus never removes it by default. A
+known-single-writer deployment can set `SEARCHICUS_PROFILE_UNLOCK=true` to
+remove only that foreign-host lock and retry launch once. Do not enable it
+where another process may legitimately own the profile.
+
 ## Results vs. sessions
 
 `search()` resolving means **results are ready**. `SearchSession.completed`
