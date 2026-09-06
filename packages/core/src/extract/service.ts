@@ -247,7 +247,7 @@ export class ExtractionService {
       // Scored over the whole document, like an outline and unlike a window:
       // ranking the part that happened to fit would answer a different
       // question from the one asked.
-      const matches = findSections(page.markdown, request.query, maxChars);
+      const { matches, navigable } = findSections(page.markdown, request.query, maxChars);
       const markdown = matches.map((match) => match.markdown).join("\n\n");
 
       const response: FindResponse = {
@@ -256,6 +256,7 @@ export class ExtractionService {
         title: page.title,
         query: request.query,
         totalChars: page.markdown.length,
+        navigable,
         matches,
         tookMs: Date.now() - started,
         untrusted: true,

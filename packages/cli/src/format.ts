@@ -49,9 +49,13 @@ export function formatFind(response: FindResponse): string[] {
 
   if (response.matches.length === 0) {
     lines.push(
-      `${response.totalChars} chars, no section covered "${response.query}"`,
+      response.navigable
+        ? `${response.totalChars} chars, no section covered "${response.query}"`
+        : `${response.totalChars} chars in one block — too little structure to search by section`,
       "",
-      "Try `outline` to see the page's structure, or `extract` to read it.",
+      response.navigable
+        ? "Try fewer, more distinctive words, or `extract` to read the page."
+        : "This says nothing about what the page contains. Read it with `extract`.",
     );
     return lines;
   }
@@ -62,6 +66,11 @@ export function formatFind(response: FindResponse): string[] {
     `${response.matches.length} ${plural}, ${returned} of ${response.totalChars} chars ` +
       `in ${response.tookMs}ms — untrusted page content follows`,
   );
+  // Without this a prefix of one huge section is indistinguishable from a
+  // targeted selection, and it wears the same confident coverage score.
+  if (!response.navigable) {
+    lines.push("(this page is one large block with little structure; `extract` is the better read here)");
+  }
 
   for (const [index, match] of response.matches.entries()) {
     lines.push(

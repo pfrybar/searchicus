@@ -455,6 +455,12 @@ matching section still returns the best one cut, never an empty list. It is
 **not** proof the page lacks the information, and the MCP tool says so,
 because an agent that reads a miss as a negative will stop looking too early.
 
+Every result carries `navigable`, the same measure `outline` reports. False
+means the page is one large block with no structure to search, so a miss says
+nothing about its contents and a hit is a prefix rather than a selection —
+`extract` is the right read there. Whether a page has real headings, not how
+long it is, is what decides whether `find` helps at all.
+
 A page longer than the budget is read a window at a time: the response says
 where the window started and where to continue, and those offsets snap to
 **section boundaries** so a window begins at a heading rather than mid-sentence

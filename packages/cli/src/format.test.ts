@@ -87,6 +87,7 @@ describe("formatFind", () => {
     title: "A guide",
     query: "checkpoint starvation",
     totalChars: 35026,
+    navigable: true,
     tookMs: 812,
     untrusted: true,
   };
@@ -131,7 +132,37 @@ describe("formatFind", () => {
     const lines = formatFind({ ...response, matches: [] });
 
     expect(lines.join("\n")).toContain('no section covered "checkpoint starvation"');
-    expect(lines.join("\n")).toMatch(/outline|extract/);
+    expect(lines.join("\n")).toMatch(/extract/);
+  });
+
+  it("distinguishes a page it could not search from one that did not match", () => {
+    // Same empty list, two different answers. Which one it is decides
+    // whether the caller rephrases or stops using find on this page.
+    const unsearchable = formatFind({ ...response, matches: [], navigable: false }).join("\n");
+
+    expect(unsearchable).toContain("too little structure");
+    expect(unsearchable).toContain("says nothing about what the page contains");
+    expect(unsearchable).not.toContain('no section covered "checkpoint starvation"');
+  });
+
+  it("warns when matches are a prefix of one block rather than a selection", () => {
+    const lines = formatFind({
+      ...response,
+      navigable: false,
+      matches: [
+        {
+          path: [],
+          offset: 0,
+          coverage: 1,
+          markdown: "Text.",
+          chars: 5,
+          sectionChars: 40000,
+          truncated: true,
+        },
+      ],
+    }).join("\n");
+
+    expect(lines).toContain("one large block");
   });
 });
 

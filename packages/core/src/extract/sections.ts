@@ -123,6 +123,21 @@ const MIN_USEFUL_SECTIONS = 3;
 const DOMINANT_SECTION_SHARE = 0.5;
 
 /**
+ * Whether a document's sections are worth navigating by.
+ *
+ * Shared by `outline`, which reports it, and `find`, which needs it to tell a
+ * caller whether a miss means "no section covered this" or "there was nothing
+ * to match against". One predicate over one split, so the two operations can
+ * never disagree about the same page.
+ */
+export function isNavigable(sectionLengths: readonly number[], totalChars: number): boolean {
+  const biggest = Math.max(0, ...sectionLengths);
+  return (
+    sectionLengths.length >= MIN_USEFUL_SECTIONS && (totalChars === 0 || biggest / totalChars < DOMINANT_SECTION_SHARE)
+  );
+}
+
+/**
  * Describes a document's structure, addressed by the same offsets `extract`
  * takes.
  *
@@ -139,12 +154,13 @@ export function buildOutline(markdown: string): { sections: OutlineSection[]; na
     chars: section.end - section.start,
   }));
 
-  const biggest = Math.max(0, ...sections.map((s) => s.chars));
-  const navigable =
-    sections.length >= MIN_USEFUL_SECTIONS &&
-    (markdown.length === 0 || biggest / markdown.length < DOMINANT_SECTION_SHARE);
-
-  return { sections, navigable };
+  return {
+    sections,
+    navigable: isNavigable(
+      sections.map((s) => s.chars),
+      markdown.length,
+    ),
+  };
 }
 
 /**

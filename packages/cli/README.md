@@ -98,8 +98,11 @@ run together they would read as continuous prose and invite joining two
 passages the document never put side by side. `coverage` is how much of the
 query that section contains, and `--offset` reads it in place with `extract`.
 
-When nothing covers the query the command says so and suggests `outline` or
-`extract`, rather than returning the least-bad sections.
+When nothing covers the query the command says so rather than returning the
+least-bad sections — and it distinguishes "no section covered this" from
+"this page has no sections to search", which are the same empty list and
+completely different answers. A page with too little structure is called out
+on hits too, since a match there is the top of one large block.
 
 ### `outline <url>`
 

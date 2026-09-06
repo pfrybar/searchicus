@@ -308,6 +308,15 @@ Empty means exactly that and nothing else. A budget smaller than every
 matching section still returns the best one, cut, rather than an empty list
 that would say something false about the page.
 
+`navigable` is the same measure `outline` reports, and it qualifies every
+result here. **False means section matching had nothing to grip**: the page is
+one large block, so an empty `matches` says only "this page could not be
+searched this way", and a non-empty one is a prefix of that block rather than
+a targeted selection — carrying a confident `coverage` that describes the
+whole section, most of which was not returned. Read such a page with
+`extract`. Found by putting agents in front of the tool: they could not tell
+the two cases apart and stopped looking.
+
 ### `POST /outline`
 
 A page's structure, without its content. Same enablement and address rules as
