@@ -111,6 +111,9 @@ npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "quer
   type-imports from core, so a value import of Playwright there would drag
   browser binaries into a Vite bundle. The registry depends on the
   `BrowserProvider` interface, never on the `BrowserSession` class.
+  For the same reason, `ranking.ts` is published as
+  `@searchicus/core/ranking`: the UI imports `canonicalizeUrl` as a value, and
+  taking it from the root would bundle the archive with it.
   `human.ts`, `dwell.ts`, `click-through.ts` and `relevance.ts` import
   Playwright for **types only**, which is why an engine in the main entry may
   use them; `stealth.ts` reads the browser binary with `node:child_process`

@@ -318,7 +318,6 @@ describe("search history", () => {
           extractionDetails: [
             {
               createdAt: "2026-09-04T16:01:00.000Z",
-              resultRef: "abc123-1",
               requestedUrl: "https://a.test/rrf",
               finalUrl: "https://a.test/rrf",
               status: "completed",
@@ -334,10 +333,8 @@ describe("search history", () => {
 
     render(<App />);
 
-    // The merged list, with who found it and at what rank. The ref shows up
-    // twice on purpose: once in the ranking, once against the extraction made
-    // from it.
-    expect(await screen.findAllByText("abc123-1")).toHaveLength(2);
+    // The merged list, with who found it and at what rank.
+    expect(await screen.findByText("abc123-1")).toBeInTheDocument();
     expect(screen.getByText("bing #1")).toBeInTheDocument();
     expect(screen.getByText("brave #2")).toBeInTheDocument();
 
@@ -346,8 +343,10 @@ describe("search history", () => {
     expect(within(bingColumn).getByText("Something bing alone had")).toBeInTheDocument();
     expect(screen.getByText(/timed out/)).toBeInTheDocument();
 
-    // And what someone actually read afterwards.
+    // And what someone actually read afterwards, matched to the result by
+    // the URL it named rather than by anything the caller had to pass in.
     expect(screen.getByText(/4812 chars/)).toBeInTheDocument();
+    expect(screen.getByText(/extracted/)).toBeInTheDocument();
   });
 
   it("reports a search that was never archived", async () => {

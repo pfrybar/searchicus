@@ -52,22 +52,17 @@ before enabling it.
 
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
-
-# tie the read back to the search that offered it
-searchicus extract "https://example.com/a" --ref 00m2ebw9mbyib-3
-
 searchicus extract https://example.com/ --max-chars 500
 searchicus extract https://example.com/ --json
 ```
 
-| Option             | Effect                                                            |
-| ------------------ | ----------------------------------------------------------------- |
-| `-r, --ref <ref>`  | Result ref from an earlier search. Must match the URL being read. |
-| `-m, --max-chars`  | Markdown budget, 1–100000. Defaults to 20000.                     |
-| `-o, --offset <n>` | Start reading here. Use the `--offset` a previous run printed.    |
-| `--json`           | Print the raw response instead of formatted Markdown.             |
+| Option             | Effect                                                         |
+| ------------------ | -------------------------------------------------------------- |
+| `-m, --max-chars`  | Markdown budget, 1–100000. Defaults to 20000.                  |
+| `-o, --offset <n>` | Start reading here. Use the `--offset` a previous run printed. |
+| `--json`           | Print the raw response instead of formatted Markdown.          |
 
-Text output prints the title, final URL, ref, and size, then a line marking
+Text output prints the title, final URL, and size, then a line marking
 where our output stops and the page's own untrusted text begins. When a page
 is longer than the budget it also prints the `--offset` to pass back for the
 next window, which starts at the next section rather than mid-sentence.
@@ -89,8 +84,8 @@ searchicus extract https://www.sqlite.org/wal.html --offset 20178
    4840    1109    2.1. Checkpointing
 ```
 
-Takes `--ref` like `extract`, and `--json` for the raw response. The second
-command costs no render: the page is still in memory from the first.
+Takes `--json` for the raw response. The second command costs no render: the
+page is still in memory from the first.
 
 ### `paths`
 

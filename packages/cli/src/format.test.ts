@@ -85,7 +85,6 @@ describe("formatExtract", () => {
     const lines = formatExtract({
       url: "https://example.com/a",
       finalUrl: "https://www.example.com/a",
-      ref: "abc123-1",
       title: "An article",
       markdown: "# An article\n\nSome prose.",
       truncated: false,
@@ -98,10 +97,9 @@ describe("formatExtract", () => {
 
     expect(lines[0]).toBe("An article");
     expect(lines[1]).toBe("https://www.example.com/a");
-    expect(lines[2]).toBe("ref: abc123-1");
     // Piped into a terminal or an agent, the reader has to be able to see
     // where our output stops and a stranger's website starts.
-    expect(lines[3]).toBe("25 chars in 812ms — untrusted page content follows");
+    expect(lines[2]).toBe("25 chars in 812ms — untrusted page content follows");
     expect(lines.at(-1)).toBe("# An article\n\nSome prose.");
   });
 

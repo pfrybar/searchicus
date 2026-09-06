@@ -9,14 +9,13 @@ import type { SearchQuery, SearchRequest } from "./types.js";
  *
  * Generous enough that no real request meets them and small enough that no
  * unreal one costs anything: a search engine will not accept a thousand-word
- * query, a URL beyond two kilobytes is outside what browsers and servers
- * agree to handle, and a ref is a search id and a rank. Unbounded strings
- * reach a browser, a SQLite row, and a rendered page, so the cap belongs at
- * the door rather than at whichever of those complains first.
+ * query, and a URL beyond two kilobytes is outside what browsers and servers
+ * agree to handle. Unbounded strings reach a browser, a SQLite row, and a
+ * rendered page, so the cap belongs at the door rather than at whichever of
+ * those complains first.
  */
 export const MAX_QUERY_LENGTH = 1_024;
 export const MAX_URL_LENGTH = 2_048;
-export const MAX_REF_LENGTH = 128;
 export const MAX_ENGINE_ID_LENGTH = 64;
 export const MAX_ENGINE_SELECTION = 16;
 
@@ -70,17 +69,15 @@ export const SearchRequestSchema = SearchQuerySchema.extend({
 /**
  * The request accepted by every outline front door.
  *
- * Just the page and its provenance: structure takes no budget, no offset and
- * no query, which is most of why it is a separate operation.
+ * Just the page: structure takes no budget, no offset and no query, which is
+ * most of why it is a separate operation.
  */
 export const OutlineRequestSchema = z.object({
   url: z.string().trim().min(1, "url must not be empty").max(MAX_URL_LENGTH),
-  ref: z.string().trim().min(1, "ref must not be empty").max(MAX_REF_LENGTH).optional(),
 }) satisfies z.ZodType<OutlineRequest>;
 
 export const ExtractRequestSchema = z.object({
   url: z.string().trim().min(1, "url must not be empty").max(MAX_URL_LENGTH),
-  ref: z.string().trim().min(1, "ref must not be empty").max(MAX_REF_LENGTH).optional(),
   maxChars: z
     .number()
     .int()

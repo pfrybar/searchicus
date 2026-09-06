@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import type { ArchivedResult, ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
+import type { ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { causeOf, createLogger } from "../logger.js";
-import { canonicalizeUrl } from "../ranking.js";
 import { assertPublicHost, parseExtractUrl, type AddressLookup } from "./address.js";
 import {
   DEFAULT_EXTRACT_CONFIG,
@@ -107,13 +106,8 @@ export class ExtractionService {
     // precisely because they describe input the caller already holds.
     const url = parseExtractUrl(request.url, this.#config);
     const maxChars = resolveMaxChars(request.maxChars);
-    const provenance = await this.#resolveRef(request.ref, url);
 
-    const base = {
-      startedAt,
-      ...(provenance ? { searchId: provenance.searchId, resultRef: provenance.ref } : {}),
-      requestedUrl: url.toString(),
-    };
+    const base = { startedAt, requestedUrl: url.toString() };
 
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), this.#config.timeoutMs);
@@ -141,7 +135,6 @@ export class ExtractionService {
       const response: ExtractResponse = {
         url: request.url,
         finalUrl: page.finalUrl,
-        ...(provenance ? { ref: provenance.ref } : {}),
         title: page.title,
         markdown,
         truncated: window.nextOffset !== undefined,
@@ -227,7 +220,6 @@ export class ExtractionService {
 
     const started = Date.now();
     const url = parseExtractUrl(request.url, this.#config);
-    const provenance = await this.#resolveRef(request.ref, url);
 
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), this.#config.timeoutMs);
@@ -244,7 +236,6 @@ export class ExtractionService {
       return {
         url: request.url,
         finalUrl: page.finalUrl,
-        ...(provenance ? { ref: provenance.ref } : {}),
         title: page.title,
         totalChars: page.markdown.length,
         navigable,
@@ -295,8 +286,8 @@ export class ExtractionService {
 
     // A page already read is served from memory: no slot, no browser, no
     // second request to somebody else's server. Everything above still
-    // runs — the ref must still check out, and the address is still
-    // screened — because a cache is an optimisation and not a bypass.
+    // runs — the address is still screened — because a cache is an
+    // optimisation and not a bypass.
     const cacheKey = url.toString();
     let page = this.#cache?.get(cacheKey);
     const cached = page !== undefined;
@@ -349,41 +340,6 @@ export class ExtractionService {
       this.#cache?.set(cacheKey, page);
     }
     return { page, cached };
-  }
-
-  /**
-   * Turns a ref into verified provenance, or rejects.
-   *
-   * A ref must name an archived result whose URL is the one being extracted.
-   * Accepting an unverifiable ref would let a caller attach a search's
-   * provenance to an unrelated URL, which would quietly poison the ranking
-   * data this whole phase exists to collect — the one failure mode that
-   * cannot be detected after the fact.
-   */
-  async #resolveRef(ref: string | undefined, url: URL): Promise<ArchivedResult | undefined> {
-    if (ref === undefined) return undefined;
-
-    if (!this.#archive) {
-      throw new ExtractRequestError(
-        "This server has no search archive, so a ref cannot be verified. Extract the URL without one.",
-      );
-    }
-
-    let found: ArchivedResult | undefined;
-    try {
-      found = await this.#archive.findResult(ref);
-    } catch (err) {
-      throw new ExtractFailedError("unknown", "Extraction is temporarily unavailable.", err);
-    }
-
-    if (!found) {
-      throw new ExtractRequestError(`ref "${ref}" does not name a result from an archived search.`);
-    }
-    if (canonicalizeUrl(found.url) !== canonicalizeUrl(url.toString())) {
-      throw new ExtractRequestError(`ref "${ref}" names a different URL than the one requested.`);
-    }
-
-    return found;
   }
 
   /** Loaded on first use so importing core never spawns worker machinery. */

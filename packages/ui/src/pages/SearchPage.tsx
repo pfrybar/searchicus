@@ -69,13 +69,13 @@ export function SearchPage({ canExtract }: { canExtract: boolean }) {
     }
   }
 
+  // `ref` identifies which result's panel this is, not anything the server
+  // is told: extractions are matched back to a search by URL.
   async function handleExtract(ref: string, url: string, offset?: number) {
     const signal = startRequest();
     setExtraction({ ref, status: "loading" });
     try {
-      // The ref goes with the URL: it is what ties this read back to the
-      // ranking that offered it, which is the signal the server is collecting.
-      const content = await extract({ url, ref, ...(offset === undefined ? {} : { offset }) }, signal);
+      const content = await extract({ url, ...(offset === undefined ? {} : { offset }) }, signal);
       setExtraction({ ref, status: "ready", content });
     } catch (err) {
       if (signal.aborted) return;

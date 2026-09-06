@@ -343,7 +343,6 @@ describe("SqliteSearchArchive", () => {
     await expect(archive.recentSearches()).rejects.toThrow(/closed/);
     await expect(archive.engineMetrics()).rejects.toThrow(/closed/);
     await expect(archive.searchDetail("search-123")).rejects.toThrow(/closed/);
-    await expect(archive.findResult("search-123-1")).rejects.toThrow(/closed/);
     await expect(archive.archive(record({ searchId: "later" }))).rejects.toThrow(/closed/);
   });
 
@@ -388,6 +387,78 @@ describe("SqliteSearchArchive", () => {
     }
   });
 
+  it("rebuilds an archive that still records where a caller said they came from", async () => {
+    const filePath = temporaryDatabase();
+    const archive = new SqliteSearchArchive(filePath);
+    await archive.archive(record());
+    await archive.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const rolled = new DatabaseSync(filePath);
+    // Rebuild the schema-3 extractions table, complete with the CHECK that
+    // makes SQLite refuse a plain DROP COLUMN, and put a correlated row in it.
+    rolled.exec(`
+      DROP TABLE extractions;
+      CREATE TABLE extractions (
+        extraction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        search_id TEXT REFERENCES searches(search_id) ON DELETE CASCADE,
+        result_ref TEXT,
+        requested_url TEXT NOT NULL,
+        final_url TEXT,
+        status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+        error_kind TEXT,
+        http_status INTEGER,
+        content_type TEXT,
+        redirects INTEGER,
+        took_ms INTEGER NOT NULL CHECK (took_ms >= 0),
+        title TEXT,
+        domain TEXT,
+        language TEXT,
+        author TEXT,
+        published TEXT,
+        chars INTEGER,
+        word_count INTEGER,
+        truncated INTEGER CHECK (truncated IN (0, 1)),
+        markdown_sha256 TEXT,
+        cached INTEGER CHECK (cached IN (0, 1)),
+        CHECK ((search_id IS NULL) = (result_ref IS NULL)),
+        CHECK (
+          (status = 'completed' AND error_kind IS NULL) OR
+          (status = 'failed' AND error_kind IS NOT NULL)
+        )
+      );
+      CREATE INDEX extractions_by_result ON extractions (search_id, result_ref);
+      CREATE INDEX extractions_by_domain ON extractions (domain, created_at);
+      INSERT INTO extractions (created_at, search_id, result_ref, requested_url, status, took_ms, domain)
+        VALUES ('2026-09-04T16:01:00.000Z', 'search-123', 'search-123-1',
+                'https://example.test/cats', 'completed', 700, 'example.test');
+      PRAGMA user_version = 3;
+    `);
+    rolled.close();
+
+    const upgraded = new SqliteSearchArchive(filePath);
+    // The read survives the rebuild and is still credited — now by its URL,
+    // which is what the old columns were a caller-supplied proxy for.
+    expect((await upgraded.searchDetail("search-123"))?.extractions).toBe(1);
+    await upgraded.close();
+
+    const db = new DatabaseSync(filePath);
+    try {
+      const columns = (db.prepare("PRAGMA table_info(extractions)").all() as { name: string }[]).map((c) => c.name);
+      expect(columns).not.toContain("search_id");
+      expect(columns).not.toContain("result_ref");
+      expect(columns).toContain("cached");
+      expect(db.prepare("SELECT count(*) AS count FROM extractions").get()).toEqual({ count: 1 });
+      expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: ARCHIVE_SCHEMA_VERSION });
+      // The surrogate key keeps counting from where it was, so ids stay
+      // unique across the rebuild rather than being handed out twice.
+      expect(db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'extractions'").get()).toEqual({ seq: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
   it("refuses an archive written by a newer schema rather than corrupting it", async () => {
     const filePath = temporaryDatabase();
     const { DatabaseSync } = await import("node:sqlite");
@@ -401,45 +472,12 @@ describe("SqliteSearchArchive", () => {
   });
 
   describe("extractions", () => {
-    it("resolves a ref back to the URL that ref actually named", async () => {
-      const store = new SqliteSearchArchive(temporaryDatabase());
-      await store.archive(record());
-
-      await expect(store.findResult("search-123-1")).resolves.toEqual({
-        searchId: "search-123",
-        ref: "search-123-1",
-        url: "https://example.test/cats",
-        rank: 1,
-      });
-      await store.close();
-    });
-
-    it("resolves nothing for a ref that names no stored result", async () => {
-      const store = new SqliteSearchArchive(temporaryDatabase());
-      await store.archive(record());
-
-      for (const ref of ["search-123-2", "search-999-1", "search-123-0", "nodash", "-1", "search-123-x"]) {
-        await expect(store.findResult(ref), ref).resolves.toBeUndefined();
-      }
-      await store.close();
-    });
-
-    it("resolves nothing when the search failed and returned no list", async () => {
-      const store = new SqliteSearchArchive(temporaryDatabase());
-      await store.archive(record({ response: undefined }));
-
-      await expect(store.findResult("search-123-1")).resolves.toBeUndefined();
-      await store.close();
-    });
-
-    it("records ref-correlated and URL-only extractions side by side", async () => {
+    it("records what it read and nothing about where the caller got it", async () => {
       const filePath = temporaryDatabase();
       const store = new SqliteSearchArchive(filePath);
       await store.archive(record());
       await store.recordExtraction({
         startedAt: "2026-09-04T16:01:00.000Z",
-        searchId: "search-123",
-        resultRef: "search-123-1",
         requestedUrl: "https://example.test/cats",
         finalUrl: "https://www.example.test/cats",
         status: "completed",
@@ -470,21 +508,21 @@ describe("SqliteSearchArchive", () => {
         const rows = db.prepare("SELECT * FROM extractions ORDER BY extraction_id").all() as Record<string, unknown>[];
         expect(rows).toHaveLength(2);
         expect(rows[0]).toMatchObject({
-          search_id: "search-123",
-          result_ref: "search-123-1",
+          requested_url: "https://example.test/cats",
           status: "completed",
           error_kind: null,
           redirects: 1,
           truncated: 0,
         });
-        // A URL the caller brought themselves has no ranking behind it, and
-        // the row must not pretend otherwise.
         expect(rows[1]).toMatchObject({
-          search_id: null,
-          result_ref: null,
+          requested_url: "https://elsewhere.test/dogs",
           status: "failed",
           error_kind: "timeout",
         });
+        // A read records the page, never who sent the caller to it: the
+        // search that offered a URL is worked out at read time instead.
+        expect(Object.keys(rows[0] ?? {})).not.toContain("search_id");
+        expect(Object.keys(rows[0] ?? {})).not.toContain("result_ref");
         expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       } finally {
         db.close();
@@ -520,13 +558,11 @@ describe("SqliteSearchArchive", () => {
       const store = new SqliteSearchArchive(filePath);
       await store.archive(record());
 
-      // Re-reading a result is the signal, not a duplicate: a key over
-      // (search_id, result_ref) would silently discard the second and third.
+      // Re-reading a result is the signal, not a duplicate: a key over the
+      // URL would silently discard the second and third.
       for (const startedAt of ["16:01", "16:02", "16:03"]) {
         await store.recordExtraction({
           startedAt: `2026-09-04T${startedAt}:00.000Z`,
-          searchId: "search-123",
-          resultRef: "search-123-1",
           requestedUrl: "https://example.test/cats",
           status: "completed",
           tookMs: 700,
@@ -541,22 +577,6 @@ describe("SqliteSearchArchive", () => {
       } finally {
         db.close();
       }
-    });
-
-    it("refuses a row claiming half a search provenance", async () => {
-      const store = new SqliteSearchArchive(temporaryDatabase());
-      await store.archive(record());
-
-      await expect(
-        store.recordExtraction({
-          startedAt: "2026-09-04T16:01:00.000Z",
-          searchId: "search-123",
-          requestedUrl: "https://example.test/cats",
-          status: "completed",
-          tookMs: 5,
-        }),
-      ).rejects.toThrow(/constraint/i);
-      await store.close();
     });
   });
 

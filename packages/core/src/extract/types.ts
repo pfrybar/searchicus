@@ -18,15 +18,12 @@ import type { OutlineSection } from "./sections.js";
 export interface OutlineRequest {
   /** Absolute http(s) URL to describe. */
   url: string;
-  /** Provenance, checked exactly as it is for a read. */
-  ref?: string;
 }
 
 /** A page's structure, addressed by the offsets `extract` already takes. */
 export interface OutlineResponse {
   url: string;
   finalUrl: string;
-  ref?: string;
   title: string;
   /** Length of the whole document, so a caller can size its reading. */
   totalChars: number;
@@ -45,15 +42,6 @@ export interface OutlineResponse {
 export interface ExtractRequest {
   /** Absolute http(s) URL to render. */
   url: string;
-  /**
-   * A result ref from an earlier search, tying this extraction to the ranking
-   * that produced it. Optional: extracting a bare URL is a first-class case,
-   * because agents arrive with URLs from elsewhere.
-   *
-   * A ref is provenance, never a label a caller can attach to an unrelated
-   * URL — it must resolve to an archived result whose URL matches `url`.
-   */
-  ref?: string;
   /** Maximum characters of Markdown to return. Defaults to 20,000. */
   maxChars?: number;
   /**
@@ -66,14 +54,12 @@ export interface ExtractRequest {
   offset?: number;
 }
 
-/** Readable page content, plus the provenance needed to interpret it. */
+/** Readable page content, plus what a caller needs to interpret it. */
 export interface ExtractResponse {
   /** The URL as requested. */
   url: string;
   /** Where the page actually resolved, after redirects. */
   finalUrl: string;
-  /** Echoed only when the request supplied one. */
-  ref?: string;
   title: string;
   markdown: string;
   /** True when content remains beyond this window. See `nextOffset`. */

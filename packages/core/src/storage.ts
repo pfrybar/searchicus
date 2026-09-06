@@ -19,20 +19,14 @@ import {
   type SearchSummary,
   type SearchTotals,
 } from "./insights.js";
-import { parseResultRef } from "./ranking.js";
+import { canonicalizeUrl } from "./ranking.js";
 import { assessRelevance } from "./relevance.js";
-import type {
-  ArchivedResult,
-  ExtractionArchive,
-  ExtractionArchiveRecord,
-  SearchArchive,
-  SearchArchiveRecord,
-} from "./archive.js";
+import type { ExtractionArchive, ExtractionArchiveRecord, SearchArchive, SearchArchiveRecord } from "./archive.js";
 import type { EngineFailureKind, EngineSearchOutcome, MergedSearchResponse, SearchResult } from "./types.js";
 import { defaultStorePath, searchArchiveEnabled } from "./paths.js";
 
 /** Current SQLite schema. Future changes are appended as numbered migrations. */
-export const ARCHIVE_SCHEMA_VERSION = 3;
+export const ARCHIVE_SCHEMA_VERSION = 4;
 /** Wait briefly for another API/CLI process holding the shared database lock. */
 export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -94,53 +88,18 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     }
   }
 
-  /**
-   * Resolves a result ref to the result that ref actually named.
-   *
-   * Reads back the merged response exactly as the caller received it, so the
-   * answer is the URL that was shown rather than a reconstruction. Returns
-   * undefined for anything that does not resolve — a malformed ref, an
-   * unarchived search, a rank past the end of the list, or a stored row whose
-   * shape no longer parses.
-   */
-  async findResult(ref: string): Promise<ArchivedResult | undefined> {
-    const parsed = parseResultRef(ref);
-    if (!parsed) return undefined;
-
-    const db = await this.#open();
-    const row = db.prepare("SELECT merged_response_json FROM searches WHERE search_id = ?").get(parsed.searchId);
-    const json = row?.merged_response_json;
-    if (typeof json !== "string") return undefined;
-
-    let response: MergedSearchResponse;
-    try {
-      response = JSON.parse(json) as MergedSearchResponse;
-    } catch {
-      return undefined;
-    }
-
-    const result = response.results?.[parsed.rank - 1];
-    // Trust the stored ref over the arithmetic: the rank is only a hint at
-    // where to look, and a mismatch means this row is not what was asked for.
-    if (!result || result.ref !== ref || typeof result.url !== "string") return undefined;
-
-    return { searchId: parsed.searchId, ref, url: result.url, rank: parsed.rank };
-  }
-
   async recordExtraction(record: ExtractionArchiveRecord): Promise<void> {
     if (this.#closed) throw new Error("Search archive is closed");
 
     const db = await this.#open();
     db.prepare(
       `INSERT INTO extractions (
-        created_at, search_id, result_ref, requested_url, final_url, status, error_kind,
+        created_at, requested_url, final_url, status, error_kind,
         http_status, content_type, redirects, took_ms, title, domain, language, author,
         published, chars, word_count, truncated, markdown_sha256, cached
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.startedAt,
-      record.searchId ?? null,
-      record.resultRef ?? null,
       record.requestedUrl,
       record.finalUrl ?? null,
       record.status,
@@ -176,13 +135,16 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     const window = boundedLimit(options.window, DEFAULT_METRICS_WINDOW);
     const db = await this.#open();
 
-    const searches = rows<WindowedSearchRow>(
+    const searchRows = rows<WindowedSearchRow>(
       db.prepare(
         `SELECT search_id, started_at, merged_response_json FROM searches
          ORDER BY started_at DESC, search_id DESC LIMIT ?`,
       ),
       window,
     );
+    const searches = searchRows;
+    // Needed before the loops below, which match reads to results by URL.
+    const since = searches.at(-1)?.started_at ?? null;
 
     // count(*) always returns a row; ?? 0 is so an unreachable absence reads
     // as zero rather than reaching the response as NaN.
@@ -217,22 +179,24 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       }
     }
 
-    // Which refs were extracted, so a merged result can be marked as read.
+    // Which URLs were read, so a merged result can be marked as read. Matched
+    // on the canonical form, because the URL a caller extracted is the one a
+    // result gave it, and those differ in the ways canonicalizeUrl forgives.
     const extracted = new Set<string>();
-    for (const row of rows<ExtractedRefRow>(db.prepare(WINDOWED_EXTRACTED_REFS), window)) {
-      extracted.add(`${row.search_id}\u0000${row.result_ref}`);
+    for (const row of rows<ExtractedUrlRow>(db.prepare(WINDOWED_EXTRACTED_URLS), since ?? "")) {
+      extracted.add(canonicalizeUrl(row.requested_url));
+      if (row.final_url) extracted.add(canonicalizeUrl(row.final_url));
     }
 
     for (const search of searches) {
       const merged = parseMerged(search.merged_response_json);
       for (const result of merged?.results ?? []) {
-        creditMergedResult(result, extracted.has(`${search.search_id}\u0000${result.ref}`), (engineId, field) => {
+        creditMergedResult(result, extracted.has(canonicalizeUrl(result.url)), (engineId, field) => {
           at(engineId)[field]++;
         });
       }
     }
 
-    const since = searches.at(-1)?.started_at ?? null;
     return {
       window: searches.length,
       totalSearches,
@@ -351,11 +315,16 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
 
     if (page.length === 0) return [];
 
-    const ids = page.map((row) => row.search_id);
-    const outcomes = this.#outcomesFor(db, ids, false);
-    const counts = this.#extractionCounts(db, ids);
+    const outcomes = this.#outcomesFor(
+      db,
+      page.map((row) => row.search_id),
+      false,
+    );
+    const extractions = this.#extractionsFor(db, page);
 
-    return page.map((row) => this.#summarize(row, outcomes.get(row.search_id) ?? [], counts.get(row.search_id) ?? 0));
+    return page.map((row) =>
+      this.#summarize(row, outcomes.get(row.search_id) ?? [], extractions.get(row.search_id)?.length ?? 0),
+    );
   }
 
   /** Everything stored about one search, including each engine's own page. */
@@ -365,13 +334,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     if (!row) return undefined;
 
     const outcomes = this.#outcomesFor(db, [searchId], true).get(searchId) ?? [];
-    const extractions = rows<ExtractionRow>(
-      db.prepare(
-        `SELECT created_at, result_ref, requested_url, final_url, status, error_kind, title, chars, took_ms, cached
-         FROM extractions WHERE search_id = ? ORDER BY extraction_id`,
-      ),
-      searchId,
-    );
+    const extractions = this.#extractionsFor(db, [row]).get(searchId) ?? [];
 
     return {
       ...this.#summarize(row, outcomes, extractions.length),
@@ -379,7 +342,6 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       engines: outcomes.map((outcome) => ({ ...outcome, results: outcome.results ?? [] })),
       extractionDetails: extractions.map((extraction): ArchivedExtraction => ({
         createdAt: extraction.created_at,
-        resultRef: extraction.result_ref,
         requestedUrl: extraction.requested_url,
         finalUrl: extraction.final_url,
         status: extraction.status,
@@ -446,18 +408,55 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     return grouped;
   }
 
-  #extractionCounts(db: DatabaseSync, searchIds: string[]): Map<string, number> {
-    if (searchIds.length === 0) return new Map();
+  /**
+   * Matches archived extractions back to the searches that offered their URLs.
+   *
+   * Worked out at read time rather than recorded. An extraction stores only
+   * the URL it read, so a search that returned that URL before the read is
+   * taken to be where the caller got it. That is best-effort by construction:
+   * a URL read for unrelated reasons is still credited to a search that
+   * happened to surface it, and where several did, the most recent one wins.
+   * Fine for a signal that already means "someone read this", not "this read
+   * was caused by that ranking".
+   *
+   * Only the searches passed in can win a match, so a page of searches is
+   * scored against itself rather than against all of history.
+   */
+  #extractionsFor(db: DatabaseSync, searches: SearchRow[]): Map<string, ExtractionRow[]> {
+    const offered = new Map<string, { searchId: string; startedAt: string }[]>();
+    let earliest: string | undefined;
+    for (const row of searches) {
+      if (earliest === undefined || row.started_at < earliest) earliest = row.started_at;
+      for (const result of parseMerged(row.merged_response_json)?.results ?? []) {
+        const key = canonicalizeUrl(result.url);
+        const group = offered.get(key);
+        if (group) group.push({ searchId: row.search_id, startedAt: row.started_at });
+        else offered.set(key, [{ searchId: row.search_id, startedAt: row.started_at }]);
+      }
+    }
+    if (earliest === undefined || offered.size === 0) return new Map();
 
-    const placeholders = searchIds.map(() => "?").join(", ");
-    const counts = rows<{ search_id: string; total: number }>(
-      db.prepare(
-        `SELECT search_id, count(*) AS total FROM extractions
-         WHERE search_id IN (${placeholders}) GROUP BY search_id`,
-      ),
-      ...searchIds,
-    );
-    return new Map(counts.map((row) => [row.search_id, Number(row.total)]));
+    const matched = new Map<string, ExtractionRow[]>();
+    for (const extraction of rows<ExtractionRow>(db.prepare(EXTRACTIONS_SINCE), earliest)) {
+      // Either URL may be the one a search showed: engines link the address
+      // that redirects as often as the one it lands on.
+      const candidates =
+        offered.get(canonicalizeUrl(extraction.requested_url)) ??
+        (extraction.final_url === null ? undefined : offered.get(canonicalizeUrl(extraction.final_url)));
+      if (!candidates) continue;
+
+      let best: { searchId: string; startedAt: string } | undefined;
+      for (const candidate of candidates) {
+        if (candidate.startedAt > extraction.created_at) continue;
+        if (!best || candidate.startedAt > best.startedAt) best = candidate;
+      }
+      if (!best) continue;
+
+      const group = matched.get(best.searchId);
+      if (group) group.push(extraction);
+      else matched.set(best.searchId, [extraction]);
+    }
+    return matched;
   }
 
   async close(): Promise<void> {
@@ -670,6 +669,61 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
         db.exec("ALTER TABLE extractions ADD COLUMN cached INTEGER CHECK (cached IN (0, 1))");
       }
 
+      if (version < 4) {
+        // `ref` is gone from the API, so the columns that stored it go too.
+        // A read is now matched to the search that offered it by URL, at the
+        // point the dashboard asks — which is the operator's question, and so
+        // not something a caller should have had to remember to answer.
+        //
+        // A rebuild rather than DROP COLUMN: both columns appear in a CHECK
+        // constraint, and SQLite refuses to drop a column a constraint
+        // mentions. Verified, not assumed.
+        db.exec(`
+          CREATE TABLE extractions_v4 (
+            extraction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            requested_url TEXT NOT NULL,
+            final_url TEXT,
+            status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+            error_kind TEXT,
+            http_status INTEGER,
+            content_type TEXT,
+            redirects INTEGER,
+            took_ms INTEGER NOT NULL CHECK (took_ms >= 0),
+            title TEXT,
+            domain TEXT,
+            language TEXT,
+            author TEXT,
+            published TEXT,
+            chars INTEGER,
+            word_count INTEGER,
+            truncated INTEGER CHECK (truncated IN (0, 1)),
+            markdown_sha256 TEXT,
+            cached INTEGER CHECK (cached IN (0, 1)),
+            CHECK (
+              (status = 'completed' AND error_kind IS NULL) OR
+              (status = 'failed' AND error_kind IS NOT NULL)
+            )
+          );
+          INSERT INTO extractions_v4 (
+            extraction_id, created_at, requested_url, final_url, status, error_kind, http_status,
+            content_type, redirects, took_ms, title, domain, language, author, published, chars,
+            word_count, truncated, markdown_sha256, cached
+          ) SELECT
+            extraction_id, created_at, requested_url, final_url, status, error_kind, http_status,
+            content_type, redirects, took_ms, title, domain, language, author, published, chars,
+            word_count, truncated, markdown_sha256, cached
+          FROM extractions;
+          DROP TABLE extractions;
+          ALTER TABLE extractions_v4 RENAME TO extractions;
+          CREATE INDEX extractions_by_domain ON extractions (domain, created_at);
+          -- Correlation reads every extraction since the oldest search on the
+          -- page and matches URLs in JS, so the range scan is what needs the
+          -- index; the URLs themselves are never a WHERE clause.
+          CREATE INDEX extractions_recent ON extractions (created_at);
+        `);
+      }
+
       db.exec(`PRAGMA user_version = ${ARCHIVE_SCHEMA_VERSION}`);
       db.exec("COMMIT");
     } catch (err) {
@@ -712,13 +766,22 @@ const WINDOWED_ENGINE_RESULTS = `
     ON w.search_id = e.search_id
 `;
 
-/** Refs extracted at least once, within that same window. */
-const WINDOWED_EXTRACTED_REFS = `
-  SELECT DISTINCT x.search_id, x.result_ref
-  FROM extractions x
-  JOIN (SELECT search_id FROM searches ORDER BY started_at DESC, search_id DESC LIMIT ?) w
-    ON w.search_id = x.search_id
-  WHERE x.result_ref IS NOT NULL AND x.status = 'completed'
+/**
+ * URLs read at least once over the window's period.
+ *
+ * Bounded by time rather than joined to the window's searches, because an
+ * extraction no longer records which search it came from — it is matched back
+ * by URL, in JS, where the merged responses are already being walked.
+ */
+/** Every extraction from a period, for matching back to searches by URL. */
+const EXTRACTIONS_SINCE = `
+  SELECT created_at, requested_url, final_url, status, error_kind, title, chars, took_ms, cached
+  FROM extractions WHERE created_at >= ? ORDER BY extraction_id
+`;
+
+const WINDOWED_EXTRACTED_URLS = `
+  SELECT DISTINCT requested_url, final_url FROM extractions
+  WHERE status = 'completed' AND created_at >= ?
 `;
 
 /**
@@ -760,10 +823,10 @@ interface WindowedSearchRow {
   merged_response_json: string | null;
 }
 
-/** One ref that was extracted at least once, within that same window. */
-interface ExtractedRefRow {
-  search_id: string;
-  result_ref: string;
+/** One URL read at least once over the window's period. */
+interface ExtractedUrlRow {
+  requested_url: string;
+  final_url: string | null;
 }
 
 interface EngineResultRow {
@@ -781,7 +844,6 @@ interface EngineResultRow {
 
 interface ExtractionRow {
   created_at: string;
-  result_ref: string | null;
   requested_url: string;
   final_url: string | null;
   status: "completed" | "failed";

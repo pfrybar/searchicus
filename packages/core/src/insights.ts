@@ -153,10 +153,9 @@ export interface SearchSummary {
   extractions: number;
 }
 
-/** One archived extraction, as shown against the search it came from. */
+/** One archived extraction, matched by URL to the search it came from. */
 export interface ArchivedExtraction {
   createdAt: string;
-  resultRef: string | null;
   requestedUrl: string;
   finalUrl: string | null;
   status: "completed" | "failed";
