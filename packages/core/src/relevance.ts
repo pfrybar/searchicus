@@ -168,29 +168,6 @@ function tokenPresent(token: string, haystack: Set<string>): boolean {
   return false;
 }
 
-/**
- * How many of `tokens` match `token` under the rule {@link tokenPresent} uses.
- *
- * Presence answers the relevance gate; ranking needs the count, because a
- * section mentioning a term eight times is different evidence from one
- * mentioning it once. Kept beside `tokenPresent` deliberately: the two must
- * agree, or a section could rank first while reporting that it covers none
- * of the query. `countTokenMatches(t, xs) > 0` is exactly `tokenPresent(t,
- * new Set(xs))`, and a test pins that.
- */
-export function countTokenMatches(token: string, tokens: readonly string[]): number {
-  let count = 0;
-  for (const candidate of tokens) {
-    if (candidate === token) {
-      count++;
-      continue;
-    }
-    if (token.length < 4 || candidate.length < 4) continue;
-    if (candidate.startsWith(token) || token.startsWith(candidate)) count++;
-  }
-  return count;
-}
-
 /** Every token a single result offers: its title, snippet, and URL. */
 function resultTokens(result: SearchResult): Set<string> {
   return new Set(tokenize(`${result.title} ${result.snippet ?? ""} ${result.url}`));
