@@ -1,11 +1,13 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 
 import type { BrowserLeaseHandle, BrowserProvider } from "../context.js";
+import { envOptIn } from "../env.js";
 import { causeOf, createLogger } from "../logger.js";
 import { defaultProfileDir } from "../paths.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "../registry.js";
 import { createDefaultSearchArchive } from "../storage.js";
 import { LazyLaunch } from "./lazy-launch.js";
+import { findStaleProfileLock, removeStaleProfileLock, type StaleProfileLock } from "./profile-lock.js";
 import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
 
 /**
@@ -49,11 +51,18 @@ export interface BrowserSessionOptions {
 }
 
 export class BrowserUnavailableError extends Error {
-  constructor(cause: unknown) {
+  constructor(cause: unknown, staleLock?: StaleProfileLock) {
+    const staleLockAdvice = staleLock
+      ? ` Chromium's profile lock at "${staleLock.path}" names host "${staleLock.ownerHostname}", ` +
+        `not this host "${staleLock.currentHostname}", so it appears stale. If no other searchicus ` +
+        `process is using this profile, remove that lock; deployments known to be single-writer can set ` +
+        `SEARCHICUS_PROFILE_UNLOCK=true to retry after removing it automatically.`
+      : "";
     super(
       `Could not launch Chromium: ${cause instanceof Error ? cause.message : String(cause)}. ` +
-        `Playwright's browser binaries and their system libraries must both be installed ` +
-        `(\`npx playwright install chromium\` and \`npx playwright install-deps\`).`,
+        `For an installation failure, install Playwright's browser binary and system libraries ` +
+        `(\`npx playwright install chromium\` and \`npx playwright install-deps\`).` +
+        staleLockAdvice,
     );
     this.name = "BrowserUnavailableError";
     this.cause = cause;
@@ -185,17 +194,68 @@ export class BrowserSession implements BrowserProvider {
    * `launchPersistentContext` returns a BrowserContext directly — with a
    * persistent profile there is no separate Browser object, which is why this
    * class holds a context and not a browser.
+   *
+   * A profile lock naming another machine is the one launch failure that
+   * persists forever after an ungraceful stop. Diagnose it by default; only
+   * remove it when an operator has explicitly declared this deployment the
+   * profile's sole writer.
    */
   async #launchContext(): Promise<BrowserContext> {
     try {
-      const launchOptions =
-        typeof this.#launchOptions === "function" ? await this.#launchOptions() : this.#launchOptions;
+      return await this.#launchOnce();
+    } catch (err) {
+      const staleLock = findStaleProfileLock(this.#profileDir);
+      if (!staleLock || !envOptIn(process.env.SEARCHICUS_PROFILE_UNLOCK)) {
+        log.error("chromium failed to launch", {
+          profile: this.#profileDir,
+          ...(staleLock ? { lock: staleLock.path, lockHost: staleLock.ownerHostname } : {}),
+          cause: causeOf(err),
+        });
+        throw new BrowserUnavailableError(err, staleLock);
+      }
 
-      const context = await chromium.launchPersistentContext(this.#profileDir, {
-        headless: true,
-        ...launchOptions,
+      // This is intentionally just SingletonLock. SingletonCookie and
+      // SingletonSocket are supporting state; deleting them is unnecessary
+      // and broadens the opt-in destructive action beyond the actual lock.
+      try {
+        removeStaleProfileLock(staleLock);
+      } catch (unlockError) {
+        log.error("could not remove stale Chromium profile lock", {
+          profile: this.#profileDir,
+          lock: staleLock.path,
+          lockHost: staleLock.ownerHostname,
+          cause: causeOf(unlockError),
+        });
+        throw new BrowserUnavailableError(err, staleLock);
+      }
+
+      log.warn("removed stale Chromium profile lock; retrying launch", {
+        profile: this.#profileDir,
+        lock: staleLock.path,
+        lockHost: staleLock.ownerHostname,
       });
+      try {
+        return await this.#launchOnce();
+      } catch (retryError) {
+        log.error("chromium failed after stale profile lock recovery", {
+          profile: this.#profileDir,
+          lock: staleLock.path,
+          cause: causeOf(retryError),
+        });
+        throw new BrowserUnavailableError(retryError);
+      }
+    }
+  }
 
+  /** Starts Chromium once, keeping the launch/recovery policy above small. */
+  async #launchOnce(): Promise<BrowserContext> {
+    const launchOptions = typeof this.#launchOptions === "function" ? await this.#launchOptions() : this.#launchOptions;
+    const context = await chromium.launchPersistentContext(this.#profileDir, {
+      headless: true,
+      ...launchOptions,
+    });
+
+    try {
       // Before any page exists, so the very first navigation is covered.
       if (this.#initScript) await context.addInitScript(this.#initScript);
 
@@ -206,8 +266,8 @@ export class BrowserSession implements BrowserProvider {
       log.info("chromium launched", { role: "search", profile: this.#profileDir });
       return context;
     } catch (err) {
-      log.error("chromium failed to launch", { profile: this.#profileDir, cause: causeOf(err) });
-      throw new BrowserUnavailableError(err);
+      await context.close().catch(() => undefined);
+      throw err;
     }
   }
 
