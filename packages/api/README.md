@@ -124,7 +124,7 @@ Response body:
 
 An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`.
 
-A single request fans out to every selected engine in parallel, but
+A single request fans out to every registered engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
 default). A client that disconnects mid-search gives up its place in that
 queue and stops the browser work behind it.
