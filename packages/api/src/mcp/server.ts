@@ -9,6 +9,7 @@ import {
   causeOf,
   createLogger,
   ExtractRequestSchema,
+  OutlineRequestSchema,
   SearchEngineRegistry,
   SearchOverloadedError,
   SearchRequestSchema,
@@ -102,6 +103,53 @@ export function createMcpServer(
       } catch (err) {
         // Every one of these messages is already safe to surface, and each
         // tells the agent something different about what to do next.
+        if (
+          err instanceof ExtractRequestError ||
+          err instanceof ExtractionDisabledError ||
+          err instanceof ExtractionBusyError ||
+          err instanceof ExtractFailedError
+        ) {
+          return { isError: true, content: [{ type: "text", text: err.message }] };
+        }
+        throw err;
+      }
+    },
+  );
+
+  server.registerTool(
+    "outline",
+    {
+      title: "Outline",
+      description:
+        "List a page's sections without reading it: heading, nesting depth, size, and the `offset` to pass " +
+        "to `extract` to read that section. Use this to see what a long page contains — and what it does " +
+        "not — before spending context on it. `navigable` is false when the page has too little structure " +
+        "to navigate, in which case read it with `extract` instead.",
+      inputSchema: OutlineRequestSchema.shape,
+    },
+    async (request) => {
+      log.debug("tool outline", { url: request.url, ref: request.ref });
+      try {
+        const page = await extraction.outline(request);
+        log.info("tool outline", { sections: page.sections.length, navigable: page.navigable, tookMs: page.tookMs });
+        // Indented text rather than JSON: the same outline is 28-46% smaller
+        // this way, and that difference lands in the agent's context window.
+        const lines = page.sections.map(
+          (s) =>
+            `${String(s.offset).padStart(7)}  ${String(s.chars).padStart(6)}c  ${"  ".repeat(s.depth)}${s.heading ?? "(untitled)"}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `${page.title}\n${page.finalUrl}\n${page.totalChars} chars, ${page.sections.length} sections` +
+                `${page.navigable ? "" : " (too little structure to navigate; read it instead)"}\n\n` +
+                ` offset   chars  section\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      } catch (err) {
         if (
           err instanceof ExtractRequestError ||
           err instanceof ExtractionDisabledError ||

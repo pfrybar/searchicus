@@ -72,6 +72,26 @@ where our output stops and the page's own untrusted text begins. When a page
 is longer than the budget it also prints the `--offset` to pass back for the
 next window, which starts at the next section rather than mid-sentence.
 
+### `outline <url>`
+
+Lists a page's sections, with the `--offset` to read each one.
+
+```bash
+searchicus outline https://www.sqlite.org/wal.html
+searchicus extract https://www.sqlite.org/wal.html --offset 20178
+```
+
+```
+ offset   chars  section
+      0      84  (untitled)
+     84    3646  1. Overview
+   3730    1110  2. How WAL Works
+   4840    1109    2.1. Checkpointing
+```
+
+Takes `--ref` like `extract`, and `--json` for the raw response. The second
+command costs no render: the page is still in memory from the first.
+
 ### `paths`
 
 Prints where this machine keeps its Chromium profile and search archive, with

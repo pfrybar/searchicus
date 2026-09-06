@@ -1,3 +1,5 @@
+import type { OutlineSection } from "./sections.js";
+
 /**
  * A request to render one public URL and return its readable content.
  *
@@ -6,6 +8,40 @@
  * could raise its own timeout or byte budget could turn this endpoint into a
  * resource-exhaustion tool against the host.
  */
+/**
+ * A request for a page's structure.
+ *
+ * Deliberately its own operation rather than a flag on ExtractRequest. A
+ * boolean that changes the shape of the response is a mode in disguise, and
+ * the parameter matrix that grows around one is worse than a second method.
+ */
+export interface OutlineRequest {
+  /** Absolute http(s) URL to describe. */
+  url: string;
+  /** Provenance, checked exactly as it is for a read. */
+  ref?: string;
+}
+
+/** A page's structure, addressed by the offsets `extract` already takes. */
+export interface OutlineResponse {
+  url: string;
+  finalUrl: string;
+  ref?: string;
+  title: string;
+  /** Length of the whole document, so a caller can size its reading. */
+  totalChars: number;
+  /**
+   * Whether this structure is worth navigating by.
+   *
+   * False for a page with almost no headings, or one section holding most of
+   * it. The sections are still returned — a single 68,000-character entry is
+   * information — but a caller should read rather than navigate.
+   */
+  navigable: boolean;
+  sections: OutlineSection[];
+  tookMs: number;
+}
+
 export interface ExtractRequest {
   /** Absolute http(s) URL to render. */
   url: string;

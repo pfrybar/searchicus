@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { MAX_EXTRACT_MAX_CHARS } from "./extract/config.js";
-import type { ExtractRequest } from "./extract/types.js";
+import type { ExtractRequest, OutlineRequest } from "./extract/types.js";
 import type { SearchQuery, SearchRequest } from "./types.js";
 
 /**
@@ -67,6 +67,17 @@ export const SearchRequestSchema = SearchQuerySchema.extend({
  * `parseExtractUrl` and the address policy, so one set of rules applies
  * whether a URL arrived from a caller or from a redirect mid-render.
  */
+/**
+ * The request accepted by every outline front door.
+ *
+ * Just the page and its provenance: structure takes no budget, no offset and
+ * no query, which is most of why it is a separate operation.
+ */
+export const OutlineRequestSchema = z.object({
+  url: z.string().trim().min(1, "url must not be empty").max(MAX_URL_LENGTH),
+  ref: z.string().trim().min(1, "ref must not be empty").max(MAX_REF_LENGTH).optional(),
+}) satisfies z.ZodType<OutlineRequest>;
+
 export const ExtractRequestSchema = z.object({
   url: z.string().trim().min(1, "url must not be empty").max(MAX_URL_LENGTH),
   ref: z.string().trim().min(1, "ref must not be empty").max(MAX_REF_LENGTH).optional(),

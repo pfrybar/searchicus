@@ -11,6 +11,7 @@ import {
   ExtractionService,
   ExtractRequestError,
   ExtractRequestSchema,
+  OutlineRequestSchema,
   SearchEngineRegistry,
   SearchCancelledError,
   SearchOverloadedError,
@@ -243,6 +244,38 @@ function createSearchRouter(
       // A client that hung up gets no response and no error log: it asked
       // for the search to stop, and it did.
       if (err instanceof SearchCancelledError || clientGone(res)) return;
+      next(err);
+    }
+  });
+
+  router.post("/outline", async (req, res, next) => {
+    const parsed = OutlineRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid outline request", details: parsed.error.issues });
+      return;
+    }
+
+    try {
+      res.json(await extraction.outline(parsed.data, { signal: abortOnDisconnect(res) }));
+    } catch (err) {
+      // The same four answers a read gives, for the same reasons.
+      if (err instanceof ExtractRequestError) {
+        res.status(400).json({ error: "Invalid outline request", details: [err.message] });
+        return;
+      }
+      if (err instanceof ExtractionDisabledError) {
+        res.status(503).json({ error: err.message });
+        return;
+      }
+      if (err instanceof ExtractionBusyError) {
+        res.status(503).set("retry-after", "30").json({ error: err.message });
+        return;
+      }
+      if (err instanceof ExtractFailedError) {
+        res.status(502).json({ error: err.message });
+        return;
+      }
+      if (clientGone(res)) return;
       next(err);
     }
   });
