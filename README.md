@@ -288,7 +288,7 @@ Everything the server reports — the startup banner included — goes to
 2026-09-05T20:56:30.083Z INFO  browser   chromium launched profile=/data/profile/api
 2026-09-05T20:56:38.105Z INFO  api       POST /search status=200 ms=8306 bytes=1621
 2026-09-05T20:56:42.583Z WARN  extract   extraction failed url=http://127.0.0.1/admin kind=blocked_address cause="…"
-2026-09-05T20:56:42.620Z INFO  mcp       tool list_engines engines=4
+2026-09-05T20:56:42.620Z INFO  mcp       tool outline sections=12 navigable=true
 2026-09-05T20:56:42.635Z WARN  api       POST /search status=400 ms=1 bytes=93
 ```
 
@@ -506,9 +506,8 @@ deadline are what actually bound the work.
 Implement the `SearchEngine` interface from `core` (`id`, `name`,
 `search(query, ctx)`) and `.register()` it in `createDefaultRegistry()`
 (`packages/core/src/registry.ts`). Every front door builds its registry by
-calling that one function, so that's the only place that changes. Keep
-engine ids stable and unique — callers select them in the API, MCP tool, and
-CLI.
+calling that one function, so that's the only place that changes. Keep engine
+ids stable and unique: they identify internal ranking and archive records.
 
 ```ts
 class ExampleEngine implements SearchEngine {

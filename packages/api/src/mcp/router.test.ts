@@ -60,18 +60,18 @@ describe("Streamable HTTP endpoint", () => {
     }
   });
 
-  it("shares one registry with the search API, so both list the same engines", async () => {
+  it("does not expose implementation-specific engine discovery", async () => {
     const app = createApp(testRegistry());
 
-    const viaApi = await request(app).get("/engines");
-    const viaMcp = await request(app)
+    const engines = await request(app).get("/engines");
+    const tools = await request(app)
       .post("/mcp")
       .set("Accept", "application/json, text/event-stream")
-      .send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_engines", arguments: {} } });
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
 
-    expect(viaApi.body).toEqual([{ id: "test", name: "Test Search Engine" }]);
-    expect(viaMcp.status).toBe(200);
-    expect(viaMcp.text).toContain("Test Search Engine");
+    expect(engines.status).toBe(404);
+    expect(tools.status).toBe(200);
+    expect(tools.text).not.toContain("list_engines");
   });
 
   it("rejects GET and DELETE, which stateless mode can't support", async () => {
@@ -102,7 +102,7 @@ describe("with MCP disabled", () => {
     expect(mcp.status).toBe(404);
     expect(mcp.body).toEqual({ error: "Not found" });
 
-    const engines = await request(app).get("/engines");
-    expect(engines.status).toBe(200);
+    const search = await request(app).post("/search").send({ query: "cats" });
+    expect(search.status).toBe(200);
   });
 });

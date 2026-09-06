@@ -154,15 +154,17 @@ describe("SearchEngineRegistry", () => {
     await expect(registry.searchOne("nope", { query: "x" })).rejects.toBeInstanceOf(UnknownEngineError);
   });
 
-  it("returns one ranked response from the fan-out", async () => {
+  it("returns one generic response from the fan-out", async () => {
     const registry = new SearchEngineRegistry({ throttle: null }).register(new TestSearchEngine());
 
     const response = await registry.search({ query: "cats", limit: 1 });
 
     expect(response).toMatchObject({ query: { query: "cats" }, degraded: false });
-    expect(response.searchId).toMatch(/^[0-9a-z]{13}$/);
     expect(response.results).toHaveLength(1);
-    expect(response.results[0]?.ref).toBe(`${response.searchId}-1`);
+    expect(response.results[0]).toMatchObject({ title: "Test result 1", url: "https://example.test/1" });
+    expect(response).not.toHaveProperty("searchId");
+    expect(response.results[0]).not.toHaveProperty("ref");
+    expect(response.results[0]).not.toHaveProperty("found");
   });
 
   it("marks a partial fan-out as degraded without exposing its outcomes", async () => {
@@ -177,23 +179,6 @@ describe("SearchEngineRegistry", () => {
     expect(response.degraded).toBe(true);
     expect(response).not.toHaveProperty("outcomes");
     expect(response.results).not.toHaveLength(0);
-  });
-
-  it("rejects an unregistered engine id instead of reporting it as a failure", async () => {
-    const archive = new RecordingArchive();
-    const registry = new SearchEngineRegistry({ throttle: null, archive }).register(new TestSearchEngine());
-
-    // Alone, a typo would otherwise fail the whole fan-out and be reported as
-    // AllEnginesFailedError — indistinguishable from every backend being down.
-    await expect(registry.search({ query: "cats", engines: ["nope"] })).rejects.toBeInstanceOf(UnknownEngineError);
-    // Alongside a good engine it would be worse still: a silent degraded:true.
-    await expect(registry.search({ query: "cats", engines: ["test", "nope"] })).rejects.toBeInstanceOf(
-      UnknownEngineError,
-    );
-
-    // Nothing ran, so there is no fan-out to archive.
-    await registry.drain();
-    expect(archive.records).toEqual([]);
   });
 
   it("still reports an unregistered engine as one outcome in the raw fan-out", async () => {
@@ -215,17 +200,16 @@ describe("SearchEngineRegistry", () => {
       search: async () => Promise.reject(new Error("blocked")),
     });
 
-    const response = await registry.search({ query: "cats" });
+    await registry.search({ query: "cats" });
     expect(archive.records).toEqual([]);
 
     await afterImmediate();
     expect(registry.activeArchives).toBe(0);
     expect(archive.records).toHaveLength(1);
     expect(archive.records[0]).toMatchObject({
-      searchId: response.searchId,
       query: { query: "cats" },
       engineIds: ["test", "broken"],
-      response,
+      response: { query: { query: "cats" } },
       outcomes: [
         { engineId: "test", ok: true },
         { engineId: "broken", ok: false, errorKind: "unknown" },

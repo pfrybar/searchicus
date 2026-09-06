@@ -35,23 +35,16 @@ describe("GET /health", () => {
   });
 });
 
-describe("GET /engines", () => {
-  it("lists registered engines", async () => {
-    const res = await request(testApp()).get("/engines");
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: "test", name: "Test Search Engine" }]);
-  });
-});
-
 describe("POST /search", () => {
   it("returns one ranked response by default", async () => {
     const res = await request(testApp()).post("/search").send({ query: "cats" });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ query: { query: "cats" }, degraded: false });
-    expect(res.body.searchId).toMatch(/^[0-9a-z]{13}$/);
     expect(res.body.results).toHaveLength(8);
-    expect(res.body.results[0].ref).toBe(`${res.body.searchId}-1`);
+    expect(res.body.results[0]).toMatchObject({ title: "Test result 1", url: "https://result-1.example.test/" });
+    expect(res.body).not.toHaveProperty("searchId");
+    expect(res.body.results[0]).not.toHaveProperty("ref");
     expect(res.body).not.toHaveProperty("outcomes");
   });
 
@@ -60,15 +53,6 @@ describe("POST /search", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.results).toHaveLength(2);
-  });
-
-  it("can target a specific subset of engines", async () => {
-    const res = await request(testApp())
-      .post("/search")
-      .send({ query: "cats", engines: ["test"] });
-
-    expect(res.status).toBe(200);
-    expect(res.body.results[0].found).toEqual([{ engineId: "test", rank: 1 }]);
   });
 
   it("marks partial results as degraded without revealing the failed engine", async () => {
@@ -97,30 +81,15 @@ describe("POST /search", () => {
     expect(res.body).toEqual({ error: "Search unavailable" });
   });
 
-  it("rejects an unknown engine id as a request error, not a backend outage", async () => {
-    const alone = await request(testApp())
-      .post("/search")
-      .send({ query: "cats", engines: ["nope"] });
-    const mixed = await request(testApp())
-      .post("/search")
-      .send({ query: "cats", engines: ["test", "nope"] });
-
-    for (const res of [alone, mixed]) {
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe("Invalid search request");
-      expect(String(res.body.details)).toContain("nope");
-    }
-  });
-
   it("rejects an invalid request body", async () => {
     const missingQuery = await request(testApp()).post("/search").send({});
     const invalidLimit = await request(testApp()).post("/search").send({ query: "cats", limit: 0 });
     const whitespaceQuery = await request(testApp()).post("/search").send({ query: "   " });
-    const malformedEngines = await request(testApp())
+    const removedEngines = await request(testApp())
       .post("/search")
-      .send({ query: "cats", engines: ["test", 1] });
+      .send({ query: "cats", engines: ["test"] });
 
-    for (const res of [missingQuery, invalidLimit, whitespaceQuery, malformedEngines]) {
+    for (const res of [missingQuery, invalidLimit, whitespaceQuery, removedEngines]) {
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Invalid search request");
       expect(res.body.details).toBeInstanceOf(Array);
@@ -181,10 +150,10 @@ describe("request limits", () => {
       .send({ query: "x".repeat(2_000) });
     expect(longQuery.status).toBe(400);
 
-    const manyEngines = await request(app)
+    const removedEngines = await request(app)
       .post("/search")
-      .send({ query: "cats", engines: Array.from({ length: 40 }, (_, i) => `engine-${i}`) });
-    expect(manyEngines.status).toBe(400);
+      .send({ query: "cats", engines: ["bing"] });
+    expect(removedEngines.status).toBe(400);
 
     // The bound is generous: an ordinary request is nowhere near it.
     const ordinary = await request(app)

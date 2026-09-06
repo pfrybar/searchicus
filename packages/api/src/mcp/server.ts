@@ -14,7 +14,6 @@ import {
   SearchEngineRegistry,
   SearchOverloadedError,
   SearchRequestSchema,
-  UnknownEngineError,
 } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -24,9 +23,8 @@ const log = createLogger("mcp");
  * Builds an McpServer exposing the registry as MCP tools. app.ts creates a
  * fresh server (and transport) per HTTP request — stateless mode — so this
  * is cheap to call repeatedly rather than something to share/cache. Its
- * default is core's browser-free registry, which can list engines but cannot
- * run browser-backed searches; the executable server injects a browser-backed
- * registry.
+ * default is core's browser-free registry, which cannot run browser-backed
+ * searches; the executable server injects a browser-backed registry.
  */
 export function createMcpServer(
   registry: SearchEngineRegistry = createDefaultRegistry(),
@@ -38,12 +36,12 @@ export function createMcpServer(
     "search",
     {
       title: "Search",
-      description: "Search one or more backend search engines and return matching results.",
+      description: "Search the web and return a compact ranked list of matching results.",
       inputSchema: SearchRequestSchema.shape,
     },
     async (request) => {
       // Query text at debug only; see accessLog in app.ts for why.
-      log.debug("tool search", { query: request.query, limit: request.limit, engines: request.engines?.join(",") });
+      log.debug("tool search", { query: request.query, limit: request.limit });
       try {
         const response = await registry.search(request);
         log.info("tool search", {
@@ -56,11 +54,6 @@ export function createMcpServer(
         };
       } catch (err) {
         log.warn("tool search failed", { cause: causeOf(err) });
-        // Name the bad id: an agent that picked it from list_engines can
-        // correct itself, where a generic failure invites a blind retry.
-        if (err instanceof UnknownEngineError) {
-          return { isError: true, content: [{ type: "text", text: err.message }] };
-        }
         if (err instanceof AllEnginesFailedError) {
           return { isError: true, content: [{ type: "text", text: "Search unavailable" }] };
         }
@@ -250,19 +243,6 @@ export function createMcpServer(
         }
         throw err;
       }
-    },
-  );
-
-  server.registerTool(
-    "list_engines",
-    {
-      title: "List engines",
-      description: "List the backend search engines currently registered.",
-    },
-    async () => {
-      const engines = registry.list().map((engine) => ({ id: engine.id, name: engine.name }));
-      log.info("tool list_engines", { engines: engines.length });
-      return { content: [{ type: "text", text: JSON.stringify(engines, null, 2) }] };
     },
   );
 

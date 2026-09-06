@@ -20,8 +20,8 @@ describe("SearchQuerySchema", () => {
 });
 
 describe("SearchRequestSchema", () => {
-  it("accepts an optional final result limit and engine selection", () => {
-    const result = SearchRequestSchema.safeParse({ query: "cats", limit: 5, engines: ["bing", "docs"] });
+  it("accepts an optional final result limit", () => {
+    const result = SearchRequestSchema.safeParse({ query: "cats", limit: 5 });
     expect(result.success).toBe(true);
   });
 
@@ -31,9 +31,7 @@ describe("SearchRequestSchema", () => {
     expect(SearchRequestSchema.safeParse({ query: "cats", limit: MAX_SEARCH_LIMIT + 1 }).success).toBe(false);
   });
 
-  it("rejects malformed, empty, and duplicate engine selections", () => {
-    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["bing", 1] }).success).toBe(false);
-    expect(SearchRequestSchema.safeParse({ query: "cats", engines: [] }).success).toBe(false);
-    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["bing", "bing"] }).success).toBe(false);
+  it("rejects the removed engine-selection field", () => {
+    expect(SearchRequestSchema.safeParse({ query: "cats", engines: ["bing"] }).success).toBe(false);
   });
 });

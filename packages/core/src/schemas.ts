@@ -16,8 +16,6 @@ import type { SearchQuery, SearchRequest } from "./types.js";
  */
 export const MAX_QUERY_LENGTH = 1_024;
 export const MAX_URL_LENGTH = 2_048;
-export const MAX_ENGINE_ID_LENGTH = 64;
-export const MAX_ENGINE_SELECTION = 16;
 
 /**
  * Ceiling on the final merged result count.
@@ -41,22 +39,11 @@ export const SearchQuerySchema = z.object({
   query: z.string().trim().min(1, "query must not be empty").max(MAX_QUERY_LENGTH),
 }) satisfies z.ZodType<SearchQuery>;
 
-/**
- * The complete request accepted by front doors that let callers choose
- * engines. Keeping this here ensures the HTTP API and MCP tool apply the
- * same validation rather than inspecting untrusted input themselves.
- */
+/** The complete generic request accepted by ordinary search front doors. */
 export const SearchRequestSchema = SearchQuerySchema.extend({
   /** Final merged output count; never forwarded to an individual engine. */
   limit: z.number().int().positive().max(MAX_SEARCH_LIMIT).optional(),
-  engines: z
-    .array(z.string().min(1, "engine id must not be empty").max(MAX_ENGINE_ID_LENGTH))
-    .min(1, "engines must contain at least one engine id")
-    .max(MAX_ENGINE_SELECTION, `engines must not name more than ${MAX_ENGINE_SELECTION} engines`)
-    .refine((engineIds) => new Set(engineIds).size === engineIds.length, "engines must not contain duplicates")
-    .optional()
-    .describe("Specific engine ids to search; defaults to every registered engine."),
-}) satisfies z.ZodType<SearchRequest>;
+}).strict() satisfies z.ZodType<SearchRequest>;
 
 /**
  * The complete request accepted by every extract front door.

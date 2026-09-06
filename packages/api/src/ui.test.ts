@@ -56,11 +56,10 @@ describe("search API mount points", () => {
     const app = withUi();
 
     expect((await request(app).get("/api/health")).body).toEqual({ status: "ok", extract: false, insights: false });
-    expect((await request(app).get("/api/engines")).body).toEqual([{ id: "test", name: "Test Search Engine" }]);
-
     const search = await request(app).post("/api/search").send({ query: "cats" });
     expect(search.status).toBe(200);
-    expect(search.body.results[0].found).toEqual([{ engineId: "test", rank: 1 }]);
+    expect(search.body.results[0]).toMatchObject({ title: "Test result 1", url: "https://result-1.example.test/" });
+    expect(search.body.results[0]).not.toHaveProperty("found");
     expect(search.body).not.toHaveProperty("outcomes");
   });
 
@@ -73,22 +72,21 @@ describe("search API mount points", () => {
   });
 
   it("keeps API routes ahead of static files, so a build can't shadow them", async () => {
-    // A UI build containing a file literally named `engines` must not win.
-    writeFileSync(path.join(uiDir, "engines"), "static file, not the API");
+    writeFileSync(path.join(uiDir, "health"), "static file, not the API");
 
-    const res = await request(withUi()).get("/engines");
+    const res = await request(withUi()).get("/health");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: "test", name: "Test Search Engine" }]);
+    expect(res.body).toEqual({ status: "ok", extract: false, insights: false });
   });
 
   it("serves MCP alongside the UI", async () => {
     const res = await request(withUi())
       .post("/mcp")
       .set("Accept", "application/json, text/event-stream")
-      .send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "list_engines", arguments: {} } });
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain("Test Search Engine");
+    expect(res.text).not.toContain("list_engines");
   });
 });

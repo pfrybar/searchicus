@@ -13,6 +13,7 @@ import type {
   EngineFailureKind,
   EngineSearchOutcome,
   MergedSearchResponse,
+  PublicSearchResponse,
   SearchEngine,
   SearchQuery,
   SearchRequest,
@@ -215,30 +216,18 @@ export class SearchEngineRegistry {
   }
 
   /**
-   * Searches selected engines, merges their successful results, and exposes
-   * only the ranked list to ordinary callers. A partial engine failure sets
-   * `degraded`; total failure throws AllEnginesFailedError instead of making
-   * an empty result list ambiguous.
-   *
-   * Naming an unregistered engine throws UnknownEngineError before anything
-   * runs. The fan-out beneath this reports one as an ordinary failed outcome,
-   * which is right for `searchAll()`'s diagnostic contract but wrong here: it
-   * would make a caller's typo indistinguishable from a backend outage —
-   * AllEnginesFailedError when the bad id was the only one named, and a
-   * silent `degraded: true` when it wasn't.
+   * Searches every registered engine and presents one compact, provider-free
+   * list to ordinary callers. Detailed ranking and outcome data stays in the
+   * archive record; a partial internal failure only sets `degraded`.
    */
-  async search(request: SearchRequest, options: { signal?: AbortSignal } = {}): Promise<MergedSearchResponse> {
-    const { engines: requestedEngineIds, limit, ...query } = request;
-    for (const engineId of requestedEngineIds ?? []) {
-      if (!this.engines.has(engineId)) throw new UnknownEngineError(engineId);
-    }
-
+  async search(request: SearchRequest, options: { signal?: AbortSignal } = {}): Promise<PublicSearchResponse> {
+    const { limit, ...query } = request;
     const started = Date.now();
     const searchId = createSearchId();
-    const engineIds = requestedEngineIds ?? this.list().map((engine) => engine.id);
+    const engineIds = this.list().map((engine) => engine.id);
     const outcomes = await this.searchAll(query, engineIds, options.signal);
     const tookMs = Date.now() - started;
-    const response = outcomes.some((outcome) => outcome.ok)
+    const response: MergedSearchResponse | undefined = outcomes.some((outcome) => outcome.ok)
       ? {
           searchId,
           query,
@@ -259,7 +248,12 @@ export class SearchEngineRegistry {
     });
 
     if (!response) throw new AllEnginesFailedError();
-    return response;
+    return {
+      query: response.query,
+      results: response.results.map(({ title, url, snippet }) => ({ title, url, ...(snippet ? { snippet } : {}) })),
+      tookMs: response.tookMs,
+      degraded: response.degraded,
+    };
   }
 
   /**
