@@ -189,6 +189,15 @@ persisted, and the `extractions` table has nowhere to put it — though a parsed
 page is held in memory briefly so that reading its second window does not
 render it again. See the root README's "Extraction" for that bound.
 
+`find(request)` is the third read operation: it scores the page's sections
+against a query with BM25 over that page's own sections — document frequency
+across the chunks of one document, which measures how distinctive a term is
+_here_ — and returns the best few whole, within a budget. The chunker is
+`splitSections`, the same one `extract` windows with and `outline` describes,
+so a match is addressed by the offset `extract` already takes. The tokenizer
+is shared with `relevance.ts`; the scorer deliberately is not. Constants live
+at the top of `extract/find.ts` and are meant to be tuned.
+
 A read records the URL it asked for and nothing about who sent the caller
 there. `searchDetail` and `engineMetrics` match reads back to the searches
 that offered them by canonicalized URL, at the point they are asked — so the

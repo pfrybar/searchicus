@@ -1,20 +1,25 @@
 import { createHash } from "node:crypto";
 import type { ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { causeOf, createLogger } from "../logger.js";
+import { contentTokens } from "../relevance.js";
 import { assertPublicHost, parseExtractUrl, type AddressLookup } from "./address.js";
 import {
   DEFAULT_EXTRACT_CONFIG,
   DEFAULT_EXTRACT_MAX_CHARS,
+  DEFAULT_FIND_MAX_CHARS,
   MAX_EXTRACT_MAX_CHARS,
   type ExtractConfig,
 } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
+import { findSections } from "./find.js";
 import { PageCache, type CachedPage } from "./page-cache.js";
 import { buildOutline, sliceWindow } from "./sections.js";
 import type {
   DocumentParser,
   ExtractRequest,
   ExtractResponse,
+  FindRequest,
+  FindResponse,
   OutlineRequest,
   OutlineResponse,
   PageRenderer,
@@ -184,6 +189,106 @@ export class ExtractionService {
       // caller map internal network space by probing. The operator gets the
       // real reason, which is the whole point of carrying a cause.
       log.warn("extraction failed", {
+        url: url.toString(),
+        kind: failure.kind,
+        tookMs: Date.now() - started,
+        cause: causeOf(failure.cause ?? err),
+      });
+      this.#record({
+        ...base,
+        status: "failed",
+        errorKind: failure.kind,
+        tookMs: Date.now() - started,
+        domain: domainOf(url.toString()),
+      });
+      throw failure;
+    } finally {
+      clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", onCallerGone);
+    }
+  }
+
+  /**
+   * Returns the sections of a page that best answer a query.
+   *
+   * Archived like a read, because it is one: content comes back, and leaving
+   * it out would make the extraction metrics describe some of the reading
+   * this server does rather than all of it. `outline` is the operation that
+   * archives nothing, having returned nothing to read.
+   */
+  async find(request: FindRequest, options: { signal?: AbortSignal } = {}): Promise<FindResponse> {
+    if (this.#closed) throw new ExtractFailedError("cancelled", "Extraction is shutting down.");
+    if (!this.#config.enabled || !this.#renderer) throw new ExtractionDisabledError();
+
+    const startedAt = new Date().toISOString();
+    const started = Date.now();
+
+    const url = parseExtractUrl(request.url, this.#config);
+    const maxChars = resolveMaxChars(request.maxChars, DEFAULT_FIND_MAX_CHARS);
+    // A query of pure stopwords carries no topic, so there is nothing to
+    // rank against. Coverage would report 1 for it — "everything matched" —
+    // and the order would be arbitrary, so this is a bad request rather than
+    // an empty result.
+    if (contentTokens(request.query).length === 0) {
+      throw new ExtractRequestError("query must contain a word to search for.");
+    }
+
+    const base = { startedAt, requestedUrl: url.toString() };
+
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), this.#config.timeoutMs);
+    const onCallerGone = (): void => controller.abort();
+    options.signal?.addEventListener("abort", onCallerGone, { once: true });
+
+    try {
+      await assertPublicHost(url.hostname, this.#lookup);
+      const { page, cached } = await this.#loadPage(url, controller);
+
+      // Scored over the whole document, like an outline and unlike a window:
+      // ranking the part that happened to fit would answer a different
+      // question from the one asked.
+      const matches = findSections(page.markdown, request.query, maxChars);
+      const markdown = matches.map((match) => match.markdown).join("\n\n");
+
+      const response: FindResponse = {
+        url: request.url,
+        finalUrl: page.finalUrl,
+        title: page.title,
+        query: request.query,
+        totalChars: page.markdown.length,
+        matches,
+        tookMs: Date.now() - started,
+        untrusted: true,
+      };
+
+      this.#record({
+        ...base,
+        finalUrl: page.finalUrl,
+        status: "completed",
+        ...(page.status === undefined ? {} : { httpStatus: page.status }),
+        ...(page.contentType === undefined ? {} : { contentType: page.contentType }),
+        redirects: page.redirects,
+        tookMs: response.tookMs,
+        title: page.title,
+        domain: domainOf(page.finalUrl),
+        ...(page.language === undefined ? {} : { language: page.language }),
+        ...(page.author === undefined ? {} : { author: page.author }),
+        ...(page.published === undefined ? {} : { published: page.published }),
+        chars: markdown.length,
+        wordCount: page.wordCount,
+        // Selection always leaves the rest of the document behind, so this
+        // is true even where nothing was cut mid-section.
+        truncated: markdown.length < page.markdown.length,
+        cached,
+        markdownSha256: createHash("sha256").update(markdown).digest("hex"),
+      });
+
+      return response;
+    } catch (err) {
+      if (err instanceof ExtractRequestError || err instanceof ExtractionBusyError) throw err;
+
+      const failure = asExtractFailure(err, controller.signal);
+      log.warn("find failed", {
         url: url.toString(),
         kind: failure.kind,
         tookMs: Date.now() - started,
@@ -383,8 +488,8 @@ function asExtractFailure(err: unknown, signal: AbortSignal): ExtractFailedError
   return new ExtractFailedError("unknown", "That URL could not be extracted.", err);
 }
 
-function resolveMaxChars(value: number | undefined): number {
-  if (value === undefined) return DEFAULT_EXTRACT_MAX_CHARS;
+function resolveMaxChars(value: number | undefined, fallback = DEFAULT_EXTRACT_MAX_CHARS): number {
+  if (value === undefined) return fallback;
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new ExtractRequestError("maxChars must be a positive integer.");
   }

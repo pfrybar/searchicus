@@ -446,6 +446,97 @@ describe("ExtractionService page cache", () => {
   });
 });
 
+describe("ExtractionService.find", () => {
+  const doc = [
+    "# Storage",
+    "",
+    "General notes about storage that mention storage a lot.",
+    "",
+    "## Checkpointing",
+    "",
+    "Checkpoint starvation happens when readers never let a checkpoint finish, which stalls the log.",
+    "",
+    "## Something else",
+    "",
+    "Unrelated prose about unrelated matters, at length, so it is not the shortest section here.",
+  ].join("\n");
+  const findParse: DocumentParser = async () => ({ title: "Storage", markdown: doc, wordCount: 40 });
+
+  it("returns the section that answers the query, addressed the way extract takes it", async () => {
+    const page = await service({ parse: findParse }).find({ url: PAGE_URL, query: "checkpoint starvation" });
+
+    expect(page.matches[0]?.path).toEqual(["Storage", "Checkpointing"]);
+    expect(page.matches[0]?.markdown).toContain("Checkpoint starvation");
+    expect(page.totalChars).toBe(doc.length);
+    expect(page.untrusted).toBe(true);
+  });
+
+  it("scores the whole document, not the part a window would have held", async () => {
+    // The answer here is past any small window from the top, so a find that
+    // ranked only what fit would miss it.
+    const page = await service({ parse: findParse }).find({
+      url: PAGE_URL,
+      query: "checkpoint starvation",
+      maxChars: 300,
+    });
+
+    expect(page.matches[0]?.path.at(-1)).toBe("Checkpointing");
+  });
+
+  it("answers a page that does not discuss the query with no matches, not an error", async () => {
+    const page = await service({ parse: findParse }).find({ url: PAGE_URL, query: "kubernetes ingress" });
+
+    expect(page.matches).toEqual([]);
+    // Still a complete answer: the caller can see how big the page was and
+    // decide whether to read it anyway.
+    expect(page.totalChars).toBe(doc.length);
+  });
+
+  it("refuses a query with no word to search for", async () => {
+    // Coverage reports 1 for a query of pure stopwords, so ranking one would
+    // return arbitrary sections and call them matches.
+    await expect(service({ parse: findParse }).find({ url: PAGE_URL, query: "the and of" })).rejects.toBeInstanceOf(
+      ExtractRequestError,
+    );
+  });
+
+  it("is archived like a read, because content came back", async () => {
+    const archive = new FakeArchive();
+    await service({ archive, parse: findParse }).find({ url: PAGE_URL, query: "checkpoint starvation" });
+    await settle();
+
+    const [record] = archive.extractions;
+    expect(record).toMatchObject({ status: "completed", requestedUrl: PAGE_URL, title: "Storage" });
+    // Selection always leaves the rest of the document behind.
+    expect(record?.truncated).toBe(true);
+    expect(JSON.stringify(record)).not.toContain("starvation happens");
+  });
+
+  it("shares the render with the other two, so surveying then asking costs one render", async () => {
+    const renderer = new FakeRenderer();
+    const extraction = service({ renderer, parse: findParse });
+
+    await extraction.outline({ url: PAGE_URL });
+    const page = await extraction.find({ url: PAGE_URL, query: "checkpoint starvation" });
+    await extraction.extract({ url: PAGE_URL, offset: page.matches[0]?.offset, maxChars: 200 });
+
+    expect(renderer.rendered).toEqual([PAGE_URL]);
+  });
+
+  it("refuses when extraction is switched off", async () => {
+    const off = new ExtractionService();
+    await expect(off.find({ url: PAGE_URL, query: "anything" })).rejects.toBeInstanceOf(ExtractionDisabledError);
+  });
+
+  it("screens the address exactly as a read does", async () => {
+    const renderer = new FakeRenderer();
+    await expect(
+      service({ renderer, parse: findParse }).find({ url: "file:///etc/passwd", query: "root" }),
+    ).rejects.toBeInstanceOf(ExtractRequestError);
+    expect(renderer.rendered).toEqual([]);
+  });
+});
+
 describe("ExtractionService.outline", () => {
   const doc = ["# Guide", "", "Intro.", "", "## First", "", "Body one.", "", "## Second", "", "Body two."].join("\n");
   const outlineParse: DocumentParser = async () => ({ title: "Guide", markdown: doc, wordCount: 8 });

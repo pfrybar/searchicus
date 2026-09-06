@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { MAX_EXTRACT_MAX_CHARS } from "./extract/config.js";
-import type { ExtractRequest, OutlineRequest } from "./extract/types.js";
+import type { ExtractRequest, FindRequest, OutlineRequest } from "./extract/types.js";
 import type { SearchQuery, SearchRequest } from "./types.js";
 
 /**
@@ -92,3 +92,22 @@ export const ExtractRequestSchema = z.object({
     .optional()
     .describe("Where to start reading, from a previous response's nextOffset. Snaps to a section boundary."),
 }) satisfies z.ZodType<ExtractRequest>;
+
+/**
+ * The request accepted by every find front door.
+ *
+ * `query` is required and shares the search query's bounds: it is the same
+ * kind of untrusted text arriving at the same kind of door, and a second set
+ * of limits for it would be a second thing to keep in step.
+ */
+export const FindRequestSchema = z.object({
+  url: z.string().trim().min(1, "url must not be empty").max(MAX_URL_LENGTH),
+  query: z.string().trim().min(1, "query must not be empty").max(MAX_QUERY_LENGTH),
+  maxChars: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_EXTRACT_MAX_CHARS)
+    .optional()
+    .describe("Total characters of Markdown across all matches. Defaults to 6000."),
+}) satisfies z.ZodType<FindRequest>;

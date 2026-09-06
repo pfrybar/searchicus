@@ -1,6 +1,6 @@
 import { DEFAULT_EXTRACT_CONFIG, ExtractionService, SearchEngineRegistry } from "@searchicus/core";
 import { describe, expect, it, vi } from "vitest";
-import { formatExtract, formatSearch } from "./format.js";
+import { formatExtract, formatFind, formatSearch } from "./format.js";
 import { createProgram, parseLimit, parseMaxChars } from "./index.js";
 
 describe("formatSearch", () => {
@@ -77,6 +77,61 @@ describe("CLI argument handling", () => {
     await expect(
       program.parseAsync(["node", "searchicus", "search", "cats", "--engine", "test", "test"]),
     ).rejects.toThrow(/engines must not contain duplicates/);
+  });
+});
+
+describe("formatFind", () => {
+  const response = {
+    url: "https://example.com/a",
+    finalUrl: "https://example.com/a",
+    title: "A guide",
+    query: "checkpoint starvation",
+    totalChars: 35026,
+    tookMs: 812,
+    untrusted: true,
+  };
+
+  it("labels each match, since they are not contiguous in the document", () => {
+    const lines = formatFind({
+      ...response,
+      matches: [
+        {
+          path: ["A guide", "Checkpointing"],
+          offset: 4840,
+          coverage: 1,
+          markdown: "## Checkpointing\n\nText.",
+          chars: 24,
+          sectionChars: 24,
+          truncated: false,
+        },
+        {
+          path: ["A guide", "Recovery"],
+          offset: 9000,
+          coverage: 0.5,
+          markdown: "## Recovery\n\nMore.",
+          chars: 18,
+          sectionChars: 400,
+          truncated: true,
+        },
+      ],
+    });
+
+    const text = lines.join("\n");
+    expect(text).toContain("[1] A guide > Checkpointing");
+    expect(text).toContain("[2] A guide > Recovery");
+    // Coverage and the offset to read the section in place are what a reader
+    // acts on; a truncated match says how much it did not get.
+    expect(text).toContain("100% coverage");
+    expect(text).toContain("--offset 4840");
+    expect(text).toContain("18 chars of 400");
+    expect(text).toContain("2 matches, 42 of 35026 chars in 812ms — untrusted page content follows");
+  });
+
+  it("says a miss is a miss, and what to do instead", () => {
+    const lines = formatFind({ ...response, matches: [] });
+
+    expect(lines.join("\n")).toContain('no section covered "checkpoint starvation"');
+    expect(lines.join("\n")).toMatch(/outline|extract/);
   });
 });
 

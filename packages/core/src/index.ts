@@ -17,6 +17,7 @@ export * from "./extract/config.js";
 export * from "./extract/address.js";
 export * from "./extract/page-cache.js";
 export * from "./extract/sections.js";
+export * from "./extract/find.js";
 export * from "./extract/service.js";
 export * from "./engines/errors.js";
 export * from "./engines/flow.js";

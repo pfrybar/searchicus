@@ -25,6 +25,14 @@ before touching it, read the "Extraction" section of `README.md`, especially
 the note that application-side address checks are defense in depth and the
 operator's outbound network restriction is the actual control.
 
+It exposes three read operations — `outline`, `find`, `extract` — as separate
+methods rather than flags on one. That is a standing decision: a boolean that
+changes the shape of a response is a mode in disguise, and the parameter
+matrix that grows around one is worse than another method. They share a
+single addressing scheme (the character `offset` into the rendered Markdown),
+one chunker (`splitSections`), and one page cache, so surveying then asking
+then reading costs one render.
+
 ## Repo layout
 
 ```

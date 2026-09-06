@@ -219,6 +219,49 @@ describe("POST /outline", () => {
   });
 });
 
+describe("POST /find", () => {
+  const findApp = () => createApp(testRegistry(), { extraction: testExtraction() });
+
+  it("returns matching sections, marked untrusted", async () => {
+    const res = await request(findApp()).post("/find").send({ url: "https://example.com/a", query: "readable prose" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ query: "readable prose", untrusted: true, totalChars: expect.any(Number) });
+    expect(res.body.matches[0]).toMatchObject({
+      offset: expect.any(Number),
+      coverage: expect.any(Number),
+      markdown: expect.stringContaining("readable prose"),
+      truncated: false,
+    });
+  });
+
+  it("answers a page that does not discuss the query with 200 and no matches", async () => {
+    // Not a 404 and not a 502: the caller asked a question and got a true
+    // answer. An error here would tell an agent to retry something that
+    // will keep giving the same result.
+    const res = await request(findApp()).post("/find").send({ url: "https://example.com/a", query: "kubernetes" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.matches).toEqual([]);
+  });
+
+  it("requires a query, and one with a word in it", async () => {
+    const app = findApp();
+    expect((await request(app).post("/find").send({ url: "https://example.com/a" })).status).toBe(400);
+    expect((await request(app).post("/find").send({ url: "https://example.com/a", query: "  " })).status).toBe(400);
+
+    const empty = await request(app).post("/find").send({ url: "https://example.com/a", query: "the and of" });
+    expect(empty.status).toBe(400);
+    expect(String(empty.body.details)).toMatch(/word to search for/);
+  });
+
+  it("reports a disabled deployment separately from a bad request", async () => {
+    const off = createApp(testRegistry());
+    const res = await request(off).post("/find").send({ url: "https://example.com/", query: "anything" });
+    expect(res.status).toBe(503);
+  });
+});
+
 describe("POST /extract", () => {
   function extractApp(renderer?: PageRenderer) {
     return createApp(testRegistry(), { extraction: testExtraction({}, renderer) });

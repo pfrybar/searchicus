@@ -227,7 +227,7 @@ export function sliceWindow(markdown: string, options: { offset?: number; maxCha
  * lines. Nothing is appended to mark it: an invented ``` would be this system
  * writing code into content the response labels untrusted.
  */
-function safeCut(markdown: string, sectionStart: number, from: number, maxChars: number): number {
+export function safeCut(markdown: string, sectionStart: number, from: number, maxChars: number): number {
   const limit = from + maxChars;
   if (limit >= markdown.length) return markdown.length;
 
