@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ArchivedResult, ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
+import type { ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
 import { ExtractionService } from "./service.js";
@@ -35,11 +35,6 @@ class FakeRenderer implements PageRenderer {
 
 class FakeArchive implements ExtractionArchive {
   readonly extractions: ExtractionArchiveRecord[] = [];
-  constructor(private readonly results: Record<string, ArchivedResult> = {}) {}
-
-  async findResult(ref: string): Promise<ArchivedResult | undefined> {
-    return this.results[ref];
-  }
 
   async recordExtraction(record: ExtractionArchiveRecord): Promise<void> {
     this.extractions.push(record);
@@ -94,8 +89,6 @@ describe("ExtractionService", () => {
       chars: 34,
       untrusted: true,
     });
-    // Nothing invented: a URL-only extraction has no ref to echo.
-    expect(response).not.toHaveProperty("ref");
   });
 
   it("marks every response untrusted, whatever the page returned", async () => {
@@ -110,61 +103,8 @@ describe("ExtractionService", () => {
     expect(response.untrusted).toBe(true);
   });
 
-  describe("refs", () => {
-    const archived: ArchivedResult = { searchId: "abc123", ref: "abc123-2", url: PAGE_URL, rank: 2 };
-
-    it("echoes a ref that resolves to the URL being extracted", async () => {
-      const archive = new FakeArchive({ "abc123-2": archived });
-
-      const response = await service({ archive }).extract({ url: PAGE_URL, ref: "abc123-2" });
-
-      expect(response.ref).toBe("abc123-2");
-    });
-
-    it("tolerates the same page written differently", async () => {
-      const archive = new FakeArchive({ "abc123-2": archived });
-
-      // Ranking's canonicalization already treats these as one page, so the
-      // ref check has to use the same rule or a caller pasting a URL from
-      // their address bar would be told it is a different page.
-      const response = await service({ archive }).extract({
-        url: "http://www.example.test/article/?utm_source=news",
-        ref: "abc123-2",
-      });
-
-      expect(response.ref).toBe("abc123-2");
-    });
-
-    it("rejects a ref that names no archived result", async () => {
-      const archive = new FakeArchive();
-
-      await expect(service({ archive }).extract({ url: PAGE_URL, ref: "abc123-2" })).rejects.toThrow(
-        /does not name a result/,
-      );
-    });
-
-    it("rejects a ref pointed at an unrelated URL", async () => {
-      const archive = new FakeArchive({ "abc123-2": archived });
-      const renderer = new FakeRenderer();
-
-      // The failure this prevents: provenance laundering. Accepting this
-      // would attach a real search's ranking data to a page that search never
-      // returned, and nothing downstream could detect it afterwards.
-      await expect(
-        service({ archive, renderer }).extract({ url: "https://attacker.test/other", ref: "abc123-2" }),
-      ).rejects.toThrow(/names a different URL/);
-      expect(renderer.rendered).toEqual([]);
-    });
-
-    it("rejects a ref when there is no archive to verify it against", async () => {
-      await expect(service({ archive: null }).extract({ url: PAGE_URL, ref: "abc123-2" })).rejects.toThrow(
-        /no search archive/,
-      );
-    });
-
-    it("still extracts a bare URL with no archive configured", async () => {
-      await expect(service({ archive: null }).extract({ url: PAGE_URL })).resolves.toMatchObject({ untrusted: true });
-    });
+  it("still extracts with no archive configured", async () => {
+    await expect(service({ archive: null }).extract({ url: PAGE_URL })).resolves.toMatchObject({ untrusted: true });
   });
 
   describe("limits", () => {
@@ -255,17 +195,13 @@ describe("ExtractionService", () => {
 
   describe("the archive signal", () => {
     it("records a successful extraction as metadata, never as content", async () => {
-      const archive = new FakeArchive({
-        "abc123-2": { searchId: "abc123", ref: "abc123-2", url: PAGE_URL, rank: 2 },
-      });
+      const archive = new FakeArchive();
 
-      await service({ archive }).extract({ url: PAGE_URL, ref: "abc123-2" });
+      await service({ archive }).extract({ url: PAGE_URL });
       await settle();
 
       const [record] = archive.extractions;
       expect(record).toMatchObject({
-        searchId: "abc123",
-        resultRef: "abc123-2",
         requestedUrl: PAGE_URL,
         finalUrl: PAGE_URL,
         status: "completed",
@@ -281,16 +217,6 @@ describe("ExtractionService", () => {
       expect(record?.markdownSha256).toMatch(/^[0-9a-f]{64}$/);
       // The point of the whole table: no page text is kept anywhere in it.
       expect(JSON.stringify(record)).not.toContain("readable prose");
-    });
-
-    it("leaves search provenance null for a URL-only extraction", async () => {
-      const archive = new FakeArchive();
-
-      await service({ archive }).extract({ url: PAGE_URL });
-      await settle();
-
-      expect(archive.extractions[0]?.searchId).toBeUndefined();
-      expect(archive.extractions[0]?.resultRef).toBeUndefined();
     });
 
     it("records failures too, so skipped and broken results are distinguishable", async () => {
@@ -319,25 +245,9 @@ describe("ExtractionService", () => {
     });
 
     it("never lets an archive failure change the caller's result", async () => {
-      const archive: ExtractionArchive = {
-        findResult: async () => undefined,
-        recordExtraction: () => Promise.reject(new Error("disk full")),
-      };
+      const archive: ExtractionArchive = { recordExtraction: () => Promise.reject(new Error("disk full")) };
 
       await expect(service({ archive }).extract({ url: PAGE_URL })).resolves.toMatchObject({ untrusted: true });
-    });
-
-    it("reports a broken archive as unavailable rather than as a bad ref", async () => {
-      const archive: ExtractionArchive = {
-        findResult: () => Promise.reject(new Error("database is locked")),
-        recordExtraction: async () => undefined,
-      };
-
-      const failure = await service({ archive })
-        .extract({ url: PAGE_URL, ref: "abc123-2" })
-        .catch((err: unknown) => err);
-      expect(failure).toBeInstanceOf(ExtractFailedError);
-      expect((failure as ExtractFailedError).message).not.toContain("locked");
     });
   });
 
@@ -500,15 +410,13 @@ describe("ExtractionService page cache", () => {
     expect(renderer.rendered).toEqual([PAGE_URL, PAGE_URL]);
   });
 
-  it("still checks the ref and the address on a cached read", async () => {
-    // A cache is an optimisation, not a bypass.
-    const archive = new FakeArchive({ "abc123-1": { searchId: "abc123", ref: "abc123-1", url: PAGE_URL, rank: 1 } });
-    const extraction = service({ archive, parse: longParse });
+  it("still checks the address on a cached read", async () => {
+    // A cache is an optimisation, not a bypass: the second call names a page
+    // already in memory, and is still refused before any of it is returned.
+    const extraction = service({ parse: longParse });
 
     await extraction.extract({ url: PAGE_URL, maxChars: 900 });
-    await expect(
-      extraction.extract({ url: PAGE_URL, ref: "abc123-9", maxChars: 900, offset: 900 }),
-    ).rejects.toBeInstanceOf(ExtractRequestError);
+    await expect(extraction.extract({ url: PAGE_URL, maxChars: 0 })).rejects.toBeInstanceOf(ExtractRequestError);
   });
 
   it("does not consume a concurrency slot for a page it already has", async () => {
@@ -568,13 +476,6 @@ describe("ExtractionService.outline", () => {
     await service({ archive, parse: outlineParse }).outline({ url: PAGE_URL });
     await settle();
     expect(archive.extractions).toHaveLength(0);
-  });
-
-  it("checks the ref exactly as a read does", async () => {
-    const archive = new FakeArchive({ "abc123-1": { searchId: "abc123", ref: "abc123-1", url: PAGE_URL, rank: 1 } });
-    const extraction = service({ archive, parse: outlineParse });
-    await expect(extraction.outline({ url: PAGE_URL, ref: "abc123-9" })).rejects.toBeInstanceOf(ExtractRequestError);
-    await expect(extraction.outline({ url: PAGE_URL, ref: "abc123-1" })).resolves.toMatchObject({ ref: "abc123-1" });
   });
 
   it("refuses when extraction is switched off", async () => {

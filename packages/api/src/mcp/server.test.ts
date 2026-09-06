@@ -169,9 +169,9 @@ describe("extract tool", () => {
     const client = await connectedClient(testRegistry(), testExtraction());
 
     const scheme = await callTool(client, "extract", { url: "file:///etc/passwd" });
-    const ref = await callTool(client, "extract", { url: "https://example.test/article", ref: "abc123-1" });
+    const port = await callTool(client, "extract", { url: "http://example.test:8080/" });
 
     expect(textOf(scheme)).toMatch(/http or https/);
-    expect(textOf(ref)).toMatch(/no search archive/);
+    expect(textOf(port)).toMatch(/allowed port/);
   });
 });

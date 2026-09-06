@@ -277,15 +277,6 @@ describe("POST /extract", () => {
     expect(String(port.body.details)).toMatch(/allowed port/);
   });
 
-  it("rejects a ref it cannot verify with 400, not a server error", async () => {
-    const res = await request(extractApp())
-      .post("/extract")
-      .send({ url: "https://example.test/article", ref: "abc123-1" });
-
-    expect(res.status).toBe(400);
-    expect(String(res.body.details)).toMatch(/no search archive/);
-  });
-
   it("reports a failed render as 502 without leaking the browser's error", async () => {
     const broken: PageRenderer = {
       render: () =>

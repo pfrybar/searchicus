@@ -344,16 +344,19 @@ it is **off until an operator turns it on**.
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
 ```
 
-Pass the `ref` from a search result to tie the extraction to the ranking that
-offered it. A ref is provenance, not a label: it must resolve to an archived
-result whose URL matches the one being extracted, or the request is refused.
-Extracting a bare URL is equally supported, because agents arrive with URLs
-from elsewhere.
+It takes a URL and nothing else about where that URL came from. A read is
+matched back to the search that offered it **by URL, when the dashboard
+asks** — which is the operator's question, so it is not one a caller should
+have had to remember to answer.
 
 That correlation is the point. An agent reaching for result 7 is evidence
 about results 1 through 6, and the returned list is stored alongside it, so a
-ranking can later be judged against what was actually shown. Only metadata is
-kept — status, timings, title, domain, sizes, a digest — never page text.
+ranking can later be judged against what was actually shown. Matching after
+the fact makes it best-effort: a URL read for unrelated reasons is still
+credited to a search that happened to surface it, and where several did, the
+most recent one wins. Fine for a signal that already means "someone read
+this", not "this read was caused by that ranking". Only metadata is kept —
+status, timings, title, domain, sizes, a digest — never page text.
 
 ### Read the content as data
 

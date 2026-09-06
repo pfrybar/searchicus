@@ -92,17 +92,11 @@ export function createProgram(
   program
     .command("extract <url>")
     .description("Render a page and print its main content as Markdown")
-    .option("-r, --ref <ref>", "result ref from an earlier search, tying this extraction to that ranking")
     .option("-m, --max-chars <n>", "max characters of Markdown (1\u2013100000; defaults to 20000)", parseMaxChars)
     .option("-o, --offset <n>", "start reading here; use the nextOffset a previous run printed", parseOffset)
     .option("--json", "print raw JSON instead of formatted Markdown")
-    .action(async (url: string, opts: { ref?: string; maxChars?: number; offset?: number; json?: boolean }) => {
-      const parsed = ExtractRequestSchema.safeParse({
-        url,
-        ref: opts.ref,
-        maxChars: opts.maxChars,
-        offset: opts.offset,
-      });
+    .action(async (url: string, opts: { maxChars?: number; offset?: number; json?: boolean }) => {
+      const parsed = ExtractRequestSchema.safeParse({ url, maxChars: opts.maxChars, offset: opts.offset });
       if (!parsed.success) {
         throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid extract request");
       }
@@ -120,10 +114,9 @@ export function createProgram(
   program
     .command("outline <url>")
     .description("List a page's sections and the offsets to read them")
-    .option("-r, --ref <ref>", "result ref from an earlier search, tying this read to that ranking")
     .option("--json", "print raw JSON instead of a table of contents")
-    .action(async (url: string, opts: { ref?: string; json?: boolean }) => {
-      const parsed = OutlineRequestSchema.safeParse({ url, ref: opts.ref });
+    .action(async (url: string, opts: { json?: boolean }) => {
+      const parsed = OutlineRequestSchema.safeParse({ url });
       if (!parsed.success) {
         throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid outline request");
       }

@@ -81,6 +81,12 @@ type-imports from this package, and a value import would drag browser
 binaries into a Vite bundle. The registry depends on the `BrowserProvider`
 interface, never on `BrowserSession` itself.
 
+For the same reason there is a third entry point, `@searchicus/core/ranking`,
+holding the pure ranking module. The UI needs `canonicalizeUrl` as a **value**
+— it decides which result a read belongs to — and reaching it through the root
+pulls the SQLite archive and its node built-ins along with it, adding 82 kB to
+the bundle. The subpath costs half a kilobyte.
+
 ## The browser model
 
 One Chromium instance, one persistent `BrowserContext`, one page per search.
@@ -158,7 +164,7 @@ const archive = createDefaultSearchArchive();
 const registry = createBrowserRegistry("api", { archive });
 const extraction = createBrowserExtraction({ archive });
 
-const page = await extraction.extract({ url: "https://example.com/", ref: "00m2ebw9mbyib-3" });
+const page = await extraction.extract({ url: "https://example.com/" });
 ```
 
 The pieces are separable. `ExtractionService` depends on a `PageRenderer`
@@ -182,6 +188,12 @@ title, domain, sizes, and a digest of the Markdown. Page text is never
 persisted, and the `extractions` table has nowhere to put it — though a parsed
 page is held in memory briefly so that reading its second window does not
 render it again. See the root README's "Extraction" for that bound.
+
+A read records the URL it asked for and nothing about who sent the caller
+there. `searchDetail` and `engineMetrics` match reads back to the searches
+that offered them by canonicalized URL, at the point they are asked — so the
+correlation is the operator's inference rather than something a caller had to
+supply, and it is best-effort accordingly.
 
 ## Reading the archive back
 

@@ -163,8 +163,6 @@ describe("engineMetrics", () => {
     await store.archive(record());
     await store.recordExtraction({
       startedAt: "2026-09-04T16:01:00.000Z",
-      searchId: "search01",
-      resultRef: "search01-1",
       requestedUrl: "https://a.test/cats",
       status: "completed",
       tookMs: 700,
@@ -188,8 +186,6 @@ describe("engineMetrics", () => {
     await store.archive(record());
     await store.recordExtraction({
       startedAt: "2026-09-04T16:01:00.000Z",
-      searchId: "search01",
-      resultRef: "search01-1",
       requestedUrl: "https://a.test/cats",
       status: "failed",
       errorKind: "timeout",
@@ -440,8 +436,6 @@ describe("searchDetail", () => {
     await store.archive(record());
     await store.recordExtraction({
       startedAt: "2026-09-04T16:01:00.000Z",
-      searchId: "search01",
-      resultRef: "search01-2",
       requestedUrl: "https://b.test/cats",
       status: "completed",
       tookMs: 800,
@@ -452,11 +446,82 @@ describe("searchDetail", () => {
     const detail = await store.searchDetail("search01");
     expect(detail?.extractions).toBe(1);
     expect(detail?.extractionDetails[0]).toMatchObject({
-      resultRef: "search01-2",
+      requestedUrl: "https://b.test/cats",
       status: "completed",
       title: "B",
       chars: 1200,
     });
+    await store.close();
+  });
+
+  it("matches a read to the search that offered it, however the URL was written", async () => {
+    const store = archive();
+    await store.archive(record());
+    // Ranking already treats these as one page. Correlation has to use the
+    // same rule, or a caller who pasted the URL from their address bar would
+    // silently go uncredited.
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:01:00.000Z",
+      requestedUrl: "http://www.b.test/cats/?utm_source=news",
+      status: "completed",
+      tookMs: 800,
+    });
+
+    const detail = await store.searchDetail("search01");
+    expect(detail?.extractions).toBe(1);
+    await store.close();
+  });
+
+  it("matches on the URL a read landed on, not only the one it asked for", async () => {
+    const store = archive();
+    await store.archive(record());
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:01:00.000Z",
+      requestedUrl: "https://shortener.test/xyz",
+      finalUrl: "https://b.test/cats",
+      status: "completed",
+      tookMs: 800,
+    });
+
+    expect((await store.searchDetail("search01"))?.extractions).toBe(1);
+    await store.close();
+  });
+
+  it("ignores a read that happened before the search that would have offered it", async () => {
+    const store = archive();
+    await store.archive(record({ startedAt: "2026-09-04T16:05:00.000Z" }));
+    // Same URL, read five minutes earlier. Nothing about this search sent
+    // anyone there, and crediting it would invent a causal link backwards.
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:00:00.000Z",
+      requestedUrl: "https://b.test/cats",
+      status: "completed",
+      tookMs: 800,
+    });
+
+    expect((await store.searchDetail("search01"))?.extractions).toBe(0);
+    await store.close();
+  });
+
+  it("credits the most recent search when several offered the same URL", async () => {
+    const store = archive();
+    await store.archive(record({ searchId: "search01", startedAt: "2026-09-04T16:00:00.000Z" }));
+    await store.archive(record({ searchId: "search02", startedAt: "2026-09-04T16:02:00.000Z" }));
+    await store.recordExtraction({
+      startedAt: "2026-09-04T16:03:00.000Z",
+      requestedUrl: "https://b.test/cats",
+      status: "completed",
+      tookMs: 800,
+    });
+
+    // Best-effort by construction: without a ref there is nothing that says
+    // which of the two the caller was looking at, and the later one is the
+    // likelier answer. Crediting both would double-count one read.
+    const recent = await store.recentSearches();
+    expect(recent.map((search) => [search.searchId, search.extractions])).toEqual([
+      ["search02", 1],
+      ["search01", 0],
+    ]);
     await store.close();
   });
 

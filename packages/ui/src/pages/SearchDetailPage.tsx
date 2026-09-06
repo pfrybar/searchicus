@@ -1,6 +1,26 @@
+import type { ArchivedExtraction } from "@searchicus/core";
+// The subpath, not the package root: `ranking` is pure, while the root pulls
+// the SQLite archive and its node built-ins into the browser bundle.
+import { canonicalizeUrl } from "@searchicus/core/ranking";
 import { useEffect, useState } from "react";
 import { fetchSearchDetail, type SearchDetailBody } from "../api";
 import { href } from "../router";
+
+/**
+ * Whether an extraction read the URL this result offered.
+ *
+ * The server already decided this extraction belongs to this search, by the
+ * same canonical form; this only says which of its results was read. Either
+ * URL may match, because a result often links the address that redirects
+ * rather than the one it lands on.
+ */
+function extractionRead(extraction: ArchivedExtraction, url: string): boolean {
+  const target = canonicalizeUrl(url);
+  return (
+    canonicalizeUrl(extraction.requestedUrl) === target ||
+    (extraction.finalUrl !== null && canonicalizeUrl(extraction.finalUrl) === target)
+  );
+}
 
 export function SearchDetailPage({ searchId }: { searchId: string }) {
   const [detail, setDetail] = useState<SearchDetailBody | null>(null);
@@ -53,7 +73,7 @@ export function SearchDetailPage({ searchId }: { searchId: string }) {
       {detail.merged && detail.merged.results.length > 0 ? (
         <ol className="merged">
           {detail.merged.results.map((result) => {
-            const extraction = detail.extractionDetails.find((entry) => entry.resultRef === result.ref);
+            const extraction = detail.extractionDetails.find((entry) => extractionRead(entry, result.url));
             return (
               <li key={result.ref}>
                 <a href={result.url} target="_blank" rel="noreferrer">
@@ -129,7 +149,7 @@ export function SearchDetailPage({ searchId }: { searchId: string }) {
                 <span className={extraction.status === "completed" ? "chip ok" : "chip bad"}>{extraction.status}</span>{" "}
                 {extraction.title ?? extraction.requestedUrl}
                 <p className="meta">
-                  {extraction.resultRef ? <code>{extraction.resultRef}</code> : "URL only"} · {extraction.tookMs}ms
+                  {extraction.finalUrl ?? extraction.requestedUrl} · {extraction.tookMs}ms
                   {extraction.chars !== null && ` · ${extraction.chars} chars`}
                   {extraction.errorKind && <span className="bad"> · {extraction.errorKind}</span>}
                 </p>

@@ -51,7 +51,6 @@ export function formatExtract(response: ExtractResponse): string[] {
   return [
     response.title,
     response.finalUrl,
-    ...(response.ref ? [`ref: ${response.ref}`] : []),
     // The offset to continue from is only useful if it is printed where
     // someone reading the output will see it.
     ...(response.nextOffset === undefined ? [] : [`more: --offset ${response.nextOffset}`]),

@@ -8,7 +8,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./browser": "./dist/browser.js"
+    "./browser": "./dist/browser.js",
+    "./ranking": "./dist/ranking.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
