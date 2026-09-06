@@ -54,7 +54,7 @@ function renderRoute(route: Route, capabilities: Capabilities) {
     case "search-detail":
       return <SearchDetailPage searchId={route.searchId} />;
     default:
-      return <SearchPage canExtract={capabilities.extract} />;
+      return <SearchPage canRead={capabilities.extract} />;
   }
 }
 

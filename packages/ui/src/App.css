@@ -118,6 +118,24 @@ h1 {
   cursor: default;
 }
 
+.read-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.read-actions .extract {
+  margin-top: 0.5rem;
+}
+
+.outline-list {
+  padding-left: 1.25rem;
+}
+
+.outline-list .extract {
+  margin: 0.15rem 0 0.15rem 0.5rem;
+}
+
 .extraction {
   margin-top: 0.75rem;
   border-left: 3px solid #ddd;
