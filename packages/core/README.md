@@ -206,9 +206,11 @@ budget is split at blank lines by `splitBlocks` and scored the same way over
 its own blocks, so an oversized section yields its matching part rather than
 its opening. The chunker is
 `splitSections`, the same one `extract` windows with and `outline` describes,
-so a match is addressed by the offset `extract` already takes. The tokenizer
-is shared with `relevance.ts`; the scorer deliberately is not. Constants live
-at the top of `extract/find.ts` and are meant to be tuned.
+so a match is addressed by the offset `extract` already takes. ICU token
+boundaries are shared with `relevance.ts`; `find` applies Porter stemming only
+to ordinary ASCII-Latin prose terms, leaving other scripts and technical
+identifiers exact. The scorer deliberately is not shared. Constants live at
+the top of `extract/find.ts` and are meant to be tuned.
 
 A read records the URL it asked for and nothing about who sent the caller
 there. `searchDetail` and `engineMetrics` match reads back to the searches

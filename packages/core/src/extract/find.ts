@@ -6,11 +6,13 @@
  * already take. What is added here is the scoring, and it is deliberately
  * not the scorer relevance.ts uses for search results: coverage is an
  * absolute, thresholdable gate, and BM25 is an ordering whose scores are not
- * comparable between queries. Two jobs, two scorers. The tokenizer is shared,
- * because a section that ranks first while reporting `coverage: 0` would be
- * incoherent.
+ * comparable between queries. Two jobs, two scorers. ICU token boundaries are
+ * shared, while find normalizes its ASCII-Latin words with Porter stemming.
+ * Every scoring and coverage read uses that same normalization, so a section
+ * cannot rank first while reporting `coverage: 0`.
  */
-import { contentTokens, countTokenMatches, tokenize } from "../relevance.js";
+import { stemmer } from "stemmer";
+import { contentTokens, tokenize } from "../relevance.js";
 import {
   balanceFences,
   isNavigable,
@@ -121,7 +123,7 @@ export function findSections(
   query: string,
   maxChars: number,
 ): { matches: FindMatch[]; navigable: boolean } {
-  const terms = contentTokens(query);
+  const terms = findContentTokens(query);
   const sections = splitSections(markdown);
   const navigable = isNavigable(
     sections.map((section) => section.end - section.start),
@@ -139,9 +141,9 @@ export function findSections(
   const frequencies = tokens.map((sectionTokens) =>
     terms.map(
       (term) =>
-        countTokenMatches(term, sectionTokens.body) +
-        HEADING_WEIGHT_NEAREST * countTokenMatches(term, sectionTokens.nearest) +
-        HEADING_WEIGHT_ANCESTOR * countTokenMatches(term, sectionTokens.ancestors),
+        countTermMatches(term, sectionTokens.body) +
+        HEADING_WEIGHT_NEAREST * countTermMatches(term, sectionTokens.nearest) +
+        HEADING_WEIGHT_ANCESTOR * countTermMatches(term, sectionTokens.ancestors),
     ),
   );
 
@@ -204,9 +206,9 @@ export function findSections(
  */
 function sectionTokens(section: Section): { body: string[]; nearest: string[]; ancestors: string[] } {
   return {
-    body: tokenize(section.text.replace(LEADING_HEADING, "")),
-    nearest: tokenize(section.headings.at(-1) ?? ""),
-    ancestors: tokenize(section.headings.slice(0, -1).join(" ")),
+    body: findTokens(section.text.replace(LEADING_HEADING, "")),
+    nearest: findTokens(section.headings.at(-1) ?? ""),
+    ancestors: findTokens(section.headings.slice(0, -1).join(" ")),
   };
 }
 
@@ -311,10 +313,10 @@ function selectWithin(
   const blocks = splitBlocks(markdown, section.start, section.end);
   if (blocks.length < 2) return [];
 
-  const tokens = blocks.map((block) => tokenize(block.text));
+  const tokens = blocks.map((block) => findTokens(block.text));
   // The section's own heading applies to every block equally, so it cannot
   // separate them and is left out.
-  const frequencies = tokens.map((blockTokens) => terms.map((term) => countTokenMatches(term, blockTokens)));
+  const frequencies = tokens.map((blockTokens) => terms.map((term) => countTermMatches(term, blockTokens)));
   const lengths = blocks.map((block) => Math.max(block.end - block.start, LENGTH_FLOOR));
   const averageLength = lengths.reduce((total, length) => total + length, 0) / lengths.length;
 
@@ -396,8 +398,40 @@ function selectWithin(
 /** Fraction of the query's content words present in a piece of text. */
 function coverageOf(text: string, terms: string[]): number {
   if (terms.length === 0) return 0;
-  const tokens = tokenize(text);
-  return terms.filter((term) => countTokenMatches(term, tokens) > 0).length / terms.length;
+  const tokens = findTokens(text);
+  return terms.filter((term) => countTermMatches(term, tokens) > 0).length / terms.length;
+}
+
+/**
+ * Query words with the find operation's scoped normalization.
+ *
+ * Porter is useful for English prose (query/queries, run/running) but is not
+ * a general Unicode stemmer. Keep any token containing non-ASCII letters,
+ * digits, or identifier punctuation exact; ICU still supplies its boundaries
+ * for every script, and technical names such as `busy_timeout` cannot turn
+ * into broad prefix matches.
+ */
+export function findContentTokens(query: string): string[] {
+  const terms = new Set<string>();
+  for (const token of contentTokens(query)) terms.add(stemFindToken(token));
+  return [...terms];
+}
+
+/** Applies the same scoped normalization to document terms and query terms. */
+function findTokens(text: string): string[] {
+  return tokenize(text).map(stemFindToken);
+}
+
+/** Stem ordinary ASCII-Latin prose only; everything else remains exact. */
+function stemFindToken(token: string): string {
+  return /^[a-z]+$/.test(token) ? stemmer(token) : token;
+}
+
+/** Exact after shared normalization: no bidirectional prefix relation. */
+function countTermMatches(term: string, tokens: readonly string[]): number {
+  let count = 0;
+  for (const token of tokens) if (token === term) count++;
+  return count;
 }
 
 /**

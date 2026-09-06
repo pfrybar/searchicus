@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FindMatch } from "./find.js";
-import { countTokenMatches } from "../relevance.js";
-import { COVERAGE_FLOOR, findSections, LENGTH_FLOOR, MIN_MATCH_CHARS } from "./find.js";
+import { COVERAGE_FLOOR, findContentTokens, findSections, LENGTH_FLOOR, MIN_MATCH_CHARS } from "./find.js";
 import { buildOutline } from "./sections.js";
 
 /** Most tests here are about which sections come back, not about structure. */
@@ -30,6 +29,31 @@ const PAGE = [
   "",
   filler("opening a database without writing"),
 ].join("\n");
+
+describe("find token normalization", () => {
+  it("stems ASCII-Latin prose while preserving non-Latin and identifier terms", () => {
+    expect(findContentTokens("Queries running checkpointing")).toEqual(["queri", "run", "checkpoint"]);
+    expect(findContentTokens("машины 日本語 busy_timeout")).toEqual(["машины", "日本語", "busy_timeout"]);
+  });
+
+  it("matches inflected prose without treating unrelated prefixes as equivalent", () => {
+    const page = [
+      "# Reference",
+      "",
+      "## Morphology",
+      "",
+      `${filler("queries running through checkpointing", 6)}`,
+      "",
+      "## Similar-looking words",
+      "",
+      `${filler("timeouts and busy handlers", 6)}`,
+    ].join("\n");
+
+    expect(matchesIn(page, "query run checkpoint", 6_000)[0]?.path.at(-1)).toBe("Morphology");
+    expect(matchesIn(page, "time", 6_000)).toEqual([]);
+    expect(matchesIn(page, "busy_timeout", 6_000)).toEqual([]);
+  });
+});
 
 describe("findSections", () => {
   it("returns the section that answers the query, not the one that repeats the topic", () => {
@@ -396,22 +420,5 @@ describe("findSections navigable", () => {
 
     expect(found.navigable).toBe(true);
     expect(found.matches).toEqual([]);
-  });
-});
-
-describe("countTokenMatches", () => {
-  it("counts occurrences rather than answering presence", () => {
-    expect(countTokenMatches("checkpoint", ["checkpoint", "starvation", "checkpoint"])).toBe(2);
-    expect(countTokenMatches("checkpoint", ["starvation"])).toBe(0);
-  });
-
-  it("matches prefixes exactly where the coverage rule does", () => {
-    // The two must agree, or a section could rank first while reporting that
-    // it covers none of the query.
-    expect(countTokenMatches("review", ["reviews"])).toBe(1);
-    expect(countTokenMatches("reviews", ["review"])).toBe(1);
-    // Under four characters, prefixes are too promiscuous to mean anything.
-    expect(countTokenMatches("wal", ["walrus"])).toBe(0);
-    expect(countTokenMatches("wal", ["wal"])).toBe(1);
   });
 });
