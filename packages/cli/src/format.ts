@@ -1,8 +1,8 @@
-import type { ExtractResponse, FindResponse, MergedSearchResponse, OutlineResponse } from "@searchicus/core";
+import type { ExtractResponse, FindResponse, OutlineResponse, PublicSearchResponse } from "@searchicus/core";
 
-/** Render one merged search response as a compact, attributable result list. */
-export function formatSearch(response: MergedSearchResponse): string[] {
-  const lines = response.degraded ? ["(partial results: one or more engines failed)"] : [];
+/** Render one generic search response as a compact result list. */
+export function formatSearch(response: PublicSearchResponse): string[] {
+  const lines = response.degraded ? ["(partial results: one or more sources were unavailable)"] : [];
   if (response.results.length === 0) {
     lines.push("(no results)");
     return lines;
@@ -11,8 +11,6 @@ export function formatSearch(response: MergedSearchResponse): string[] {
   response.results.forEach((result, index) => {
     lines.push(`${index + 1}. ${result.title}`);
     lines.push(`   ${result.url}`);
-    lines.push(`   ref: ${result.ref}`);
-    lines.push(`   found: ${result.found.map(({ engineId, rank }) => `${engineId} #${rank}`).join(", ")}`);
     if (result.snippet) lines.push(`   ${result.snippet}`);
   });
 

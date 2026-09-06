@@ -6,8 +6,7 @@ server, UI):
 - `SearchQuery` / `SearchResult` / `SearchResponse` — the common data shapes.
 - `SearchQuerySchema` — a zod schema that validates and trims a `SearchQuery`.
 - `SearchRequestSchema` — the shared API/MCP request schema, which adds a
-  final merged-result `limit` and optional, non-empty, duplicate-free
-  `engines` selection.
+  final merged-result `limit`.
 - `SearchEngine` — the plugin interface a backend search engine implements;
   its optional `indexFamily` identifies correlated result sources for ranking.
 - `SearchSession` — an engine's two-phase result: the response plus a
@@ -138,10 +137,10 @@ must `drain()` (or `close()`) before exiting**, or it kills live browser work.
 ## Search archive
 
 `createBrowserRegistry()` also queues each completed fan-out for best-effort
-archival. The SQLite database contains the public merged response exactly as
-returned, plus raw successful and failed engine outcomes keyed by the same
-`search_id`. Total engine failures are archived too, even though they have no
-client response.
+archival. The SQLite database retains the detailed internal ranking and raw
+successful and failed engine outcomes keyed by the same `search_id`; ordinary
+callers receive only a generic projection of that ranking. Total engine
+failures are archived too, even though they have no client response.
 
 Archival happens after `search()` resolves and a write failure is swallowed;
 it must never delay or alter the search response. `drain()` waits for queued

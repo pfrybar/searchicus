@@ -70,12 +70,11 @@ export function createProgram(
 
   program
     .command("search <query>")
-    .description("Search for a query across one or more engines")
-    .option("-e, --engine <id...>", "engine id(s) to search; defaults to every registered engine")
-    .option("-l, --limit <n>", `max merged results (1–${MAX_SEARCH_LIMIT}; defaults to 8)`, parseLimit)
+    .description("Search the web for a query")
+    .option("-l, --limit <n>", `max results (1–${MAX_SEARCH_LIMIT}; defaults to 8)`, parseLimit)
     .option("--json", "print raw JSON instead of a formatted list")
-    .action(async (query: string, opts: { engine?: string[]; limit?: number; json?: boolean }) => {
-      const parsed = SearchRequestSchema.safeParse({ query, limit: opts.limit, engines: opts.engine });
+    .action(async (query: string, opts: { limit?: number; json?: boolean }) => {
+      const parsed = SearchRequestSchema.safeParse({ query, limit: opts.limit });
       if (!parsed.success) {
         throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid search request");
       }
@@ -173,23 +172,6 @@ export function createProgram(
       }
 
       for (const [name, value] of Object.entries(paths)) console.log(`${name}\t${value}`);
-    });
-
-  program
-    .command("engines")
-    .description("List registered search engines")
-    .option("--json", "print raw JSON instead of a formatted list")
-    .action((opts: { json?: boolean }) => {
-      const engines = registry.list().map((engine) => ({ id: engine.id, name: engine.name }));
-
-      if (opts.json) {
-        console.log(JSON.stringify(engines, null, 2));
-        return;
-      }
-
-      for (const engine of engines) {
-        console.log(`${engine.id}\t${engine.name}`);
-      }
     });
 
   return program;

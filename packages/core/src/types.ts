@@ -9,8 +9,6 @@ export interface SearchQuery {
 
 /** A query plus front-door controls for its merged result list. */
 export interface SearchRequest extends SearchQuery {
-  /** Engine ids to search. Omitting this searches every registered engine. */
-  engines?: string[];
   /** Maximum number of merged results to return. Defaults to eight. */
   limit?: number;
 }
@@ -37,14 +35,30 @@ export interface SearchResponse {
   tookMs: number;
 }
 
-/** The ranked, client-facing response assembled from a complete engine fan-out. */
+/** The detailed ranking retained for archival and operator diagnostics only. */
 export interface MergedSearchResponse {
-  /** Opaque public id shared by every result ref in this response. */
+  /** Opaque archive id shared by internal result refs. */
   searchId: string;
   query: SearchQuery;
   results: RankedResult[];
   tookMs: number;
   /** True when at least one selected engine failed before returning results. */
+  degraded: boolean;
+}
+
+/** A provider-agnostic result presented by ordinary search front doors. */
+export interface PublicSearchResult {
+  title: string;
+  url: string;
+  snippet?: string;
+}
+
+/** The compact merged response presented by ordinary search front doors. */
+export interface PublicSearchResponse {
+  query: SearchQuery;
+  results: PublicSearchResult[];
+  tookMs: number;
+  /** True when one or more internal backends did not return a result. */
   degraded: boolean;
 }
 

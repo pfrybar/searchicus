@@ -38,14 +38,13 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tools/list", () => {
-  it("lists search, extract, and list_engines", async () => {
+  it("lists the generic search and page-reading tools", async () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();
     // extract is advertised whether or not it is switched on: an agent that
     // cannot see the tool cannot be told the server simply has it disabled.
-    expect(tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining(["search", "extract", "find", "outline", "list_engines"]),
-    );
+    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["search", "extract", "find", "outline"]));
+    expect(tools.map((tool) => tool.name)).not.toContain("list_engines");
   });
 });
 
@@ -61,13 +60,14 @@ describe("search tool", () => {
     expect(parsed).not.toHaveProperty("outcomes");
   });
 
-  it("accepts the final result limit and selected engine ids", async () => {
+  it("accepts the final result limit without exposing ranking provenance", async () => {
     const client = await connectedClient();
-    const result = await callTool(client, "search", { query: "cats", limit: 1, engines: ["test"] });
+    const result = await callTool(client, "search", { query: "cats", limit: 1 });
 
     const parsed = JSON.parse(textOf(result));
     expect(parsed.results).toHaveLength(1);
-    expect(parsed.results[0].found).toEqual([{ engineId: "test", rank: 1 }]);
+    expect(parsed.results[0]).not.toHaveProperty("found");
+    expect(parsed).not.toHaveProperty("searchId");
   });
 
   it("reports partial results without exposing failed engine details", async () => {
@@ -100,32 +100,12 @@ describe("search tool", () => {
     expect(textOf(result)).toBe("Search unavailable");
   });
 
-  it("names an unknown engine id rather than reporting a generic failure", async () => {
-    const client = await connectedClient();
-
-    const result = await callTool(client, "search", { query: "cats", engines: ["nope"] });
-
-    expect(result.isError).toBe(true);
-    // An agent that mistyped an id from list_engines can correct itself; the
-    // generic "Search unavailable" would only invite a blind retry.
-    expect(textOf(result)).toMatch(/nope/);
-  });
-
   it("reports an isError result for an invalid query instead of throwing", async () => {
     const client = await connectedClient();
     const result = await callTool(client, "search", { query: "" });
 
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/must not be empty/);
-  });
-});
-
-describe("list_engines tool", () => {
-  it("lists registered engines", async () => {
-    const client = await connectedClient();
-    const result = await callTool(client, "list_engines", {});
-
-    expect(JSON.parse(textOf(result))).toEqual([{ id: "test", name: "Test Search Engine" }]);
   });
 });
 

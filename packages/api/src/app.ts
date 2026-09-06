@@ -17,7 +17,6 @@ import {
   SearchCancelledError,
   SearchOverloadedError,
   SearchRequestSchema,
-  UnknownEngineError,
 } from "@searchicus/core";
 import express, { Router, type Express, type NextFunction, type Request, type Response } from "express";
 import { fileURLToPath } from "node:url";
@@ -85,9 +84,9 @@ export interface CreateAppOptions {
 /**
  * Builds the Express app. Takes a registry so tests can inject their own
  * (see app.test.ts) instead of depending on module-level state. Its default
- * is core's browser-free registry, which can list engines but reports a
- * generic unavailable search when every browser-backed engine fails. The
- * executable server entry point injects createBrowserRegistry("api").
+ * is core's browser-free registry, which reports a generic unavailable search
+ * when every browser-backed engine fails. The executable server entry point
+ * injects createBrowserRegistry("api").
  */
 export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
@@ -210,10 +209,6 @@ function createSearchRouter(
     res.json({ status: "ok", extract: extraction.enabled, insights: insights !== undefined });
   });
 
-  router.get("/engines", (_req, res) => {
-    res.json(registry.list().map((engine) => ({ id: engine.id, name: engine.name })));
-  });
-
   router.post("/search", async (req, res, next) => {
     const parsed = SearchRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -224,13 +219,6 @@ function createSearchRouter(
     try {
       res.json(await registry.search(parsed.data, { signal: abortOnDisconnect(res) }));
     } catch (err) {
-      // A bad engine id is the caller's mistake, so it must not share the 502
-      // that means "the backends are down". GET /engines already lists every
-      // id, so naming the unknown one discloses nothing.
-      if (err instanceof UnknownEngineError) {
-        res.status(400).json({ error: "Invalid search request", details: [err.message] });
-        return;
-      }
       if (err instanceof AllEnginesFailedError) {
         res.status(502).json({ error: "Search unavailable" });
         return;

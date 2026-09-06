@@ -88,23 +88,12 @@ keep the original contract.
 and hides the actions it cannot offer, so an operator's toggles are visible
 without making a request that renders anything.
 
-### `GET /engines`
-
-```json
-[
-  { "id": "bing", "name": "Bing" },
-  { "id": "brave", "name": "Brave" },
-  { "id": "duckduckgo", "name": "DuckDuckGo" },
-  { "id": "startpage", "name": "Startpage" }
-]
-```
-
 ### `POST /search`
 
 Request body:
 
 ```json
-{ "query": "typescript generics", "limit": 5, "engines": ["bing", "brave"] }
+{ "query": "typescript generics", "limit": 5 }
 ```
 
 - `query` (required string containing non-whitespace text, at most 1024
@@ -112,8 +101,6 @@ Request body:
 - `limit` (optional final merged-result count, integer 1–20; defaults to 8).
   The ceiling is roughly what one page from each engine yields once merged and
   deduplicated, so a larger number would be accepted and then quietly unmet.
-- `engines` (optional non-empty, duplicate-free array of at most 16 engine-id
-  strings, each at most 64 characters; defaults to every registered engine)
 
 The whole body is capped at 64kb, and an oversized one is a `413` naming the
 limit rather than a generic failure.
@@ -122,20 +109,12 @@ Response body:
 
 ```json
 {
-  "searchId": "00m2ebw9mbyib",
   "query": { "query": "typescript generics" },
   "results": [
     {
-      "ref": "00m2ebw9mbyib-1",
       "title": "TypeScript: JavaScript With Syntax For Types.",
       "url": "https://www.typescriptlang.org/",
-      "score": 0.0325,
-      "bestSource": "bing",
-      "found": [
-        { "engineId": "bing", "rank": 1 },
-        { "engineId": "brave", "rank": 2 }
-      ],
-      "families": ["bing", "brave"]
+      "snippet": "TypeScript extends JavaScript with syntax for types."
     }
   ],
   "tookMs": 7123,
@@ -143,7 +122,7 @@ Response body:
 }
 ```
 
-An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`. Naming an engine that isn't registered is a `400` too, with the unknown id in `details` — a caller's typo is not a backend failure, and `GET /engines` already lists every valid id.
+An invalid request returns `400` with `{ "error": "Invalid search request", "details": [...] }`; malformed JSON returns `{ "error": "Invalid JSON" }`.
 
 A single request fans out to every selected engine in parallel, but
 _consecutive_ requests are rate limited as whole fan-outs (5s ±30% by
@@ -417,13 +396,10 @@ or session to tear down.
 
 ### Tools
 
-- **`search`** — `{ query, limit?, engines? }` → fans the
-  query out across the requested (or every) registered engine, merges the
-  results, and returns one attributed ranked list. `limit` caps that final
-  list, not an individual engine's page. Query and engine-selection validation
-  is shared with the HTTP API: query text is
-  trimmed and non-whitespace, and a supplied `engines` list is non-empty and
-  duplicate-free.
+- **`search`** — `{ query, limit? }` → searches across the service's
+  internal providers and returns one compact ranked list. `limit` caps that
+  final list, not an individual provider's page. Query validation is shared
+  with the HTTP API: query text is trimmed and non-whitespace.
 - **`extract`** — `{ url, maxChars?, offset? }` → renders one public page and
   returns its main content as Markdown. The result arrives as two blocks:
   metadata as JSON, then the Markdown itself, unescaped. Pass a previous
@@ -436,14 +412,11 @@ or session to tear down.
   description warns that an empty result does not prove the page lacks the
   information, because an agent reading a miss as a negative stops looking
   too early.
-- **`list_engines`** — lists the engines currently registered.
 
-Partial engine failure sets `degraded: true` on the merged result without
-naming the engine. A total engine failure returns a generic tool error, while
-an unregistered engine id returns a tool error naming it, so an agent that
-mistyped an id from `list_engines` can correct itself. Errors at the endpoint
-itself use JSON-RPC error objects, including `-32700` for a malformed request
-body.
+Partial internal-provider failure sets `degraded: true` on the merged result
+without naming a provider. A total failure returns a generic tool error. Errors
+at the endpoint itself use JSON-RPC error objects, including `-32700` for a
+malformed request body.
 
 ```bash
 curl -s localhost:3000/mcp \

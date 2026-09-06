@@ -21,7 +21,6 @@ npm run build -w @searchicus/cli
 
 node packages/cli/dist/index.js search "typescript generics" --limit 3
 node packages/cli/dist/index.js search "typescript generics" --json
-node packages/cli/dist/index.js engines
 ```
 
 Once published/linked, the same binary is available as `searchicus`
@@ -29,17 +28,16 @@ Once published/linked, the same binary is available as `searchicus`
 
 ### `search <query>`
 
-| Option                 | Description                                                 |
-| ---------------------- | ----------------------------------------------------------- |
-| `-e, --engine <id...>` | Engine id(s) to search; defaults to every registered engine |
-| `-l, --limit <n>`      | Final merged results (`1`–`20`, default `8`)                |
-| `--json`               | Print raw JSON instead of a formatted list                  |
+| Option            | Description                                |
+| ----------------- | ------------------------------------------ |
+| `-l, --limit <n>` | Final results (`1`–`20`, default `8`)      |
+| `--json`          | Print raw JSON instead of a formatted list |
 
 The query is trimmed and must contain non-whitespace text. `--limit` caps the
 final merged list, never an individual engine's normal first-page results.
-Invalid limits, queries, or engine selections (including duplicate ids) make
-the command exit non-zero before any engine is called. Text output includes a
-result ref and engine attribution; `--json` returns the same merged response.
+Invalid limits or queries make the command exit non-zero before any provider
+is called. Text output is a compact title, URL, and snippet list; `--json`
+returns the same generic response.
 
 Rate limiting is in-memory, so it does **not** survive across invocations: a
 shell loop calling the CLI repeatedly gets no spacing between searches.
@@ -130,10 +128,6 @@ Prints where this machine keeps its Chromium profile and search archive, with
 `--json` for machine-readable output. Useful because those locations resolve
 from the application root and the environment, so "which archive am I looking
 at" is otherwise a question you can only answer by guessing.
-
-### `engines`
-
-Lists the engines currently registered, with `--json` for machine-readable output.
 
 ## Scripts
 

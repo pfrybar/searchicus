@@ -4,37 +4,24 @@ import { formatExtract, formatFind, formatSearch } from "./format.js";
 import { createProgram, parseLimit, parseMaxChars } from "./index.js";
 
 describe("formatSearch", () => {
-  it("lists ranked results with their refs and attribution", () => {
+  it("lists generic results without ranking implementation details", () => {
     const lines = formatSearch({
-      searchId: "abc123",
       query: { query: "cats" },
       tookMs: 1,
       degraded: false,
-      results: [
-        {
-          ref: "abc123-1",
-          title: "Cats 101",
-          url: "https://example.com/cats",
-          snippet: "All about cats",
-          score: 0.1,
-          bestSource: "test",
-          found: [{ engineId: "test", rank: 1 }],
-          families: ["test"],
-        },
-      ],
+      results: [{ title: "Cats 101", url: "https://example.com/cats", snippet: "All about cats" }],
     });
 
     expect(lines).toContain("1. Cats 101");
     expect(lines).toContain("   https://example.com/cats");
-    expect(lines).toContain("   ref: abc123-1");
-    expect(lines).toContain("   found: test #1");
     expect(lines).toContain("   All about cats");
+    expect(lines.join("\n")).not.toMatch(/ref:|found:/);
   });
 
   it("marks partial results without exposing failed engines", () => {
-    const lines = formatSearch({ searchId: "abc", query: { query: "cats" }, tookMs: 1, degraded: true, results: [] });
+    const lines = formatSearch({ query: { query: "cats" }, tookMs: 1, degraded: true, results: [] });
 
-    expect(lines).toEqual(["(partial results: one or more engines failed)", "(no results)"]);
+    expect(lines).toEqual(["(partial results: one or more sources were unavailable)", "(no results)"]);
   });
 });
 
@@ -65,18 +52,13 @@ describe("CLI argument handling", () => {
     write.mockRestore();
   });
 
-  it("rejects duplicate engine selections with the shared request schema", async () => {
-    const program = createProgram(
-      new SearchEngineRegistry({ throttle: null }).register({
-        id: "test",
-        name: "Test Search Engine",
-        search: async (query) => ({ query, results: [], engine: "test", tookMs: 0 }),
-      }),
-    );
+  it("does not offer engine selection or discovery commands", () => {
+    const program = createProgram();
 
-    await expect(
-      program.parseAsync(["node", "searchicus", "search", "cats", "--engine", "test", "test"]),
-    ).rejects.toThrow(/engines must not contain duplicates/);
+    expect(program.commands.map((command) => command.name())).not.toContain("engines");
+    expect(
+      program.commands.find((command) => command.name() === "search")?.options.map((option) => option.long),
+    ).not.toContain("--engine");
   });
 });
 

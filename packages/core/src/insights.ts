@@ -169,7 +169,7 @@ export interface ArchivedExtraction {
 
 /** Everything stored about one search: what each engine said, and what shipped. */
 export interface SearchDetail extends SearchSummary {
-  /** The client-visible ranking, verbatim. Null when every engine failed. */
+  /** The detailed internal ranking retained for operators. Null when every engine failed. */
   merged: MergedSearchResponse | null;
   /** Every result each engine returned, in its own order. */
   engines: Array<ArchivedEngineOutcome & { results: SearchResult[] }>;
