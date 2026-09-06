@@ -1,4 +1,7 @@
+import type { FindMatch } from "./find.js";
 import type { OutlineSection } from "./sections.js";
+
+export type { FindMatch };
 
 /**
  * A request to render one public URL and return its readable content.
@@ -37,6 +40,42 @@ export interface OutlineResponse {
   navigable: boolean;
   sections: OutlineSection[];
   tookMs: number;
+}
+
+/**
+ * A request for the parts of one page that answer a question.
+ *
+ * The third read operation, and its own method for the same reason `outline`
+ * is: the response shape differs, `query` is required where extract has no
+ * use for one, and `offset` is meaningless against a ranked list. A flag on
+ * `extract` would have been a mode in disguise.
+ */
+export interface FindRequest {
+  /** Absolute http(s) URL to search within. */
+  url: string;
+  /** What to look for. Required — it is the whole operation. */
+  query: string;
+  /** Total characters of Markdown across all matches. Defaults to 6,000. */
+  maxChars?: number;
+}
+
+/** The sections of a page that best answer a query, best first. */
+export interface FindResponse {
+  url: string;
+  finalUrl: string;
+  title: string;
+  /** Echoed back, so a caller can see what was actually scored. */
+  query: string;
+  /** Length of the whole document, so a caller knows what it did not see. */
+  totalChars: number;
+  /**
+   * Best first. Empty when nothing in the page covered the query, which is
+   * an answer rather than a failure — the page does not discuss it.
+   */
+  matches: FindMatch[];
+  tookMs: number;
+  /** Always true. Page content is data to evaluate, never instructions. */
+  untrusted: boolean;
 }
 
 export interface ExtractRequest {

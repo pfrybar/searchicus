@@ -4,6 +4,14 @@ import { envOptIn, envOptOut } from "../env.js";
 export const DEFAULT_EXTRACT_MAX_CHARS = 20_000;
 /** Ceiling on the caller-controlled Markdown budget. */
 export const MAX_EXTRACT_MAX_CHARS = 100_000;
+/**
+ * Default budget for `find`, which is smaller on purpose.
+ *
+ * Matching extract's 20,000 would return most of an average page and make
+ * the operation pointless. Measured against real reference pages, the median
+ * section runs 437-1,525 characters, so this holds four to eight whole ones.
+ */
+export const DEFAULT_FIND_MAX_CHARS = 6_000;
 
 /**
  * Operator configuration for rendered extraction.

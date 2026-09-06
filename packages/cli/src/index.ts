@@ -7,13 +7,14 @@ import {
   ExtractionService,
   ExtractRequestSchema,
   MAX_SEARCH_LIMIT,
+  FindRequestSchema,
   OutlineRequestSchema,
   SearchEngineRegistry,
   SearchRequestSchema,
 } from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
-import { formatExtract, formatOutline, formatSearch } from "./format.js";
+import { formatExtract, formatFind, formatOutline, formatSearch } from "./format.js";
 
 /** Parse and validate the CLI's final merged-result limit with the shared rules. */
 export function parseLimit(value: string): number {
@@ -109,6 +110,27 @@ export function createProgram(
       }
 
       console.log(formatExtract(response).join("\n"));
+    });
+
+  program
+    .command("find <url> <query>")
+    .description("Return only the sections of a page that answer a question")
+    .option("-m, --max-chars <n>", "total characters across all matches (defaults to 6000)", parseMaxChars)
+    .option("--json", "print raw JSON instead of formatted Markdown")
+    .action(async (url: string, query: string, opts: { maxChars?: number; json?: boolean }) => {
+      const parsed = FindRequestSchema.safeParse({ url, query, maxChars: opts.maxChars });
+      if (!parsed.success) {
+        throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid find request");
+      }
+
+      const page = await extraction.find(parsed.data);
+
+      if (opts.json) {
+        console.log(JSON.stringify(page, null, 2));
+        return;
+      }
+
+      console.log(formatFind(page).join("\n"));
     });
 
   program

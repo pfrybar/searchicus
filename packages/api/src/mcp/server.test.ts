@@ -43,7 +43,9 @@ describe("tools/list", () => {
     const { tools } = await client.listTools();
     // extract is advertised whether or not it is switched on: an agent that
     // cannot see the tool cannot be told the server simply has it disabled.
-    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["search", "extract", "list_engines"]));
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["search", "extract", "find", "outline", "list_engines"]),
+    );
   });
 });
 
@@ -124,6 +126,43 @@ describe("list_engines tool", () => {
     const result = await callTool(client, "list_engines", {});
 
     expect(JSON.parse(textOf(result))).toEqual([{ id: "test", name: "Test Search Engine" }]);
+  });
+});
+
+describe("find tool", () => {
+  it("returns a metadata block then one block per match", async () => {
+    const client = await connectedClient(testRegistry(), testExtraction());
+
+    const result = await callTool(client, "find", { url: "https://example.test/article", query: "readable prose" });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toHaveLength(2);
+    expect(textOf(result)).toContain('"coverage"');
+    // Each excerpt is its own block because they are not contiguous in the
+    // document; run together they would read as continuous prose.
+    const body = result.content[1];
+    expect(body?.type === "text" && body.text).toContain("readable prose");
+  });
+
+  it("says a miss is not proof, so an agent does not conclude too much from it", async () => {
+    const client = await connectedClient(testRegistry(), testExtraction());
+
+    const result = await callTool(client, "find", { url: "https://example.test/article", query: "kubernetes" });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toHaveLength(1);
+    expect(textOf(result)).toMatch(/outline|extract/);
+  });
+
+  it("warns in its own description that an empty result proves nothing", async () => {
+    const client = await connectedClient();
+    const { tools } = await client.listTools();
+    const find = tools.find((tool) => tool.name === "find");
+
+    // The one way this tool can mislead: an agent reading "no matches" as
+    // "this page does not contain that" and stopping.
+    expect(find?.description).toMatch(/does NOT prove/i);
+    expect(find?.description).toMatch(/untrusted/i);
   });
 });
 

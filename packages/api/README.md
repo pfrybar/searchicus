@@ -243,6 +243,71 @@ curl -s localhost:3000/extract -H 'content-type: application/json' \
   -d '{"url":"https://example.com/","maxChars":500}' | jq
 ```
 
+### `POST /find`
+
+The sections of a page that answer a question, instead of the whole page.
+Same enablement and address rules as `/extract`.
+
+```json
+{ "url": "https://www.sqlite.org/wal.html", "query": "checkpoint starvation", "maxChars": 6000 }
+```
+
+`url` and `query` are both required; `query` is capped at 1024 characters like
+a search query, and must contain at least one word that is not a stopword — a
+query of pure stopwords is a `400`, because coverage would report it as
+matching everything and the ranking would be arbitrary. `maxChars` is the
+total across **all** matches and defaults to `6000`, not extract's `20000`:
+matching that budget would return most of an average page and make the
+operation pointless.
+
+```json
+{
+  "url": "https://www.sqlite.org/wal.html",
+  "finalUrl": "https://www.sqlite.org/wal.html",
+  "title": "Write-Ahead Logging",
+  "query": "checkpoint starvation",
+  "totalChars": 35026,
+  "matches": [
+    {
+      "path": ["Write-Ahead Logging", "6. Avoiding Excessively Large WAL Files"],
+      "offset": 20178,
+      "coverage": 1,
+      "markdown": "…",
+      "chars": 4024,
+      "sectionChars": 4024,
+      "truncated": false
+    }
+  ],
+  "tookMs": 5670,
+  "untrusted": true
+}
+```
+
+Matches are an array rather than one Markdown string because they are **not
+contiguous** in the document. Concatenated they would assert a continuity the
+page does not have, and a reader would bridge the seam and infer a
+relationship the author never wrote. Each carries its full `path` for the same
+reason: a ranked list has no document order to imply the path from, so
+"Checkpointing" alone would be ambiguous.
+
+`coverage` is the fraction of the query's content words the section contains,
+and it is comparable across queries — which the internal ranking score is
+not, so the score is deliberately not published. Ordering comes from the
+score; `coverage` is the number worth acting on.
+
+Sections come back whole. `offset` reads one in place with `extract`, and
+`chars < sectionChars` is exactly `truncated`, which happens only to the last
+match the budget reaches.
+
+An empty `matches` is a `200`. The caller asked a question and got a true
+answer, and an error would tell an agent to retry something that will keep
+giving the same result. It does not prove the page lacks the information —
+only that nothing cleared the coverage floor.
+
+Empty means exactly that and nothing else. A budget smaller than every
+matching section still returns the best one, cut, rather than an empty list
+that would say something false about the page.
+
 ### `POST /outline`
 
 A page's structure, without its content. Same enablement and address rules as
@@ -341,6 +406,12 @@ or session to tear down.
   response's `nextOffset` back as `offset` to keep reading a long page.
   The tool is advertised whether or not extraction is enabled — an agent that
   cannot see the tool cannot be told the server merely has it switched off.
+- **`find`** — `{ url, query, maxChars? }` → the sections of one page that
+  answer a question, best first. The result is a metadata block followed by
+  one block per match, which is `extract`'s two-block shape scaled. Its
+  description warns that an empty result does not prove the page lacks the
+  information, because an agent reading a miss as a negative stops looking
+  too early.
 - **`list_engines`** — lists the engines currently registered.
 
 Partial engine failure sets `degraded: true` on the merged result without

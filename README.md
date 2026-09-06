@@ -340,6 +340,19 @@ available from every front door — `POST /extract`, the `extract` MCP tool,
 `searchicus extract <url>`, and an Extract action beside each UI result — and
 it is **off until an operator turns it on**.
 
+There are three ways to read a page, and they differ by what the caller
+already knows:
+
+| operation | for                                                 | costs                           |
+| --------- | --------------------------------------------------- | ------------------------------- |
+| `outline` | seeing what a page contains before spending context | nothing but structure           |
+| `find`    | a specific question about a long page               | the few sections that answer it |
+| `extract` | reading a page, or continuing one                   | a window at a time              |
+
+They share one addressing scheme — the `offset` on every section an outline
+or a find reports is the `offset` `extract` takes — and one render, because
+the parsed page is cached between them.
+
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
 ```
@@ -419,6 +432,28 @@ a long page contains — and what it does not — before spending context on it.
 Sections are addressed by the same offsets `extract` takes, so there is no
 second addressing scheme; outlining then reading costs one render, because the
 parsed page is already in memory.
+
+`searchicus find <url> <query>` answers a specific question instead of
+surveying: it scores the page's sections against the query and returns the
+best few whole, within a budget that defaults to 6,000 characters rather than
+extract's 20,000. Measured against `sqlite.org/wal.html`, "checkpoint
+starvation" came back as the right section in one call and 5,806 characters —
+the same answer cost 23,338 characters across 22 calls when paging from the
+top.
+
+Sections come back **whole**, which is affordable because sections are
+smaller than pages: across five real reference pages, one section in 134
+exceeds the default budget. Each match carries its heading path, its
+`coverage` — the fraction of the query's words it contains — and the offset
+to read it in place.
+
+An empty result is a success, not an error. If no section covers enough of
+the query, saying so is more useful than confidently returning the best three
+sections of a page that discusses none of it — that is the off-target search
+failure one layer down. It means only that: a budget too small to hold any
+matching section still returns the best one cut, never an empty list. It is
+**not** proof the page lacks the information, and the MCP tool says so,
+because an agent that reads a miss as a negative will stop looking too early.
 
 A page longer than the budget is read a window at a time: the response says
 where the window started and where to continue, and those offsets snap to

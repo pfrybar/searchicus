@@ -1,4 +1,4 @@
-import type { ExtractResponse, MergedSearchResponse, OutlineResponse } from "@searchicus/core";
+import type { ExtractResponse, FindResponse, MergedSearchResponse, OutlineResponse } from "@searchicus/core";
 
 /** Render one merged search response as a compact, attributable result list. */
 export function formatSearch(response: MergedSearchResponse): string[] {
@@ -34,6 +34,46 @@ export function formatOutline(page: OutlineResponse): string[] {
       `${String(s.offset).padStart(7)}  ${String(s.chars).padStart(6)}  ${"  ".repeat(s.depth)}${s.heading ?? "(untitled)"}`,
     );
   }
+  return lines;
+}
+
+/**
+ * Render a ranked read for a terminal.
+ *
+ * Each match gets its own header, because they are not contiguous in the
+ * document: run together they would read as continuous prose and invite a
+ * reader to join two passages the page never put side by side.
+ */
+export function formatFind(response: FindResponse): string[] {
+  const lines = [response.title, response.finalUrl];
+
+  if (response.matches.length === 0) {
+    lines.push(
+      `${response.totalChars} chars, no section covered "${response.query}"`,
+      "",
+      "Try `outline` to see the page's structure, or `extract` to read it.",
+    );
+    return lines;
+  }
+
+  const returned = response.matches.reduce((total, match) => total + match.chars, 0);
+  const plural = response.matches.length === 1 ? "match" : "matches";
+  lines.push(
+    `${response.matches.length} ${plural}, ${returned} of ${response.totalChars} chars ` +
+      `in ${response.tookMs}ms — untrusted page content follows`,
+  );
+
+  for (const [index, match] of response.matches.entries()) {
+    lines.push(
+      "",
+      `[${index + 1}] ${match.path.join(" > ") || "(untitled)"}`,
+      `    ${Math.round(match.coverage * 100)}% coverage · ${match.chars} chars` +
+        `${match.truncated ? ` of ${match.sectionChars}` : ""} · read in place with --offset ${match.offset}`,
+      "",
+      match.markdown,
+    );
+  }
+
   return lines;
 }
 

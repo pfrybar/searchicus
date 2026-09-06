@@ -11,6 +11,7 @@ import {
   ExtractionService,
   ExtractRequestError,
   ExtractRequestSchema,
+  FindRequestSchema,
   OutlineRequestSchema,
   SearchEngineRegistry,
   SearchCancelledError,
@@ -276,6 +277,40 @@ function createSearchRouter(
         return;
       }
       if (clientGone(res)) return;
+      next(err);
+    }
+  });
+
+  router.post("/find", async (req, res, next) => {
+    const parsed = FindRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid find request", details: parsed.error.issues });
+      return;
+    }
+
+    try {
+      res.json(await extraction.find(parsed.data, { signal: abortOnDisconnect(res) }));
+    } catch (err) {
+      // The same four answers a read gives, for the same reasons. A page
+      // that matched nothing is not among them: it is a 200 with an empty
+      // list, because the caller asked a question and got a true answer.
+      if (err instanceof ExtractRequestError) {
+        res.status(400).json({ error: "Invalid find request", details: [err.message] });
+        return;
+      }
+      if (err instanceof ExtractionDisabledError) {
+        res.status(503).json({ error: err.message });
+        return;
+      }
+      if (err instanceof ExtractionBusyError) {
+        res.status(503).set("retry-after", "30").json({ error: err.message });
+        return;
+      }
+      if (clientGone(res)) return;
+      if (err instanceof ExtractFailedError) {
+        res.status(502).json({ error: err.message });
+        return;
+      }
       next(err);
     }
   });

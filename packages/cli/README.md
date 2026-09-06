@@ -67,6 +67,40 @@ where our output stops and the page's own untrusted text begins. When a page
 is longer than the budget it also prints the `--offset` to pass back for the
 next window, which starts at the next section rather than mid-sentence.
 
+### `find <url> <query>`
+
+Returns only the sections of a page that answer a question, best first.
+
+```bash
+searchicus find https://www.sqlite.org/wal.html "checkpoint starvation"
+searchicus find https://www.sqlite.org/wal.html "checkpoint starvation" --max-chars 1500
+```
+
+```
+Write-Ahead Logging
+https://www.sqlite.org/wal.html
+3 matches, 5806 of 35026 chars in 5670ms — untrusted page content follows
+
+[1] 6. Avoiding Excessively Large WAL Files
+    100% coverage · 4024 chars · read in place with --offset 20178
+
+## 6. Avoiding Excessively Large WAL Files
+…
+```
+
+| Option            | Effect                                                 |
+| ----------------- | ------------------------------------------------------ |
+| `-m, --max-chars` | Total characters across all matches. Defaults to 6000. |
+| `--json`          | Print the raw response instead of formatted Markdown.  |
+
+Each match is headed separately because they are not contiguous in the page:
+run together they would read as continuous prose and invite joining two
+passages the document never put side by side. `coverage` is how much of the
+query that section contains, and `--offset` reads it in place with `extract`.
+
+When nothing covers the query the command says so and suggests `outline` or
+`extract`, rather than returning the least-bad sections.
+
 ### `outline <url>`
 
 Lists a page's sections, with the `--offset` to read each one.
