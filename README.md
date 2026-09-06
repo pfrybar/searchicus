@@ -441,11 +441,17 @@ starvation" came back as the right section in one call and 5,806 characters —
 the same answer cost 23,338 characters across 22 calls when paging from the
 top.
 
-Sections come back **whole**, which is affordable because sections are
-smaller than pages: across five real reference pages, one section in 134
-exceeds the default budget. Each match carries its heading path, its
-`coverage` — the fraction of the query's words it contains — and the offset
-to read it in place.
+Sections come back **whole** where they fit, which is affordable because
+sections are smaller than pages: across five real reference pages, one section
+in 134 exceeds the default budget. Each match carries its heading path, its
+`coverage` — the fraction of the query's words present in the text you were
+given — and the offset to read it in place.
+
+A section too large to return whole is split at its blank lines and scored
+again, so what comes back is the part that matches rather than the part that
+happens to be first. Cutting from the top was the original mistake: a section
+is chosen _because_ the query terms are in it, and its opening is a window
+picked without reference to where they are.
 
 An empty result is a success, not an error. If no section covers enough of
 the query, saying so is more useful than confidently returning the best three

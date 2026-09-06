@@ -164,6 +164,96 @@ export function buildOutline(markdown: string): { sections: OutlineSection[]; na
 }
 
 /**
+ * Trims a slice back to where its fenced blocks balance.
+ *
+ * `safeCut` will, as a last resort, cut inside a fence bigger than the whole
+ * budget, and for a window that is right: the caller continues at
+ * `nextOffset` and the fence closes there. Ranked selection has no
+ * continuation and concatenates its excerpts, so an unterminated fence would
+ * swallow everything printed after it. Returns an empty string when the slice
+ * opens a fence it never closes and has nothing before it.
+ */
+export function balanceFences(text: string): string {
+  let fence: string | undefined;
+  let opened = 0;
+  let offset = 0;
+
+  for (const line of text.split("\n")) {
+    const marker = FENCE.exec(line)?.[1];
+    if (marker) {
+      if (fence === undefined) {
+        fence = marker;
+        opened = offset;
+      } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = undefined;
+      }
+    }
+    offset += line.length + 1;
+  }
+
+  return fence === undefined ? text : text.slice(0, opened).trimEnd();
+}
+
+/** One paragraph-sized run of a section, in document coordinates. */
+export interface Block {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+}
+
+/**
+ * Splits a range of Markdown into blocks at blank lines.
+ *
+ * The same idea as splitSections one level down, for when a single section is
+ * larger than a caller's whole budget. A blank line is the smallest boundary
+ * an author writes explicitly, and the fence tracking is here for the reason
+ * it is there: a blank line inside a fenced block is not a paragraph break,
+ * and treating it as one cuts a snippet in half.
+ *
+ * Blocks tile the range — each ends where the next begins — so a run of
+ * chosen blocks can be emitted as a single slice without inspecting what sat
+ * between them.
+ */
+export function splitBlocks(markdown: string, start: number, end: number): Block[] {
+  const blocks: Block[] = [];
+  const lines = markdown.slice(start, end).split("\n");
+
+  let fence: string | undefined;
+  let blockStart = start;
+  let offset = start;
+  let sawContent = false;
+
+  const close = (blockEnd: number): void => {
+    const text = markdown.slice(blockStart, blockEnd);
+    const lead = text.length - text.trimStart().length;
+    blocks.push({ start: blockStart + lead, end: blockEnd, text: text.trim() });
+    blockStart = blockEnd;
+    sawContent = false;
+  };
+
+  for (const line of lines) {
+    const opened = FENCE.exec(line)?.[1];
+    if (opened) {
+      if (fence === undefined) fence = opened;
+      else if (opened[0] === fence[0] && opened.length >= fence.length) fence = undefined;
+    }
+
+    const blank = fence === undefined && line.trim().length === 0;
+    offset = Math.min(offset + line.length + 1, end);
+    if (blank) {
+      // Only the first blank after content closes a block; the rest are
+      // absorbed, so a double blank line does not invent an empty one.
+      if (sawContent) close(offset);
+    } else {
+      sawContent = true;
+    }
+  }
+
+  if (sawContent || blocks.length === 0) close(end);
+  return blocks.filter((block) => block.text.length > 0);
+}
+
+/**
  * Returns the window of `markdown` starting at or before `offset`.
  *
  * Offsets are characters because that is what a caller can reason about

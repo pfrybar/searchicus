@@ -194,7 +194,10 @@ against a query with BM25 over that page's own sections — document frequency
 across the chunks of one document, which measures how distinctive a term is
 _here_ — and returns the best few whole, within a budget, alongside the same
 `navigable` verdict `outline` reports so a caller can tell an honest miss from
-a page that could not be searched by section at all. The chunker is
+a page that could not be searched by section at all. A section larger than the
+budget is split at blank lines by `splitBlocks` and scored the same way over
+its own blocks, so an oversized section yields its matching part rather than
+its opening. The chunker is
 `splitSections`, the same one `extract` windows with and `outline` describes,
 so a match is addressed by the offset `extract` already takes. The tokenizer
 is shared with `relevance.ts`; the scorer deliberately is not. Constants live
