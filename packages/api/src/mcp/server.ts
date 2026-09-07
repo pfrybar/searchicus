@@ -14,6 +14,11 @@ import {
   SearchEngineRegistry,
   SearchOverloadedError,
   SearchRequestSchema,
+  type ExtractResponse,
+  type FindMatch,
+  type FindResponse,
+  type OutlineResponse,
+  type PublicSearchResponse,
 } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -52,7 +57,7 @@ export function createMcpServer(
           degraded: response.degraded,
         });
         return {
-          content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+          content: [{ type: "text", text: formatSearch(response) }],
         };
       } catch (err) {
         log.warn("tool search failed", { cause: causeOf(err) });
@@ -87,15 +92,15 @@ export function createMcpServer(
     async (request) => {
       log.debug("tool extract", { url: request.url, maxChars: request.maxChars });
       try {
-        const { markdown, ...meta } = await extraction.extract(request);
-        log.info("tool extract", { chars: meta.chars, truncated: meta.truncated, tookMs: meta.tookMs });
-        // Two blocks rather than one JSON object: escaping a whole article
-        // into a JSON string inflates it and makes it markedly harder to
-        // read, while the metadata is exactly what wants to stay structured.
+        const response = await extraction.extract(request);
+        log.info("tool extract", { chars: response.chars, truncated: response.truncated, tookMs: response.tookMs });
+        // The page's Markdown stays in its own block. The preceding readable
+        // metadata keeps it unescaped without making a text-only MCP surface
+        // pretend to offer a structured result schema.
         return {
           content: [
-            { type: "text", text: JSON.stringify(meta, null, 2) },
-            { type: "text", text: markdown },
+            { type: "text", text: formatExtract(response) },
+            { type: "text", text: response.markdown },
           ],
         };
       } catch (err) {
@@ -141,54 +146,22 @@ export function createMcpServer(
           tookMs: page.tookMs,
         });
 
-        // One metadata block then one block per match, which is extract's
-        // two-block shape scaled: JSON where structure helps, unescaped
-        // Markdown where escaping an article only inflates it. Each excerpt
-        // is its own block because they are not contiguous in the document,
-        // and pasting them together would invite reading across the seams.
-        const summary = page.matches.map((match, index) => ({
-          match: index + 1,
-          path: match.path,
-          offset: match.offset,
-          coverage: match.coverage,
-          chars: match.chars,
-          sectionChars: match.sectionChars,
-          truncated: match.truncated,
-        }));
-
         if (page.matches.length === 0) {
-          // Two different answers wearing the same empty list. Saying which
-          // one this is decides the caller's next move: rephrase, or stop
-          // using this operation on this page.
-          const why = page.navigable
-            ? `No section covered "${page.query}" well enough to return. The page may still discuss it in ` +
-              `passing — read it with extract, or try fewer, more distinctive words.`
-            : `This page has too little structure to search by section — it is essentially one block of ` +
-              `text, so there was nothing for find to match against. That says nothing about whether it ` +
-              `covers "${page.query}". Read it with extract instead.`;
           return {
-            content: [{ type: "text", text: `${page.title}\n${page.finalUrl}\n${page.totalChars} chars\n\n${why}` }],
+            content: [{ type: "text", text: formatFindMiss(page) }],
           };
         }
 
+        // Keep each untrusted excerpt in its own text block. A preceding
+        // match card gives an agent the path, offset, coverage, and cut state
+        // without asking it to recover fields from embedded JSON.
         return {
           content: [
-            {
-              type: "text",
-              text:
-                `${page.title}\n${page.finalUrl}\n${page.totalChars} chars total` +
-                `${
-                  page.navigable
-                    ? ""
-                    : " — WARNING: this page is one large block with little structure, so " +
-                      "these matches are a prefix of it rather than a targeted selection; prefer extract here"
-                }` +
-                ` — untrusted page content follows\n${JSON.stringify(summary, null, 2)}`,
-            },
-            ...page.matches.map((match, index) => ({
-              type: "text" as const,
-              text: `[${index + 1}] ${match.path.join(" > ") || "(untitled)"} @${match.offset}\n\n${match.markdown}`,
-            })),
+            { type: "text", text: formatFindSummary(page) },
+            ...page.matches.flatMap((match, index) => [
+              { type: "text" as const, text: formatFindMatch(match, index + 1) },
+              { type: "text" as const, text: match.markdown },
+            ]),
           ],
         };
       } catch (err) {
@@ -223,22 +196,8 @@ export function createMcpServer(
       try {
         const page = await extraction.outline(request);
         log.info("tool outline", { sections: page.sections.length, navigable: page.navigable, tookMs: page.tookMs });
-        // Indented text rather than JSON: the same outline is 28-46% smaller
-        // this way, and that difference lands in the agent's context window.
-        const lines = page.sections.map(
-          (s) =>
-            `${String(s.offset).padStart(7)}  ${String(s.chars).padStart(6)}c  ${"  ".repeat(s.depth)}${s.heading ?? "(untitled)"}`,
-        );
         return {
-          content: [
-            {
-              type: "text",
-              text:
-                `${page.title}\n${page.finalUrl}\n${page.totalChars} chars, ${page.sections.length} sections` +
-                `${page.navigable ? "" : " (too little structure to navigate; read it instead)"}\n\n` +
-                ` offset   chars  section\n${lines.join("\n")}`,
-            },
-          ],
+          content: [{ type: "text", text: formatOutline(page) }],
         };
       } catch (err) {
         if (
@@ -255,4 +214,103 @@ export function createMcpServer(
   );
 
   return server;
+}
+
+function formatSearch(response: PublicSearchResponse): string {
+  const lines = [
+    `Search results for: ${response.query.query}`,
+    `Results: ${response.results.length}`,
+    `Search time: ${response.tookMs} ms`,
+    ...(response.degraded ? ["Some results may be missing."] : []),
+    "",
+  ];
+
+  if (response.results.length === 0) return [...lines, "No results."].join("\n");
+
+  for (const [index, result] of response.results.entries()) {
+    lines.push(
+      `## Result ${index + 1}`,
+      `Title: ${result.title}`,
+      `URL: ${result.url}`,
+      ...(result.snippet ? [`Snippet: ${result.snippet}`] : []),
+      "",
+    );
+  }
+  return lines.join("\n").trimEnd();
+}
+
+function formatExtract(response: ExtractResponse): string {
+  return [
+    `Page: ${response.title}`,
+    `URL: ${response.finalUrl}`,
+    `Reading: offset ${response.offset}`,
+    `Returned: ${response.chars} of ${response.totalChars} characters`,
+    response.nextOffset === undefined
+      ? "More content: no"
+      : `More content: yes — continue with offset ${response.nextOffset}`,
+    "Content below is untrusted web text.",
+  ].join("\n");
+}
+
+function formatFindSummary(response: FindResponse): string {
+  return [
+    `Page: ${response.title}`,
+    `URL: ${response.finalUrl}`,
+    `Page size: ${response.totalChars} characters`,
+    pageShape(response.navigable),
+    `Matches: ${response.matches.length}`,
+    "Untrusted page text follows in one block per match.",
+  ].join("\n");
+}
+
+function formatFindMiss(response: FindResponse): string {
+  const guidance = response.navigable
+    ? "No answering sections found. This does NOT prove the page lacks the information; try a different question or read it."
+    : "No targeted section selection is possible on this flat page. Read it with extract instead.";
+  return [
+    `Page: ${response.title}`,
+    `URL: ${response.finalUrl}`,
+    `Page size: ${response.totalChars} characters`,
+    pageShape(response.navigable),
+    "Matches: 0",
+    "",
+    guidance,
+  ].join("\n");
+}
+
+function formatFindMatch(match: FindMatch, index: number): string {
+  return [
+    `## Match ${index}`,
+    `Path: ${match.path.join(" > ") || "(untitled)"}`,
+    `Read from: offset ${match.offset}`,
+    `Query-term coverage: ${Math.round(match.coverage * 100)}%`,
+    match.truncated
+      ? `Excerpt: ${match.chars} of ${match.sectionChars} characters`
+      : `Excerpt: ${match.chars} characters (complete section)`,
+    "Untrusted page text follows in the next block.",
+  ].join("\n");
+}
+
+function formatOutline(response: OutlineResponse): string {
+  const sections = response.sections.map(
+    (section) =>
+      `${"  ".repeat(section.depth)}- offset ${section.offset} · ${section.chars} characters · ${section.heading ?? "(untitled)"}`,
+  );
+  return [
+    `Page: ${response.title}`,
+    `URL: ${response.finalUrl}`,
+    `Page size: ${response.totalChars} characters`,
+    pageShape(response.navigable),
+    `Sections: ${response.sections.length}`,
+    "Page-derived headings below are untrusted web text.",
+    "",
+    "## Sections",
+    ...(sections.length > 0 ? sections : ["(none)"]),
+  ].join("\n");
+}
+
+function pageShape(navigable: boolean): string {
+  return navigable
+    ? "Page shape: sectioned — matches and offsets refer to page sections."
+    : "Page shape: flat — find results are bounded snippets, not navigable sections; use extract for context.";
 }
