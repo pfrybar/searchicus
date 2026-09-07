@@ -67,16 +67,18 @@ export const PROXIMITY_WINDOW = 24;
  */
 export const LENGTH_FLOOR = 200;
 
+/** A term is rare when it appears in at most this fraction of candidates. */
+export const RARE_TERM_SECTION_FRACTION = 0.25;
+
 /**
- * Fraction of the query's content words a section must carry to be returned.
+ * Minimum in-page-IDF-weighted coverage for a candidate to be returned.
  *
- * The gate, not the ranking. Returning the best three sections of a page
- * that discusses none of what was asked is the off-target search failure one
- * layer down: a confident answer to a question the document cannot answer.
- * Below this the honest response is no matches at all, which leaves the
- * caller to `outline` or `extract` instead.
+ * Unlike a flat fraction of query words, this lets a section containing the
+ * page's distinctive answer survive a longer natural-language question. When
+ * the page has rare query terms, a candidate must contain at least one of
+ * them, so a generic section cannot pass merely by repeating common words.
  */
-export const COVERAGE_FLOOR = 0.5;
+export const WEIGHTED_COVERAGE_FLOOR = 0.3;
 
 /** Budget below which a further match would be an unreadable fragment. */
 export const MIN_MATCH_CHARS = 200;
@@ -108,15 +110,22 @@ interface ScoredSection {
   readonly section: Section;
   readonly score: number;
   readonly coverage: number;
+  readonly passesGate: boolean;
   /** Whether anything but the heading is here. See the filter below. */
   readonly hasBody: boolean;
+}
+
+interface TermStatistics {
+  readonly idf: number[];
+  readonly rareTerms: number[];
+  readonly availableWeight: number;
 }
 
 /**
  * The best sections of a document for a query, best first, within a budget.
  *
  * Returns no matches for a query with no content words and for a document
- * where nothing clears the coverage floor. Both are answers rather than
+ * where nothing clears the answer gate. Both are answers rather than
  * errors: the caller asked a question, and "this page does not discuss that"
  * is a true one.
  *
@@ -156,20 +165,7 @@ export function findSections(
     ),
   );
 
-  // The document frequency is over this page's sections, which is the right
-  // corpus rather than a poor substitute for a real one: it measures how
-  // distinctive a term is *here*. It is what stops a page's own subject
-  // words — "wal" and "sqlite" on sqlite.org/wal.html — from drowning the
-  // rare term that actually locates the answer.
-  //
-  // The `1 +` is not decoration. Classic BM25 IDF goes negative once a term
-  // appears in more than half the corpus, and with a corpus of twenty
-  // sections that is ordinary — a section would be penalised for containing
-  // a word the caller asked for.
-  const idf = terms.map((_, index) => {
-    const df = frequencies.reduce((count, row) => count + ((row[index] ?? 0) > 0 ? 1 : 0), 0);
-    return Math.log(1 + (sections.length - df + 0.5) / (df + 0.5));
-  });
+  const statistics = termStatistics(frequencies, terms.length);
 
   const scored = sections.map((section, index): ScoredSection => {
     const row = frequencies[index] ?? [];
@@ -181,7 +177,7 @@ export function findSections(
       const frequency = row[term] ?? 0;
       if (frequency <= 0) continue;
       present++;
-      score += (idf[term] ?? 0) * (frequency / (frequency + normalization));
+      score += (statistics.idf[term] ?? 0) * (frequency / (frequency + normalization));
     }
     // BM25 sees a bag of words. A phrase or a tight cluster contains more
     // evidence of an answer than the same words scattered through a section.
@@ -191,6 +187,7 @@ export function findSections(
       section,
       score,
       coverage: present / terms.length,
+      passesGate: passesTermGate(row, statistics),
       hasBody: (tokens[index]?.body.length ?? 0) > 0,
     };
   });
@@ -201,7 +198,7 @@ export function findSections(
     // three-word heading that is entirely query terms is the densest thing
     // on the page. Its descriptive power is not lost — it weighs on every
     // section beneath it as an ancestor, which is where it belongs.
-    .filter((entry) => entry.hasBody && entry.coverage >= COVERAGE_FLOOR)
+    .filter((entry) => entry.hasBody && entry.passesGate)
     // Offset breaks a tie, so the same page and query always select the same
     // sections in the same order.
     .sort((a, b) => b.score - a.score || a.section.start - b.section.start);
@@ -332,10 +329,7 @@ function selectWithin(
   const lengths = blocks.map((block) => Math.max(block.end - block.start, LENGTH_FLOOR));
   const averageLength = lengths.reduce((total, length) => total + length, 0) / lengths.length;
 
-  const idf = terms.map((_, index) => {
-    const df = frequencies.reduce((count, row) => count + ((row[index] ?? 0) > 0 ? 1 : 0), 0);
-    return Math.log(1 + (blocks.length - df + 0.5) / (df + 0.5));
-  });
+  const statistics = termStatistics(frequencies, terms.length);
 
   const scored = blocks.map((block, index) => {
     const row = frequencies[index] ?? [];
@@ -343,17 +337,17 @@ function selectWithin(
     let score = 0;
     for (let term = 0; term < terms.length; term++) {
       const frequency = row[term] ?? 0;
-      if (frequency > 0) score += (idf[term] ?? 0) * (frequency / (frequency + normalization));
+      if (frequency > 0) score += (statistics.idf[term] ?? 0) * (frequency / (frequency + normalization));
     }
     score += sequenceBoost(terms, tokens[index] ?? []);
-    return { block, score };
+    return { block, score, passesGate: passesTermGate(row, statistics) };
   });
 
   const ranked = [...scored]
     // A block holding none of the query's words is padding, not an answer.
     // Filling leftover budget with it would spend a caller's context on text
     // chosen for fitting rather than for matching.
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score > 0 && entry.passesGate)
     .sort((a, b) => b.score - a.score || a.block.start - b.block.start);
   if (ranked.length === 0) return [];
 
@@ -406,6 +400,51 @@ function selectWithin(
     else runs.push({ start: block.start, end: block.end });
   }
   return runs;
+}
+
+/**
+ * Per-candidate term statistics for both BM25 ordering and the answer gate.
+ *
+ * Document frequency is scoped to this page's sections (or to one oversized
+ * section's blocks), which makes it a measure of what is distinctive in the
+ * document the caller is reading. Terms absent from every candidate are not
+ * gate requirements: no candidate can supply them, and they must not erase a
+ * useful answer to the terms this page actually discusses.
+ */
+function termStatistics(frequencies: readonly (readonly number[])[], termCount: number): TermStatistics {
+  const candidateCount = frequencies.length;
+  const documentFrequencies = Array.from({ length: termCount }, (_, index) =>
+    frequencies.reduce((count, row) => count + ((row[index] ?? 0) > 0 ? 1 : 0), 0),
+  );
+  const rareLimit = Math.max(1, Math.floor(candidateCount * RARE_TERM_SECTION_FRACTION));
+  const idf = documentFrequencies.map((df) => {
+    // The `1 +` keeps common terms from becoming a negative BM25 penalty.
+    return Math.log(1 + (candidateCount - df + 0.5) / (df + 0.5));
+  });
+  const rareTerms = documentFrequencies.flatMap((df, index) => (df > 0 && df <= rareLimit ? [index] : []));
+  const availableWeight = idf.reduce((total, weight, index) => total + (documentFrequencies[index] ? weight : 0), 0);
+
+  return { idf, rareTerms, availableWeight };
+}
+
+/**
+ * True when a candidate contains a distinctive term, when one exists, and
+ * enough available IDF weight to be an answer rather than a generic mention.
+ * A multi-part question can have several rare terms in different sections;
+ * requiring every one from each section would turn that useful survey into an
+ * all-or-nothing test again.
+ */
+function passesTermGate(frequencies: readonly number[], statistics: TermStatistics): boolean {
+  if (statistics.availableWeight === 0) return false;
+  if (statistics.rareTerms.length > 0 && statistics.rareTerms.every((index) => (frequencies[index] ?? 0) === 0)) {
+    return false;
+  }
+
+  const matchedWeight = statistics.idf.reduce(
+    (total, weight, index) => total + ((frequencies[index] ?? 0) > 0 ? weight : 0),
+    0,
+  );
+  return matchedWeight / statistics.availableWeight >= WEIGHTED_COVERAGE_FLOOR;
 }
 
 /** Fraction of the query's content words present in a piece of text. */
