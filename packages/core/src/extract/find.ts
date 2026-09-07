@@ -44,6 +44,15 @@ export const HEADING_WEIGHT_ANCESTOR = 1;
 export const BM25_K1 = 1.2;
 export const BM25_B = 0.75;
 
+/** A compact ordered query phrase makes a section more likely to answer it. */
+export const PHRASE_BOOST = 0.2;
+
+/** All query terms appearing near one another is useful even out of order. */
+export const PROXIMITY_BOOST = 0.15;
+
+/** Terms farther apart than this receive no proximity credit. */
+export const PROXIMITY_WINDOW = 24;
+
 /**
  * Length below which a section gets no brevity bonus.
  *
@@ -174,6 +183,9 @@ export function findSections(
       present++;
       score += (idf[term] ?? 0) * (frequency / (frequency + normalization));
     }
+    // BM25 sees a bag of words. A phrase or a tight cluster contains more
+    // evidence of an answer than the same words scattered through a section.
+    score += sequenceBoost(terms, tokens[index]?.body ?? []);
 
     return {
       section,
@@ -333,6 +345,7 @@ function selectWithin(
       const frequency = row[term] ?? 0;
       if (frequency > 0) score += (idf[term] ?? 0) * (frequency / (frequency + normalization));
     }
+    score += sequenceBoost(terms, tokens[index] ?? []);
     return { block, score };
   });
 
@@ -539,6 +552,70 @@ function countTermMatches(term: string, tokens: readonly string[]): number {
   let count = 0;
   for (const token of tokens) if (token === term) count++;
   return count;
+}
+
+/**
+ * The ordered and near-together evidence BM25 deliberately does not model.
+ *
+ * The phrase part rewards each adjacent pair from the normalized query that
+ * occurs in the same order in the text. It therefore still helps a longer
+ * question whose complete wording does not occur verbatim. The proximity part
+ * looks for the smallest token window covering every query term, regardless
+ * of order; it rewards a compact explanation without pretending that word
+ * order did not matter. Both are capped additive bonuses, so a phrase does
+ * not replace term frequency, IDF, heading evidence, or the coverage gate.
+ */
+function sequenceBoost(terms: readonly string[], tokens: readonly string[]): number {
+  if (terms.length < 2 || tokens.length < 2) return 0;
+
+  const orderedPairs = new Set<string>();
+  for (let index = 0; index < terms.length - 1; index++) {
+    orderedPairs.add(`${terms[index]}\u0000${terms[index + 1]}`);
+  }
+  const matchedPairs = new Set<string>();
+  for (let index = 0; index < tokens.length - 1; index++) {
+    const pair = `${tokens[index]}\u0000${tokens[index + 1]}`;
+    if (orderedPairs.has(pair)) matchedPairs.add(pair);
+  }
+
+  return (PHRASE_BOOST * matchedPairs.size) / (terms.length - 1) + proximityBonus(terms, tokens);
+}
+
+/** The tightest text span that contains every distinct query term. */
+function proximityBonus(terms: readonly string[], tokens: readonly string[]): number {
+  // A complete window cannot be shorter than the number of distinct terms.
+  // At the configured width the interpolation denominator would be zero, so
+  // leave those exceptionally long queries to their BM25 and phrase signals.
+  if (terms.length >= PROXIMITY_WINDOW) return 0;
+
+  const wanted = new Set(terms);
+  const counts = new Map<string, number>();
+  let distinct = 0;
+  let left = 0;
+  let smallest = Number.POSITIVE_INFINITY;
+
+  for (let right = 0; right < tokens.length; right++) {
+    const rightTerm = tokens[right];
+    if (rightTerm && wanted.has(rightTerm)) {
+      const count = counts.get(rightTerm) ?? 0;
+      counts.set(rightTerm, count + 1);
+      if (count === 0) distinct++;
+    }
+
+    while (distinct === terms.length) {
+      smallest = Math.min(smallest, right - left + 1);
+      const leftTerm = tokens[left];
+      if (leftTerm && wanted.has(leftTerm)) {
+        const count = counts.get(leftTerm) ?? 0;
+        if (count === 1) distinct--;
+        counts.set(leftTerm, count - 1);
+      }
+      left++;
+    }
+  }
+
+  if (smallest > PROXIMITY_WINDOW) return 0;
+  return (PROXIMITY_BOOST * (PROXIMITY_WINDOW - smallest)) / (PROXIMITY_WINDOW - terms.length);
 }
 
 /**
