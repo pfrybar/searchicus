@@ -147,12 +147,25 @@ describe("find tool", () => {
     // "this page does not contain that" and stopping.
     expect(find?.description).toMatch(/does NOT prove/i);
     expect(find?.description).toMatch(/untrusted/i);
-    // The two things the evaluation showed agents get wrong unaided: they
-    // pick find by page length rather than structure, and they ask in full
-    // sentences, which is exactly when the coverage gate stops matching.
+    // The current scorer accepts natural-language questions, but callers
+    // still need to know what coverage means and how flat pages are reported.
     expect(find?.description).toMatch(/structure/i);
-    expect(find?.description).toMatch(/navigable: false/);
-    expect(find?.description).toMatch(/few, distinctive words/i);
+    expect(find?.description).toMatch(/natural-language questions/i);
+    expect(find?.description).toMatch(/fraction of normalized query terms/i);
+    expect(find?.description).toMatch(/not a confidence, ranking, or completeness score/i);
+    expect(find?.description).toMatch(/empty path/i);
+  });
+});
+
+describe("outline tool", () => {
+  it("says its non-navigability signal is explanatory text, not a promised field", async () => {
+    const client = await connectedClient();
+    const { tools } = await client.listTools();
+    const outline = tools.find((tool) => tool.name === "outline");
+
+    expect(outline?.description).toMatch(/warns/i);
+    expect(outline?.description).toMatch(/too little structure/i);
+    expect(outline?.description).not.toMatch(/`navigable` is false/i);
   });
 });
 

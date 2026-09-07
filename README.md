@@ -449,8 +449,10 @@ top.
 Sections come back **whole** where they fit, which is affordable because
 sections are smaller than pages: across five real reference pages, one section
 in 134 exceeds the default budget. Each match carries its heading path, its
-`coverage` — the fraction of the query's words present in the text you were
-given — and the offset to read it in place.
+`coverage` — the fraction of normalized query terms present in the text you
+were given — and the offset to read it in place. Coverage is not a confidence,
+ranking, or completeness score: ranking and the answer gate also consider
+in-page term rarity, headings, phrases, and proximity.
 
 A section too large to return whole is split at its blank lines and scored
 again, so what comes back is the part that matches rather than the part that
@@ -473,11 +475,11 @@ nothing about its contents and a hit is a prefix rather than a selection —
 long it is, is what decides whether `find` helps at all.
 
 A page longer than the budget is read a window at a time: the response says
-where the window started and where to continue, and those offsets snap to
-**section boundaries** so a window begins at a heading rather than mid-sentence
-— and never inside a fenced code block, which is where a naive character cut
-lands. `searchicus extract --offset`, the `offset` field on `POST /extract`,
-and a "Read on" button in the UI are the same mechanism.
+where the window started and where to continue. The window **start** snaps to a
+section boundary so it begins at a heading rather than mid-sentence; a window
+that must end within an oversized section stops at a safe line boundary that
+avoids fenced-code damage. `searchicus extract --offset`, the `offset` field on
+`POST /extract`, and a "Read on" button in the UI are the same mechanism.
 
 Reading each window would otherwise re-render the page, so a parsed page is
 held briefly in memory: measured, the first window of a real page took 5,049ms
