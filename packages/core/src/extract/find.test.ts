@@ -36,6 +36,18 @@ describe("find token normalization", () => {
     expect(findContentTokens("машины 日本語 busy_timeout")).toEqual(["машины", "日本語", "busy_timeout"]);
   });
 
+  it("keeps technical identifiers exact instead of treating them as prose", () => {
+    expect(findContentTokens("node:sqlite fooBar --max-old-space-size C# .NET v2.0 /usr/local/bin")).toEqual([
+      "node:sqlite",
+      "fooBar",
+      "--max-old-space-size",
+      "C#",
+      ".NET",
+      "v2.0",
+      "/usr/local/bin",
+    ]);
+  });
+
   it("drops English question scaffolding but keeps the question's subject terms", () => {
     expect(findContentTokens("How can I configure my busy_timeout, please?")).toEqual(["configur", "busy_timeout"]);
     expect(findContentTokens("What is the difference between PUT and PATCH?")).toEqual([
@@ -52,6 +64,24 @@ describe("find token normalization", () => {
     ]);
     expect(findContentTokens("Как настроить busy_timeout?")).toEqual(["как", "настроить", "busy_timeout"]);
     expect(findContentTokens("How can I do this, please?")).toEqual([]);
+  });
+
+  it("requires the exact spelling of a technical identifier", () => {
+    const page = [
+      "# Reference",
+      "",
+      "## API",
+      "",
+      filler("the node:sqlite API and fooBar option", 6),
+      "",
+      "## Prose lookalikes",
+      "",
+      filler("a node and sqlite database plus a foobar example", 6),
+    ].join("\n");
+
+    expect(matchesIn(page, "node:sqlite", 6_000)[0]?.path.at(-1)).toBe("API");
+    expect(matchesIn(page, "fooBar", 6_000)[0]?.path.at(-1)).toBe("API");
+    expect(matchesIn(page, "foobar", 6_000)[0]?.path.at(-1)).toBe("Prose lookalikes");
   });
 
   it("does not reject a relevant section for words that only frame the question", () => {
