@@ -105,6 +105,62 @@ describe("findSections", () => {
     expect(matches[0]?.path.at(-1)).toBe("Checkpointing");
   });
 
+  it("prefers an in-order phrase over the same words in reverse order", () => {
+    const padding = filler("unrelated background", 8);
+    const page = [
+      "# Guide",
+      "",
+      "## Reverse order",
+      "",
+      `Beta alpha. ${padding}`,
+      "",
+      "## In order",
+      "",
+      `Alpha beta. ${padding}`,
+    ].join("\n");
+
+    // Term frequency, document frequency, and section length are identical.
+    // Only the in-order normalized phrase separates these two candidates.
+    expect(matchesIn(page, "alpha beta", 6_000)[0]?.path.at(-1)).toBe("In order");
+  });
+
+  it("prefers a compact out-of-order cluster over scattered terms", () => {
+    const padding = filler("unrelated background", 8);
+    const page = [
+      "# Guide",
+      "",
+      "## Scattered",
+      "",
+      `Alpha ${padding} beta ${padding} gamma.`,
+      "",
+      "## Compact",
+      "",
+      `Alpha gamma beta. ${padding} ${padding}`,
+    ].join("\n");
+
+    // Neither candidate contains an in-order query pair. The compact one
+    // wins solely because one small token window covers all three terms.
+    expect(matchesIn(page, "alpha beta gamma", 6_000)[0]?.path.at(-1)).toBe("Compact");
+  });
+
+  it("uses phrase evidence when choosing a block from an oversized section", () => {
+    const page = [
+      "# Guide",
+      "",
+      "## Reference",
+      "",
+      `Beta alpha. ${filler("unrelated background", 10)}`,
+      "",
+      `Alpha beta. ${filler("unrelated background", 10)}`,
+    ].join("\n");
+
+    const [match] = matchesIn(page, "alpha beta", 500);
+
+    expect(match?.truncated).toBe(true);
+    expect(match?.markdown).toContain("Alpha beta.");
+    expect(match?.markdown).not.toContain("Beta alpha.");
+  });
+
   it("carries the whole heading path, since a ranked list has no order to imply it", () => {
     const matches = matchesIn(PAGE, "checkpoint starvation", 6_000);
 
