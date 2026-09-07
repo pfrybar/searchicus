@@ -15,6 +15,7 @@ import { stemmer } from "stemmer";
 import { tokenize } from "../relevance.js";
 import {
   balanceFences,
+  displayHeading,
   isNavigable,
   safeCut,
   splitBlocks,
@@ -85,7 +86,7 @@ export const MIN_MATCH_CHARS = 200;
 
 /** One selected section, with where it sits in the document it came from. */
 export interface FindMatch {
-  /** Enclosing headings, outermost first. Empty above the first heading. */
+  /** Readable enclosing headings, outermost first. Empty above the first heading. */
   readonly path: string[];
   /** Pass to `extract` as `offset` to read this section in place. */
   readonly offset: number;
@@ -247,7 +248,7 @@ function select(markdown: string, ranked: ScoredSection[], terms: string[], maxC
     const text = markdown.slice(start, end).trimEnd();
     if (text.trim().length === 0) return;
     matches.push({
-      path: [...section.headings],
+      path: section.headings.map(displayHeading),
       offset: start,
       // Measured on what came back rather than on the section it came from.
       // Coverage is the number a caller acts on, and a promise about text

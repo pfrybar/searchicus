@@ -92,7 +92,11 @@ export function createProgram(
   program
     .command("extract <url>")
     .description("Render a page and print its main content as Markdown")
-    .option("-m, --max-chars <n>", "max characters of Markdown (1\u2013100000; defaults to 20000)", parseMaxChars)
+    .option(
+      "-m, --max-chars <n>",
+      "maximum Markdown characters (1–100000; defaults to 20000; section-aware reads can return fewer)",
+      parseMaxChars,
+    )
     .option("-o, --offset <n>", "start reading here; use the nextOffset a previous run printed", parseOffset)
     .option("--json", "print raw JSON instead of formatted Markdown")
     .action(async (url: string, opts: { maxChars?: number; offset?: number; json?: boolean }) => {

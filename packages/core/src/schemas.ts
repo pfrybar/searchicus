@@ -71,7 +71,7 @@ export const ExtractRequestSchema = z.object({
     .positive()
     .max(MAX_EXTRACT_MAX_CHARS)
     .optional()
-    .describe("Maximum characters of Markdown to return. Defaults to 20000."),
+    .describe("Maximum characters of Markdown to return. Defaults to 20000; section-aware windows may return fewer."),
   offset: z
     .number()
     .int()

@@ -475,11 +475,13 @@ nothing about its contents and a hit is a prefix rather than a selection —
 long it is, is what decides whether `find` helps at all.
 
 A page longer than the budget is read a window at a time: the response says
-where the window started and where to continue. The window **start** snaps to a
-section boundary so it begins at a heading rather than mid-sentence; a window
-that must end within an oversized section stops at a safe line boundary that
-avoids fenced-code damage. `searchicus extract --offset`, the `offset` field on
-`POST /extract`, and a "Read on" button in the UI are the same mechanism.
+where the window started and where to continue. `maxChars` is a ceiling, not a
+target: preserving section boundaries can return less than its budget. The
+window **start** snaps to a section boundary so it begins at a heading rather
+than mid-sentence; a window that must end within an oversized section stops at
+a safe line boundary that avoids fenced-code damage. `searchicus extract
+--offset`, the `offset` field on `POST /extract`, and a "Read on" button in the
+UI are the same mechanism.
 
 Reading each window would otherwise re-render the page, so a parsed page is
 held briefly in memory: measured, the first window of a real page took 5,049ms

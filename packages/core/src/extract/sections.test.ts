@@ -160,6 +160,19 @@ describe("buildOutline", () => {
     expect(sections.map((s) => s.depth)).toEqual([0, 0, 1, 1]);
   });
 
+  it("uses readable labels for CommonMark-escaped headings", () => {
+    const escaped = ["# 2\\.1 Getting started", "", "## busy\\_timeout", "", "Details."].join("\n");
+
+    expect(splitSections(escaped).map((section) => section.headings)).toEqual([
+      ["2\\.1 Getting started"],
+      ["2\\.1 Getting started", "busy\\_timeout"],
+    ]);
+    expect(buildOutline(escaped).sections.map((section) => section.heading)).toEqual([
+      "2.1 Getting started",
+      "busy_timeout",
+    ]);
+  });
+
   it("says when a page has too little structure to navigate by", () => {
     // "(preamble) 68297c" is technically an outline and useless as one. Three
     // of twenty-seven real result pages look like this.

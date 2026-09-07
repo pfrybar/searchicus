@@ -403,10 +403,11 @@ or session to tear down.
   HTTP API: query text is trimmed and non-whitespace.
 - **`extract`** — `{ url, maxChars?, offset? }` → renders one public page and
   returns a readable page header followed by the main content as unescaped
-  Markdown. Pass the header's continuation offset back as `offset` to keep
-  reading a long page. The tool is advertised whether or not extraction is
-  enabled — an agent that cannot see the tool cannot be told the server merely
-  has it switched off.
+  Markdown. `maxChars` is a ceiling: section-aware windows can return fewer
+  characters rather than split the next section. Pass the header's continuation
+  offset back as `offset` to keep reading a long page. The tool is advertised
+  whether or not extraction is enabled — an agent that cannot see the tool
+  cannot be told the server merely has it switched off.
 - **`find`** — `{ url, query, maxChars? }` → the sections of one page that
   answer a question, best first. It returns a readable page summary, one
   readable match card and one unescaped Markdown block per match. Match cards
