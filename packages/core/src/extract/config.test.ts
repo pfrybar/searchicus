@@ -23,6 +23,7 @@ describe("extractConfigFromEnv", () => {
       SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS: "0",
       SEARCHICUS_EXTRACT_TIMEOUT_MS: "20000",
       SEARCHICUS_EXTRACT_MAX_BYTES: "1048576",
+      SEARCHICUS_EXTRACT_MAX_DOC_BYTES: "524288",
       SEARCHICUS_EXTRACT_MAX_REDIRECTS: "0",
       SEARCHICUS_EXTRACT_ALLOWED_PORTS: "80, 443, 8443",
       SEARCHICUS_EXTRACT_DWELL: "false",
@@ -34,10 +35,36 @@ describe("extractConfigFromEnv", () => {
       settleTimeoutMs: 0,
       timeoutMs: 20_000,
       maxBytes: 1_048_576,
+      maxDocumentBytes: 524_288,
       maxRedirects: 0,
       dwell: false,
     });
     expect([...config.allowedPorts]).toEqual([80, 443, 8443]);
+  });
+
+  it("bounds a document below the transfer budget it is fetched within", () => {
+    // The two caps guard different things — one the parse, one the fetch —
+    // but a document cap above the transfer tripwire would be unreachable by
+    // construction, and the failure it exists to produce could never happen.
+    expect(DEFAULT_EXTRACT_CONFIG.maxDocumentBytes).toBeLessThan(DEFAULT_EXTRACT_CONFIG.maxBytes);
+  });
+
+  it("keeps a document cap that outruns the tripwire inside it", () => {
+    // The same rule on the operator's path: a misdeclared document cap must
+    // not sail past the transfer budget, or the failure it exists to produce
+    // would be unreachable by construction.
+    const config = extractConfigFromEnv({
+      SEARCHICUS_EXTRACT_MAX_BYTES: "1048576",
+      SEARCHICUS_EXTRACT_MAX_DOC_BYTES: "4194304",
+    });
+    expect(config.maxDocumentBytes).toBe(config.maxBytes);
+
+    // A cap at or under the tripwire is respected as written.
+    const normal = extractConfigFromEnv({
+      SEARCHICUS_EXTRACT_MAX_BYTES: "1048576",
+      SEARCHICUS_EXTRACT_MAX_DOC_BYTES: "524288",
+    });
+    expect(normal.maxDocumentBytes).toBe(524_288);
   });
 
   it("falls back rather than throwing on an unusable value", () => {

@@ -1,4 +1,7 @@
 import { envOptIn, envOptOut } from "../env.js";
+import { createLogger } from "../logger.js";
+
+const log = createLogger("extract");
 
 /** Markdown returned when a caller does not ask for a specific budget. */
 export const DEFAULT_EXTRACT_MAX_CHARS = 20_000;
@@ -50,8 +53,42 @@ export interface ExtractConfig {
    * turn it off and get the seconds back.
    */
   readonly dwell: boolean;
-  /** Page and subresource transfer budget, applied before parsing. */
+  /**
+   * Fetch tripwire across the whole render: main document plus every
+   * subresource.
+   *
+   * Crossing it stops the render fetching anything further, but does not fail
+   * the extraction. The two are separate because the sizes are: a page is
+   * mostly images, fonts and script, none of which Defuddle reads, so asset
+   * weight is a reason to stop spending and never a reason to lose a document
+   * already in hand. What the caller loses when this trips is styling and
+   * late-loading script, which degrades rendering rather than content — and
+   * the render is recorded as degraded, so an empty result has an explanation
+   * waiting in the archive.
+   *
+   * Header-based, and therefore advisory: a chunked response reports no
+   * length and goes uncounted here. MAX_PAGE_REQUESTS and the end-to-end
+   * deadline are the bounds that do not depend on a server being honest.
+   */
   readonly maxBytes: number;
+  /**
+   * Parse bound on the main document alone. Crossing it fails the extraction
+   * with `too_large`.
+   *
+   * Measured from the body actually received rather than its `content-length`
+   * header, so a chunked megabyte counts exactly like a declared one. This is
+   * the limit that means what `too_large` says: the *document* was too big to
+   * read, which is a real answer about the page, unlike the weight of its
+   * images.
+   *
+   * Lower than `maxBytes` on purpose and enforced to stay so: a document
+   * cap above the transfer budget would be unreachable by construction, and
+   * the failure it exists to produce could never happen. Two megabytes of
+   * HTML is already far past any page written to be read — the heaviest
+   * documents measured run about 1.2 MB — so what lands above it is data
+   * rather than prose.
+   */
+  readonly maxDocumentBytes: number;
   /** Cap on the redirect chain. */
   readonly maxRedirects: number;
   /** Destination ports the renderer may open. */
@@ -85,6 +122,7 @@ export const DEFAULT_EXTRACT_CONFIG: ExtractConfig = {
   timeoutMs: 30_000,
   dwell: true,
   maxBytes: 5_242_880,
+  maxDocumentBytes: 2_097_152,
   maxRedirects: 5,
   allowedPorts: new Set([80, 443]),
   cache: {
@@ -120,6 +158,7 @@ export function extractConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Extr
     timeoutMs: positiveInt(env.SEARCHICUS_EXTRACT_TIMEOUT_MS, DEFAULT_EXTRACT_CONFIG.timeoutMs),
     dwell: envOptOut(env.SEARCHICUS_EXTRACT_DWELL),
     maxBytes: positiveInt(env.SEARCHICUS_EXTRACT_MAX_BYTES, DEFAULT_EXTRACT_CONFIG.maxBytes),
+    maxDocumentBytes: documentCap(env),
     maxRedirects: nonNegativeInt(env.SEARCHICUS_EXTRACT_MAX_REDIRECTS, DEFAULT_EXTRACT_CONFIG.maxRedirects),
     allowedPorts: ports(env.SEARCHICUS_EXTRACT_ALLOWED_PORTS, DEFAULT_EXTRACT_CONFIG.allowedPorts),
     cache: {
@@ -129,6 +168,32 @@ export function extractConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Extr
       maxChars: positiveInt(env.SEARCHICUS_EXTRACT_CACHE_MAX_CHARS, DEFAULT_EXTRACT_CONFIG.cache.maxChars),
     },
   };
+}
+
+/**
+ * The document cap, clamped to the transfer budget it is fetched within.
+ *
+ * A cap above the tripwire is unreachable by construction — the render stops
+ * fetching before a document could ever reach it — so the failure it exists
+ * to produce could never happen, and an oversized page would be reported as
+ * one that could not be loaded instead.
+ *
+ * Said out loud rather than quietly applied. Every other value here falls
+ * back to a default an operator can read off the table in the README; this
+ * one derives a number nobody wrote, and a limit that silently means
+ * something else is how an afternoon disappears.
+ */
+function documentCap(env: NodeJS.ProcessEnv): number {
+  const transfer = positiveInt(env.SEARCHICUS_EXTRACT_MAX_BYTES, DEFAULT_EXTRACT_CONFIG.maxBytes);
+  const requested = positiveInt(env.SEARCHICUS_EXTRACT_MAX_DOC_BYTES, DEFAULT_EXTRACT_CONFIG.maxDocumentBytes);
+  if (requested <= transfer) return requested;
+
+  log.warn("extraction document cap lowered to the transfer budget", {
+    requested,
+    applied: transfer,
+    transferBudget: transfer,
+  });
+  return transfer;
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {

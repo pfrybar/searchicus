@@ -167,6 +167,20 @@ export type ExtractFailureKind =
   | "unknown";
 
 /** What a renderer hands back for the parser to read. */
+/**
+ * Why a render stopped fetching before the page had finished asking.
+ *
+ * `bytes` is the transfer tripwire, `requests` the per-page request cap.
+ * Neither fails an extraction — the document is already in hand — but both
+ * mean the DOM was captured with some of the page's own resources missing,
+ * so a thin or empty result has an explanation that is not the page's fault.
+ * Operator-facing only: it is logged and archived, and deliberately absent
+ * from every caller response, because the overwhelming majority of degraded
+ * renders return content identical to a clean one and a warning nobody can
+ * act on teaches callers to ignore warnings.
+ */
+export type RenderDegradation = "bytes" | "requests";
+
 export interface RenderedPage {
   /** The URL the page settled on, after redirects. */
   readonly finalUrl: string;
@@ -176,6 +190,8 @@ export interface RenderedPage {
   readonly contentType?: string;
   /** Redirects followed on the way to `finalUrl`. */
   readonly redirects: number;
+  /** Absent when the render fetched everything it was asked to. */
+  readonly degradedBy?: RenderDegradation;
 }
 
 /**
