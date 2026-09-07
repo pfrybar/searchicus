@@ -12,7 +12,7 @@
  * cannot rank first while reporting `coverage: 0`.
  */
 import { stemmer } from "stemmer";
-import { contentTokens, tokenize } from "../relevance.js";
+import { tokenize } from "../relevance.js";
 import {
   balanceFences,
   isNavigable,
@@ -403,18 +403,98 @@ function coverageOf(text: string, terms: string[]): number {
 }
 
 /**
- * Query words with the find operation's scoped normalization.
+ * Question scaffolding that should not become a required section term.
+ *
+ * This is intentionally not relevance.ts's list. Search relevance asks
+ * whether remote result titles and snippets broadly address a query, so it
+ * keeps its list small rather than risk overlooking a topic word. Find has a
+ * different job: choose passages from one page. In "How can I configure my
+ * busy_timeout?", `how`, `can`, and `my` should not make an otherwise exact
+ * busy_timeout section miss coverage; `configure` remains the subject term.
+ *
+ * English-only filtering is deliberate. ICU still tokenizes every script,
+ * but guessing stopwords in languages we have not evaluated would silently
+ * delete subject words. Technical names are kept by the ASCII-word test too;
+ * their more complete classification is owned by the identifier work.
+ */
+const FIND_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "here",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "keep",
+  "may",
+  "me",
+  "might",
+  "my",
+  "of",
+  "on",
+  "or",
+  "our",
+  "please",
+  "should",
+  "tell",
+  "that",
+  "the",
+  "these",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "will",
+  "with",
+  "without",
+  "would",
+  "you",
+  "your",
+]);
+
+/**
+ * Query words with find's own question-aware normalization.
  *
  * Porter is useful for English prose (query/queries, run/running) but is not
  * a general Unicode stemmer. Keep any token containing non-ASCII letters,
  * digits, or identifier punctuation exact; ICU still supplies its boundaries
  * for every script, and technical names such as `busy_timeout` cannot turn
- * into broad prefix matches.
+ * into broad prefix matches. Stopwords are removed before stemming so an
+ * inflected stopword can never become a spurious required term.
  */
 export function findContentTokens(query: string): string[] {
   const terms = new Set<string>();
-  for (const token of contentTokens(unescapeMarkdown(query))) terms.add(stemFindToken(token));
+  for (const token of tokenize(unescapeMarkdown(query))) {
+    if (token.length < 2 || (isAsciiWord(token) && FIND_STOPWORDS.has(token))) continue;
+    terms.add(stemFindToken(token));
+  }
   return [...terms];
+}
+
+function isAsciiWord(token: string): boolean {
+  return /^[a-z]+$/.test(token);
 }
 
 /** Applies the same scoped normalization to document terms and query terms. */

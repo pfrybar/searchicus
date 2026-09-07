@@ -36,6 +36,38 @@ describe("find token normalization", () => {
     expect(findContentTokens("машины 日本語 busy_timeout")).toEqual(["машины", "日本語", "busy_timeout"]);
   });
 
+  it("drops English question scaffolding but keeps the question's subject terms", () => {
+    expect(findContentTokens("How can I configure my busy_timeout, please?")).toEqual(["configur", "busy_timeout"]);
+    expect(findContentTokens("What is the difference between PUT and PATCH?")).toEqual([
+      "differ",
+      "between",
+      "put",
+      "patch",
+    ]);
+    expect(findContentTokens("How do I keep a WAL reader without checkpoint starvation?")).toEqual([
+      "wal",
+      "reader",
+      "checkpoint",
+      "starvat",
+    ]);
+    expect(findContentTokens("Как настроить busy_timeout?")).toEqual(["как", "настроить", "busy_timeout"]);
+    expect(findContentTokens("How can I do this, please?")).toEqual([]);
+  });
+
+  it("does not reject a relevant section for words that only frame the question", () => {
+    const page = [
+      "# Reference",
+      "",
+      "## Timeout configuration",
+      "",
+      filler("configuring the busy_timeout pragma", 6),
+    ].join("\n");
+
+    expect(matchesIn(page, "How can I please configure my busy_timeout in this database?", 6_000)[0]?.path.at(-1)).toBe(
+      "Timeout configuration",
+    );
+  });
+
   it("matches inflected prose without treating unrelated prefixes as equivalent", () => {
     const page = [
       "# Reference",
