@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FindMatch } from "./find.js";
-import { COVERAGE_FLOOR, findContentTokens, findSections, LENGTH_FLOOR, MIN_MATCH_CHARS } from "./find.js";
+import { findContentTokens, findSections, LENGTH_FLOOR, MIN_MATCH_CHARS } from "./find.js";
 import { buildOutline } from "./sections.js";
 
 /** Most tests here are about which sections come back, not about structure. */
@@ -293,11 +293,35 @@ describe("findSections", () => {
     expect(matchesIn(PAGE, "checkpoint starvation kubernetes", 6_000)[0]?.coverage).toBeCloseTo(0.67, 2);
   });
 
-  it("keeps every match at or above the coverage floor", () => {
-    const matches = matchesIn(PAGE, "checkpoint starvation overview", 6_000);
+  it("requires the page's rare term instead of accepting a generic section", () => {
+    const generic = filler("database checkpoint timeout configuration", 8);
+    const page = [
+      "# Reference",
+      "",
+      "## Generic overview",
+      "",
+      generic,
+      "",
+      "## More generic settings",
+      "",
+      generic,
+      "",
+      "## The answer",
+      "",
+      filler("starvation", 8),
+      "",
+      "## More generic background",
+      "",
+      generic,
+    ].join("\n");
 
-    expect(matches.length).toBeGreaterThan(0);
-    expect(matches.every((match) => match.coverage >= COVERAGE_FLOOR)).toBe(true);
+    const matches = matchesIn(page, "database checkpoint timeout configuration starvation", 6_000);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.path.at(-1)).toBe("The answer");
+    // A low plain-token fraction is honest here: the returned section is
+    // about the page's distinctive answer, not every broad query word.
+    expect(matches[0]?.coverage).toBe(0.2);
   });
 
   it("does not let a heading-only section outrank the prose beneath it", () => {
