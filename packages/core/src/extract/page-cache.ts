@@ -19,8 +19,16 @@
  * access pattern, not the data.
  */
 
+import type { RenderDegradation } from "./types.js";
+
 export interface CachedPage {
   readonly finalUrl: string;
+  /**
+   * Carried so a cached read is archived like the render that produced it.
+   * Dropping it would make the same page look degraded once and clean for the
+   * five minutes of paging that follow.
+   */
+  readonly degradedBy?: RenderDegradation;
   readonly status?: number;
   readonly contentType?: string;
   readonly redirects: number;

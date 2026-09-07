@@ -168,6 +168,7 @@ export class ExtractionService {
         wordCount: page.wordCount,
         truncated: window.nextOffset !== undefined,
         cached,
+        ...(page.degradedBy === undefined ? {} : { degradedBy: page.degradedBy }),
         markdownSha256: createHash("sha256").update(markdown).digest("hex"),
       });
 
@@ -281,6 +282,7 @@ export class ExtractionService {
         // is true even where nothing was cut mid-section.
         truncated: markdown.length < page.markdown.length,
         cached,
+        ...(page.degradedBy === undefined ? {} : { degradedBy: page.degradedBy }),
         markdownSha256: createHash("sha256").update(markdown).digest("hex"),
       });
 
@@ -436,6 +438,7 @@ export class ExtractionService {
         ...(rendered.status === undefined ? {} : { status: rendered.status }),
         ...(rendered.contentType === undefined ? {} : { contentType: rendered.contentType }),
         redirects: rendered.redirects,
+        ...(rendered.degradedBy === undefined ? {} : { degradedBy: rendered.degradedBy }),
         title: parsed.title,
         markdown: parsed.markdown,
         wordCount: parsed.wordCount,

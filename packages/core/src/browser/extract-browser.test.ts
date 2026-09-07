@@ -274,6 +274,89 @@ describe.skipIf(!available)("ExtractionBrowser (live Chromium)", () => {
     expect(screened).toContain("metadata.internal");
   });
 
+  it("fails an oversized document, and measures it even when nothing declares a length", async () => {
+    // Chunked on purpose: no content-length, which is exactly the shape that
+    // used to sail past a header-based counter. A 6.9 MB JSON dump was
+    // recorded as a successful read this way.
+    const server = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/html", "transfer-encoding": "chunked" });
+      res.write("<html><body><p>");
+      for (let chunk = 0; chunk < 8; chunk++) res.write("x".repeat(64 * 1024));
+      res.end("</p></body></html>");
+    });
+    const origin = await listen(server);
+
+    await expect(
+      extractionBrowser(origin, { maxDocumentBytes: 128 * 1024 }).render(`${origin}/`, never),
+    ).rejects.toMatchObject({ kind: "too_large" });
+  });
+
+  it("keeps a small document whose assets overrun the transfer budget", async () => {
+    // The split this pins. One counter used to guard both concerns, so a
+    // page died on the weight of its decoration: NYT, Bing and apple.com/docs
+    // all failed on assets while their documents were under a megabyte.
+    const server = createServer((req, res) => {
+      if (req.url === "/") {
+        res.writeHead(200, { "content-type": "text/html" }).end(
+          `<html><body><h1>Small document</h1><p>The article itself is tiny.</p>
+            <script src="/heavy.js"></script></body></html>`,
+        );
+        return;
+      }
+      const body = `/* ${"x".repeat(256 * 1024)} */`;
+      res.writeHead(200, { "content-type": "text/javascript", "content-length": String(body.length) }).end(body);
+    });
+    const origin = await listen(server);
+
+    const page = await extractionBrowser(origin, { maxBytes: 64 * 1024 }).render(`${origin}/`, never);
+
+    // The content survives, and the render says why it may be missing assets
+    // — the half of the outcome an operator needs when a page comes out thin.
+    expect(page.html).toContain("The article itself is tiny.");
+    expect(page.degradedBy).toBe("bytes");
+  });
+
+  it("still delivers a document already fetched when its own weight trips the budget", async () => {
+    // A config no operator can write — extractConfigFromEnv clamps the
+    // document cap to the transfer budget — but one a caller building an
+    // ExtractConfig by hand can, which is what every test in this file does.
+    //
+    // The document is fetched whole in #resolveChain before either bound can
+    // trip, so aborting the navigation that was about to be fulfilled from it
+    // buys nothing and loses the read: the page comes back as one that could
+    // not be loaded, having loaded perfectly.
+    const body = `<html><body><p>${"x".repeat(400 * 1024)}</p></body></html>`;
+    const origin = await serve({ "/": { body } });
+
+    const page = await extractionBrowser(origin, {
+      maxBytes: 300 * 1024,
+      maxDocumentBytes: 4 * 1024 * 1024,
+    }).render(`${origin}/`, never);
+
+    expect(page.html).toContain("xxx");
+    expect(page.degradedBy).toBe("bytes");
+  });
+
+  it("reports a clean render as not degraded at all", async () => {
+    const origin = await serve({ "/": { body: "<html><body><p>Nothing was cut off.</p></body></html>" } });
+
+    expect((await extractionBrowser(origin).render(`${origin}/`, never)).degradedBy).toBeUndefined();
+  });
+
+  it("applies the document cap to a navigation the page starts for itself", async () => {
+    // Otherwise the bound holds only for the URL the caller named, and one
+    // meta-refresh is enough to walk around it.
+    const big = `<html><body><p>${"x".repeat(256 * 1024)}</p></body></html>`;
+    const origin = await serve({
+      "/": { body: `<html><head><meta http-equiv="refresh" content="0;url=/big"></head><body>small</body></html>` },
+      "/big": { body: big },
+    });
+
+    await expect(
+      extractionBrowser(origin, { maxDocumentBytes: 64 * 1024, settleTimeoutMs: 500 }).render(`${origin}/`, never),
+    ).rejects.toMatchObject({ kind: "too_large" });
+  });
+
   it("reports a navigation that never arrives as a navigation failure", async () => {
     const server = createServer(() => {
       // Accepts the connection and answers nothing.

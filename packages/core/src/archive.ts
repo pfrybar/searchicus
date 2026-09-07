@@ -1,4 +1,4 @@
-import type { ExtractFailureKind } from "./extract/types.js";
+import type { ExtractFailureKind, RenderDegradation } from "./extract/types.js";
 import type { EngineSearchOutcome, MergedSearchResponse, SearchQuery } from "./types.js";
 
 /**
@@ -66,6 +66,17 @@ export interface ExtractionArchiveRecord {
    * describes neither.
    */
   readonly cached?: boolean;
+  /**
+   * Which bound, if any, stopped the render fetching before the page had
+   * finished loading. See RenderDegradation.
+   *
+   * Recorded because it is the missing half of a thin result. A page that
+   * extracts to almost nothing is either a bot wall, a JavaScript shell, or a
+   * render that was cut off — and only the last of those is this server's
+   * doing. Absent on a read served from cache before this column existed, and
+   * absent on any render that completed normally.
+   */
+  readonly degradedBy?: RenderDegradation;
 }
 
 /**

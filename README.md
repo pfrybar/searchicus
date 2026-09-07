@@ -414,7 +414,8 @@ someone has to remember.
 | `SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS` |    `10_000` | Deadline through `domcontentloaded`.          |
 | `SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS`     |     `2_000` | Fixed pause after the DOM is ready.           |
 | `SEARCHICUS_EXTRACT_TIMEOUT_MS`            |    `30_000` | End-to-end render, dwell, parse, and respond. |
-| `SEARCHICUS_EXTRACT_MAX_BYTES`             | `5_242_880` | Advisory transfer budget; see below.          |
+| `SEARCHICUS_EXTRACT_MAX_BYTES`             | `5_242_880` | Transfer tripwire, whole render; see below.   |
+| `SEARCHICUS_EXTRACT_MAX_DOC_BYTES`         | `2_097_152` | Document cap; fails the read. See below.      |
 | `SEARCHICUS_EXTRACT_MAX_REDIRECTS`         |         `5` | Redirect-chain cap.                           |
 | `SEARCHICUS_EXTRACT_ALLOWED_PORTS`         |    `80,443` | Permitted destination ports.                  |
 | `SEARCHICUS_EXTRACT_DWELL`                 |     enabled | Off skips the post-load dwell.                |
@@ -501,9 +502,38 @@ with good intentions.
 > the access pattern rather than the data.
 
 `maxChars` is the one limit a caller controls, since it only bounds the
-response (default 20,000, maximum 100,000). The byte budget is advisory: a
-chunked response reports no length, so a request-count cap and the end-to-end
-deadline are what actually bound the work.
+response (default 20,000, maximum 100,000).
+
+The two byte limits guard different things, and only one of them can fail a
+read. `maxBytes` is a **tripwire** over everything a render fetches — document,
+stylesheets, script. Crossing it stops the render fetching anything further
+but keeps what arrived: a page is mostly assets that Defuddle discards, so
+their weight is a reason to stop spending and never a reason to lose a
+document already in hand. What the caller loses is styling and late-loading
+script. It is header-based and so advisory — a chunked response reports no
+length and goes uncounted — which is why `MAX_PAGE_REQUESTS` (300) and the
+end-to-end deadline are what actually bound the work.
+
+`maxDocumentBytes` is a **parse bound** on the main document alone, and
+crossing it fails the read with `too_large`. It is measured from the body that
+actually arrived rather than its `Content-Length`, so a chunked megabyte
+counts exactly like a declared one, and it applies to navigations a page
+starts for itself as well as to the URL the caller named. At two megabytes it
+sits far above any page written to be read — the heaviest documents measured
+run about 1.2 MB — so what it catches is data rather than prose.
+
+Setting the document cap above the transfer budget is not a configuration
+that can mean anything, so it is lowered to match and a warning says so. A cap
+the render would stop fetching before a document could ever reach is a failure
+that can never happen.
+
+A render stopped by either tripwire is recorded in the archive as
+`degraded_by`, alongside the read it produced. Nothing about it reaches the
+caller: the great majority of degraded renders return content identical to a
+clean one, so a warning on every such read would be noise attached to pages
+that are fine. It exists for the operator asking why one page came out thin,
+where the answer is either the page or this server, and only the archive
+knows which.
 
 ## Adding a new search engine backend
 

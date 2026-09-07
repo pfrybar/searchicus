@@ -7,7 +7,7 @@ import { causeOf, createLogger } from "../logger.js";
 import { createDefaultSearchArchive } from "../storage.js";
 import { DEFAULT_EXTRACT_CONFIG, extractConfigFromEnv, type ExtractConfig } from "../extract/config.js";
 import { ExtractFailedError } from "../extract/errors.js";
-import type { PageRenderer, RenderedPage } from "../extract/types.js";
+import type { PageRenderer, RenderDegradation, RenderedPage } from "../extract/types.js";
 import { extractDwell } from "./dwell.js";
 import { LazyLaunch } from "./lazy-launch.js";
 import { buildStealthBrowserOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
@@ -125,8 +125,9 @@ export class ExtractionBrowser implements PageRenderer {
       const response = await page
         .goto(landing.url, { waitUntil: "domcontentloaded", timeout: this.#config.navigationTimeoutMs })
         .catch((err: unknown) => {
-          // Chromium reports all three of these as the same routed-away
+          // Chromium reports all four of these as the same routed-away
           // navigation error, so the reason has to be remembered here.
+          if (budget.docTooLarge) throw tooLarge(err);
           if (budget.redirectsExceeded) {
             throw new ExtractFailedError("navigation_failed", "That page redirected too many times.", err);
           }
@@ -148,7 +149,16 @@ export class ExtractionBrowser implements PageRenderer {
       // capture below.
       if (this.#config.dwell) await extractDwell(page, signal);
 
-      if (budget.exceeded) throw new ExtractFailedError("too_large", "That page was too large to extract.");
+      // Only the document cap fails a render. A page that merely spent its
+      // transfer or request budget is parsed from whatever arrived: the
+      // document was in hand long before the assets that overran the budget,
+      // and refusing to return it would discard the answer over the cost of
+      // the decoration around it. The cap that did trip is reported instead.
+      //
+      // Checked here as well as in the navigation handler because a page can
+      // steer itself somewhere oversized after load, where there is no goto
+      // left to fail.
+      if (budget.docTooLarge) throw tooLarge();
 
       const html = await page.content();
       return {
@@ -157,6 +167,7 @@ export class ExtractionBrowser implements PageRenderer {
         ...(response ? { status: response.status() } : {}),
         ...(contentTypeOf(response?.headers()) ?? {}),
         redirects: budget.redirects,
+        ...(budget.degradedBy === undefined ? {} : { degradedBy: budget.degradedBy }),
       };
     } catch (err) {
       if (signal.aborted) throw new ExtractFailedError("timeout", "That page took too long to load.", err);
@@ -189,7 +200,8 @@ export class ExtractionBrowser implements PageRenderer {
       requests: 0,
       redirects: 0,
       blocked: false,
-      exceeded: false,
+      fetchStopped: false,
+      docTooLarge: false,
       redirectsExceeded: false,
     };
     // Caching within a single render also removes a window in which one
@@ -226,21 +238,83 @@ export class ExtractionBrowser implements PageRenderer {
     page.on("download", (download) => void download.cancel().catch(() => undefined));
 
     page.on("response", (response) => {
+      // The main document is measured from its body in #resolveChain and
+      // #followDocument — the one number that may decide whether a page fails
+      // — so it is counted exactly once there and never again from a header
+      // here. Every other response a page asks for is sub-resource traffic,
+      // and those are the bytes this budget exists to bound.
+      //
+      // Belt and braces rather than a bug fixed: a document reaches the
+      // browser through route.fulfill(), which does not propagate the
+      // upstream content-length, so today this listener sees no length for it
+      // and adds nothing. That is Playwright's behaviour and not a promise,
+      // and the day it changes the budget would silently double-count every
+      // page it measures — which no black-box test could catch, since every
+      // main-frame document arrives here by that same path.
+      if (response.frame() === page.mainFrame() && response.request().resourceType() === "document") return;
+
       const length = Number(response.headers()["content-length"]);
       // Advisory by necessity: a chunked response reports no length, which is
-      // why MAX_PAGE_REQUESTS and the end-to-end deadline back this up.
+      // why MAX_PAGE_REQUESTS and the end-to-end deadline back this up. The
+      // document itself is measured from its body instead, in #resolveChain
+      // and #followDocument, so the one response whose size decides an
+      // outcome never depends on a header.
       if (Number.isFinite(length)) budget.bytes += length;
-      if (budget.bytes > this.#config.maxBytes) budget.exceeded = true;
+      // finalUrl, not page.url(): a sub-resource that overruns the budget
+      // mid-load can arrive before the page's address has committed, and the
+      // operator reading this back has the destination, not about:blank, in hand.
+      if (budget.bytes > this.#config.maxBytes) this.#degrade(budget, "bytes", budget.finalUrl ?? page.url());
     });
 
     return budget;
   }
 
+  /**
+   * Records that a bound stopped this render fetching, and logs it once.
+   *
+   * First cap wins. A page that overran its transfer budget and then ran out
+   * of requests was stopped by the first of those; the second is a
+   * consequence of the stop, not another cause of it.
+   *
+   * At info rather than warn: nothing failed, and an operator reading this
+   * back is usually asking why one page came out thin, not being told to act.
+   * Logged against the page rather than the request that crossed the line,
+   * because the page is what the archive row is keyed by and so what an
+   * operator has in hand when they come looking.
+   */
+  #degrade(budget: PageBudget, by: RenderDegradation, page: string): void {
+    budget.fetchStopped = true;
+    if (budget.degradedBy !== undefined) return;
+
+    budget.degradedBy = by;
+    log.info("render degraded", { url: page, by, bytes: budget.bytes, requests: budget.requests });
+  }
+
   async #screen(route: Route, page: Page, budget: PageBudget, resolved: Map<string, Promise<void>>): Promise<void> {
     const request = route.request();
 
-    if (budget.exceeded || budget.requests >= MAX_PAGE_REQUESTS) {
-      budget.exceeded = true;
+    // The document already fetched in #resolveChain is exempt from both
+    // bounds. Its bytes were spent before either could trip, so refusing to
+    // hand over a body sitting in memory buys nothing and costs the read: the
+    // navigation fails, and a page that loaded perfectly is reported as one
+    // that could not be loaded. That is reachable whenever the document alone
+    // outweighs the transfer budget — which extractConfigFromEnv now prevents
+    // an operator from configuring, but a caller building an ExtractConfig by
+    // hand still can, so the guarantee belongs here as well as there.
+    //
+    // Deliberately narrow. A navigation the page starts for itself fetches a
+    // *new* document, which is fresh spending after the decision to stop, and
+    // is still refused below.
+    const alreadyFetched =
+      budget.preloaded?.url === request.url() &&
+      request.resourceType() === "document" &&
+      request.frame() === page.mainFrame();
+
+    if (!alreadyFetched && (budget.fetchStopped || budget.requests >= MAX_PAGE_REQUESTS)) {
+      // finalUrl, not page.url(): a request that trips the budget mid-load
+      // may fire before the page's address has committed, and the operator
+      // reading this back has the destination, not about:blank, in hand.
+      if (!budget.fetchStopped) this.#degrade(budget, "requests", budget.finalUrl ?? page.url());
       await route.abort("failed");
       return;
     }
@@ -313,6 +387,22 @@ export class ExtractionBrowser implements PageRenderer {
       response = await route.fetch({ url: target, maxRedirects: 0 });
     }
 
+    // The same cap as #resolveChain, applied to the navigations a page starts
+    // for itself. Without it the document bound would hold only for the URL
+    // the caller named, and one meta-refresh would be enough to walk around
+    // it. A body that cannot be read is left unmeasured rather than treated
+    // as a failure: fulfill is about to fail on it anyway, and reporting a
+    // size for something never received would be a guess.
+    const body = await response.body().catch(() => undefined);
+    if (body) {
+      budget.bytes += body.byteLength;
+      if (body.byteLength > this.#config.maxDocumentBytes) {
+        budget.docTooLarge = true;
+        await route.abort("failed");
+        return;
+      }
+    }
+
     budget.finalUrl = target;
     await route.fulfill({ response });
   }
@@ -359,9 +449,19 @@ export class ExtractionBrowser implements PageRenderer {
 
       const location = redirectTarget(response);
       if (!location) {
-        const length = Number(response.headers()["content-length"]);
-        if (Number.isFinite(length)) budget.bytes += length;
-        if (budget.bytes > this.#config.maxBytes) budget.exceeded = true;
+        // The document is measured from the body that actually arrived, not
+        // from its Content-Length. A size that decides an outcome must not be
+        // one a server can misdeclare or — as a chunked response does —
+        // decline to state at all, which is how a 6.9 MB JSON dump used to
+        // pass for a page. Reading it here costs nothing extra: this body is
+        // the one handed to the navigation below, fetched exactly once.
+        const body = await response.body().catch((err: unknown) => {
+          throw new ExtractFailedError("navigation_failed", "That page could not be read.", err);
+        });
+        if (body.byteLength > this.#config.maxDocumentBytes) throw tooLarge();
+
+        budget.bytes += body.byteLength;
+        if (budget.bytes > this.#config.maxBytes) this.#degrade(budget, "bytes", target);
         return { url: target, response };
       }
 
@@ -449,7 +549,21 @@ interface PageBudget {
   redirects: number;
   /** Set when the policy refused a request, so a navigation failure can say why. */
   blocked: boolean;
-  exceeded: boolean;
+  /**
+   * Set once the render has spent enough: further requests are refused, but
+   * what has already arrived is kept and parsed.
+   */
+  fetchStopped: boolean;
+  /** Which bound stopped it, remembered for the log and the archive. */
+  degradedBy?: RenderDegradation;
+  /**
+   * Set when a main document arrived over the document cap.
+   *
+   * Remembered rather than thrown for the same reason as `redirectsExceeded`:
+   * inside a route handler a throw becomes a refused request, and the caller
+   * would be told an address was blocked when in truth a page was too big.
+   */
+  docTooLarge: boolean;
   redirectsExceeded: boolean;
   /** The destination the chain resolved to, reported as the extraction's finalUrl. */
   finalUrl?: string;
@@ -461,6 +575,17 @@ interface PageBudget {
 interface PreloadedDocument {
   url: string;
   response: APIResponse;
+}
+
+/**
+ * The document cap's failure, worded identically wherever it is raised.
+ *
+ * Raised from three places — the pre-navigation chain, a page-initiated
+ * navigation, and the capture — and a caller comparing two of them should
+ * never be able to tell which one answered.
+ */
+function tooLarge(cause?: unknown): ExtractFailedError {
+  return new ExtractFailedError("too_large", "That page was too large to extract.", cause);
 }
 
 /** The Location of a redirect response, or undefined when it is not one. */

@@ -26,7 +26,7 @@ import type { EngineFailureKind, EngineSearchOutcome, MergedSearchResponse, Sear
 import { defaultStorePath, searchArchiveEnabled } from "./paths.js";
 
 /** Current SQLite schema. Future changes are appended as numbered migrations. */
-export const ARCHIVE_SCHEMA_VERSION = 4;
+export const ARCHIVE_SCHEMA_VERSION = 5;
 /** Wait briefly for another API/CLI process holding the shared database lock. */
 export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -96,8 +96,8 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       `INSERT INTO extractions (
         created_at, requested_url, final_url, status, error_kind,
         http_status, content_type, redirects, took_ms, title, domain, language, author,
-        published, chars, word_count, truncated, markdown_sha256, cached
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        published, chars, word_count, truncated, markdown_sha256, cached, degraded_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.startedAt,
       record.requestedUrl,
@@ -118,6 +118,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       record.truncated === undefined ? null : Number(record.truncated),
       record.markdownSha256 ?? null,
       record.cached === undefined ? null : Number(record.cached),
+      record.degradedBy ?? null,
     );
   }
 
@@ -722,6 +723,17 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
           -- index; the URLs themselves are never a WHERE clause.
           CREATE INDEX extractions_recent ON extractions (created_at);
         `);
+      }
+
+      if (version < 5) {
+        // A render that ran out of transfer budget or request count returns
+        // the document it had rather than failing, so nothing else in this
+        // table distinguishes a page that was genuinely thin from one this
+        // server stopped fetching. Rows written before the column existed
+        // stay NULL, which is the honest answer for them: the renders they
+        // describe could not be degraded, because a render that hit either
+        // bound failed outright instead.
+        db.exec("ALTER TABLE extractions ADD COLUMN degraded_by TEXT CHECK (degraded_by IN ('bytes', 'requests'))");
       }
 
       db.exec(`PRAGMA user_version = ${ARCHIVE_SCHEMA_VERSION}`);

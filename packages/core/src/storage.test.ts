@@ -387,6 +387,60 @@ describe("SqliteSearchArchive", () => {
     }
   });
 
+  it("adds the degraded_by column to an archive written before it, keeping the rows", async () => {
+    const filePath = temporaryDatabase();
+    const archive = new SqliteSearchArchive(filePath);
+    await archive.recordExtraction({
+      startedAt: "2026-09-07T16:00:30.000Z",
+      requestedUrl: "https://example.test/heavy",
+      status: "completed",
+      tookMs: 5000,
+      domain: "example.test",
+      degradedBy: "bytes",
+    });
+    await archive.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(filePath);
+    try {
+      expect(db.prepare("SELECT degraded_by FROM extractions").get()).toEqual({ degraded_by: "bytes" });
+    } finally {
+      db.close();
+    }
+
+    // Wind the file back to schema 4, which is what an archive written by the
+    // previous release looks like.
+    const rolled = new DatabaseSync(filePath);
+    rolled.exec("ALTER TABLE extractions DROP COLUMN degraded_by");
+    rolled.exec("PRAGMA user_version = 4");
+    rolled.close();
+
+    const upgraded = new SqliteSearchArchive(filePath);
+    // A row written before the column existed stays NULL rather than being
+    // guessed at: renders from that release could not be degraded, because
+    // one that hit either bound failed outright instead.
+    await upgraded.recordExtraction({
+      startedAt: "2026-09-07T16:00:40.000Z",
+      requestedUrl: "https://example.test/clean",
+      status: "completed",
+      tookMs: 100,
+      domain: "example.test",
+    });
+    await upgraded.close();
+
+    const reopened = new DatabaseSync(filePath);
+    try {
+      expect(reopened.prepare("PRAGMA user_version").get()).toEqual({ user_version: ARCHIVE_SCHEMA_VERSION });
+      const rows = reopened.prepare("SELECT requested_url, degraded_by FROM extractions ORDER BY created_at").all();
+      expect(rows).toEqual([
+        { requested_url: "https://example.test/heavy", degraded_by: null },
+        { requested_url: "https://example.test/clean", degraded_by: null },
+      ]);
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("rebuilds an archive that still records where a caller said they came from", async () => {
     const filePath = temporaryDatabase();
     const archive = new SqliteSearchArchive(filePath);
