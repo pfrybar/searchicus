@@ -538,20 +538,74 @@ const FIND_STOPWORDS = new Set([
  */
 export function findContentTokens(query: string): string[] {
   const terms = new Set<string>();
-  for (const token of tokenize(unescapeMarkdown(query))) {
-    if (token.length < 2 || (isAsciiWord(token) && FIND_STOPWORDS.has(token))) continue;
-    terms.add(stemFindToken(token));
+  for (const token of classifyFindTokens(query)) {
+    if (token.kind === "identifier") {
+      terms.add(token.value);
+      continue;
+    }
+    if (token.value.length < 2 || FIND_STOPWORDS.has(token.value)) continue;
+    terms.add(stemFindToken(token.value));
   }
   return [...terms];
 }
 
-function isAsciiWord(token: string): boolean {
-  return /^[a-z]+$/.test(token);
-}
-
 /** Applies the same scoped normalization to document terms and query terms. */
 function findTokens(text: string): string[] {
-  return tokenize(unescapeMarkdown(text)).map(stemFindToken);
+  return classifyFindTokens(text).map((token) =>
+    token.kind === "identifier" ? token.value : stemFindToken(token.value),
+  );
+}
+
+type FindTokenKind = "prose" | "identifier";
+
+interface ClassifiedFindToken {
+  readonly kind: FindTokenKind;
+  /** Prose is lowercased by ICU; identifiers retain their exact spelling. */
+  readonly value: string;
+}
+
+/**
+ * Code-like names need different matching semantics from prose.
+ *
+ * ICU word segmentation remains the right tool for natural language, but it
+ * splits `node:sqlite` into two ordinary words and lowercases `fooBar` into
+ * `foobar`. Both transformations are useful for prose and wrong for a name a
+ * caller expects to match literally. Pull recognized technical forms out
+ * first, then give only the text around them to ICU.
+ *
+ * This deliberately recognizes a bounded, ASCII-led vocabulary rather than
+ * calling every punctuation-bearing string an identifier. It covers flags,
+ * scoped packages, URL/path-like forms, dotted/colon-separated names,
+ * camelCase, C#, .NET, and conventional versions. New forms belong here with
+ * tests; permissive prefix matching is not a fallback for unclassified text.
+ */
+const TECHNICAL_IDENTIFIER =
+  /https?:\/\/[^\s<>()[\]{}"'`]+|\.{0,2}\/[A-Za-z0-9._~%+@=-]+(?:\/[A-Za-z0-9._~%+@=-]+)*|@[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+|--[A-Za-z0-9][A-Za-z0-9-]*|[A-Za-z][A-Za-z0-9]*(?:[_:./][A-Za-z0-9][A-Za-z0-9_.:/-]*)+|[A-Za-z]+[a-z][A-Z][A-Za-z0-9]*|[A-Za-z]#|\.NET|v\d+(?:\.\d+)+/g;
+
+function classifyFindTokens(text: string): ClassifiedFindToken[] {
+  const unescaped = unescapeMarkdown(text);
+  const tokens: ClassifiedFindToken[] = [];
+  let cursor = 0;
+
+  for (const match of unescaped.matchAll(TECHNICAL_IDENTIFIER)) {
+    const index = match.index;
+    if (index === undefined) continue;
+    addProseTokens(tokens, unescaped.slice(cursor, index));
+    const identifier = trimIdentifierPunctuation(match[0] ?? "");
+    if (identifier) tokens.push({ kind: "identifier", value: identifier.normalize("NFC") });
+    cursor = index + (match[0]?.length ?? 0);
+  }
+  addProseTokens(tokens, unescaped.slice(cursor));
+  return tokens;
+}
+
+function addProseTokens(tokens: ClassifiedFindToken[], text: string): void {
+  for (const value of tokenize(text)) tokens.push({ kind: "prose", value });
+}
+
+/** Sentence punctuation may follow an identifier but is not part of its name. */
+function trimIdentifierPunctuation(identifier: string): string {
+  return identifier.replace(/[),.;!?]+$/, "");
 }
 
 /**
