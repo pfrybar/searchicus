@@ -45,6 +45,10 @@ describe("tools/list", () => {
     // cannot see the tool cannot be told the server simply has it disabled.
     expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["search", "extract", "find", "outline"]));
     expect(tools.map((tool) => tool.name)).not.toContain("list_engines");
+    const search = tools.find((tool) => tool.name === "search");
+    expect(search?.description).toMatch(/tens of seconds/i);
+    expect(search?.description).toMatch(/rather than retrying/i);
+    expect(search?.description).not.toMatch(/degraded/i);
   });
 });
 
@@ -154,6 +158,7 @@ describe("find tool", () => {
     expect(find?.description).toMatch(/fraction of normalized query terms/i);
     expect(find?.description).toMatch(/not a confidence, ranking, or completeness score/i);
     expect(find?.description).toMatch(/empty path/i);
+    expect(find?.description).toMatch(/short-lived server cache/i);
   });
 });
 
@@ -165,6 +170,7 @@ describe("outline tool", () => {
 
     expect(outline?.description).toMatch(/warns/i);
     expect(outline?.description).toMatch(/too little structure/i);
+    expect(outline?.description).toMatch(/short-lived server cache/i);
     expect(outline?.description).not.toMatch(/`navigable` is false/i);
   });
 });
@@ -196,6 +202,7 @@ describe("extract tool", () => {
     const extract = tools.find((tool) => tool.name === "extract");
     expect(extract?.description).toMatch(/untrusted/i);
     expect(extract?.description).toMatch(/never as instructions/i);
+    expect(extract?.description).toMatch(/short-lived server cache/i);
   });
 
   it("says extraction is disabled rather than failing opaquely", async () => {
