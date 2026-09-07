@@ -58,20 +58,22 @@ describe("search tool", () => {
     const result = await callTool(client, "search", { query: "cats" });
 
     expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(textOf(result));
-    expect(parsed.results).toHaveLength(8);
-    expect(parsed.degraded).toBe(false);
-    expect(parsed).not.toHaveProperty("outcomes");
+    const text = textOf(result);
+    expect(text).toMatch(/^Search results for: cats/m);
+    expect(text).toMatch(/Results: 8/);
+    expect(text).toContain("## Result 1");
+    expect(text).toContain("Title: Test result 1");
+    expect(text).not.toContain('"outcomes"');
   });
 
   it("accepts the final result limit without exposing ranking provenance", async () => {
     const client = await connectedClient();
     const result = await callTool(client, "search", { query: "cats", limit: 1 });
 
-    const parsed = JSON.parse(textOf(result));
-    expect(parsed.results).toHaveLength(1);
-    expect(parsed.results[0]).not.toHaveProperty("found");
-    expect(parsed).not.toHaveProperty("searchId");
+    const text = textOf(result);
+    expect(text.match(/^## Result /gm)).toHaveLength(1);
+    expect(text).not.toContain("found");
+    expect(text).not.toContain("searchId");
   });
 
   it("reports partial results without exposing failed engine details", async () => {
@@ -85,7 +87,7 @@ describe("search tool", () => {
 
     expect(result.isError).toBeFalsy();
     const text = textOf(result);
-    expect(JSON.parse(text).degraded).toBe(true);
+    expect(text).toContain("Some results may be missing.");
     expect(text).not.toContain("broken");
   });
 
@@ -114,17 +116,20 @@ describe("search tool", () => {
 });
 
 describe("find tool", () => {
-  it("returns a metadata block then one block per match", async () => {
+  it("returns a page summary, readable match card, and raw block per match", async () => {
     const client = await connectedClient(testRegistry(), testExtraction());
 
     const result = await callTool(client, "find", { url: "https://example.test/article", query: "readable prose" });
 
     expect(result.isError).toBeFalsy();
-    expect(result.content).toHaveLength(2);
-    expect(textOf(result)).toContain('"coverage"');
+    expect(result.content).toHaveLength(3);
+    expect(textOf(result)).toContain("Page shape: flat");
+    const match = result.content[1];
+    expect(match?.type === "text" && match.text).toContain("Query-term coverage: 100%");
+    expect(match?.type === "text" && match.text).toContain("Read from: offset 0");
     // Each excerpt is its own block because they are not contiguous in the
     // document; run together they would read as continuous prose.
-    const body = result.content[1];
+    const body = result.content[2];
     expect(body?.type === "text" && body.text).toContain("readable prose");
   });
 
@@ -138,8 +143,8 @@ describe("find tool", () => {
     expect(textOf(result)).toMatch(/extract/);
     // The fixture page is a couple of lines, so it is not searchable by
     // section — and the answer has to say that rather than blaming the query.
-    expect(textOf(result)).toMatch(/too little structure/);
-    expect(textOf(result)).toMatch(/says nothing about whether it covers/);
+    expect(textOf(result)).toMatch(/Page shape: flat/);
+    expect(textOf(result)).toMatch(/No targeted section selection is possible/);
   });
 
   it("warns in its own description that an empty result proves nothing", async () => {
@@ -163,6 +168,19 @@ describe("find tool", () => {
 });
 
 describe("outline tool", () => {
+  it("returns a readable page-shape header and indented section list", async () => {
+    const client = await connectedClient(testRegistry(), testExtraction());
+
+    const result = await callTool(client, "outline", { url: "https://example.test/article" });
+
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toMatch(/Page: An article/);
+    expect(textOf(result)).toMatch(/Page shape: flat/);
+    expect(textOf(result)).toMatch(/Sections: 1/);
+    expect(textOf(result)).toMatch(/- offset 0 · 34 characters · An article/);
+    expect(textOf(result)).toMatch(/untrusted web text/i);
+  });
+
   it("says its non-navigability signal is explanatory text, not a promised field", async () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();
@@ -185,11 +203,11 @@ describe("extract tool", () => {
     expect(result.content).toHaveLength(2);
     // Escaping a whole article into a JSON string inflates it and makes it
     // markedly harder to read, so the content travels as itself.
-    expect(JSON.parse(textOf(result))).toMatchObject({
-      url: "https://example.test/article",
-      title: "An article",
-      untrusted: true,
-    });
+    expect(textOf(result)).toMatch(/Page: An article/);
+    expect(textOf(result)).toMatch(/Reading: offset 0/);
+    expect(textOf(result)).toMatch(/Returned: 34 of 34 characters/);
+    expect(textOf(result)).toMatch(/More content: no/);
+    expect(textOf(result)).toMatch(/untrusted web text/i);
     const body = result.content[1];
     expect(body?.type === "text" && body.text).toBe("# An article\n\nSome readable prose.");
   });

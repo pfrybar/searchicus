@@ -397,26 +397,31 @@ or session to tear down.
 ### Tools
 
 - **`search`** — `{ query, limit? }` → searches across the service's
-  internal providers and returns one compact ranked list. `limit` caps that
-  final list, not an individual provider's page. Query validation is shared
-  with the HTTP API: query text is trimmed and non-whitespace.
+  internal providers and returns a readable ranked list. `limit` caps that
+  final list, not an individual provider's page. Search can take tens of
+  seconds because it uses live providers. Query validation is shared with the
+  HTTP API: query text is trimmed and non-whitespace.
 - **`extract`** — `{ url, maxChars?, offset? }` → renders one public page and
-  returns its main content as Markdown. The result arrives as two blocks:
-  metadata as JSON, then the Markdown itself, unescaped. Pass a previous
-  response's `nextOffset` back as `offset` to keep reading a long page.
-  The tool is advertised whether or not extraction is enabled — an agent that
-  cannot see the tool cannot be told the server merely has it switched off.
+  returns a readable page header followed by the main content as unescaped
+  Markdown. Pass the header's continuation offset back as `offset` to keep
+  reading a long page. The tool is advertised whether or not extraction is
+  enabled — an agent that cannot see the tool cannot be told the server merely
+  has it switched off.
 - **`find`** — `{ url, query, maxChars? }` → the sections of one page that
-  answer a question, best first. The result is a metadata block followed by
-  one block per match, which is `extract`'s two-block shape scaled. Its
-  description warns that an empty result does not prove the page lacks the
-  information, because an agent reading a miss as a negative stops looking
-  too early.
+  answer a question, best first. It returns a readable page summary, one
+  readable match card and one unescaped Markdown block per match. Match cards
+  name the path, extraction offset, query-term coverage, and whether the
+  excerpt was cut. Its description warns that an empty result does not prove
+  the page lacks the information, because an agent reading a miss as a
+  negative stops looking too early.
+- **`outline`** — `{ url }` → a readable page summary and indented heading
+  list. It says when a page is too flat for useful navigation and `extract` is
+  a better next step.
 
-Partial internal-provider failure sets `degraded: true` on the merged result
-without naming a provider. A total failure returns a generic tool error. Errors
-at the endpoint itself use JSON-RPC error objects, including `-32700` for a
-malformed request body.
+MCP tool results intentionally use readable text blocks rather than an MCP
+structured-output schema. A total search failure returns a generic tool error.
+Errors at the endpoint itself use JSON-RPC error objects, including `-32700`
+for a malformed request body.
 
 ```bash
 curl -s localhost:3000/mcp \
