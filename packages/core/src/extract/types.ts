@@ -91,7 +91,12 @@ export interface FindResponse {
 export interface ExtractRequest {
   /** Absolute http(s) URL to render. */
   url: string;
-  /** Maximum characters of Markdown to return. Defaults to 20,000. */
+  /**
+   * Maximum characters of Markdown to return. Defaults to 20,000.
+   *
+   * It is a ceiling, not a target: section-aware windows can return fewer
+   * characters rather than split a following section.
+   */
   maxChars?: number;
   /**
    * Where to start reading, in characters from the top of the document.

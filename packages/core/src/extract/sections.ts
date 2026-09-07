@@ -36,6 +36,8 @@ export interface MarkdownWindow {
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 /** ATX headings only. Setext underlines are rare in generated Markdown. */
 const HEADING = /^ {0,3}(#{1,6})\s+(.*)$/;
+/** CommonMark's escapable ASCII punctuation, used for display labels only. */
+const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])/g;
 
 /**
  * Splits Markdown into sections at heading boundaries.
@@ -101,7 +103,7 @@ export function splitSections(markdown: string): Section[] {
 
 /** One entry in a page's outline: a heading, and where to read it. */
 export interface OutlineSection {
-  /** The heading itself, or null for content before the first one. */
+  /** A readable heading label, or null for content before the first one. */
   readonly heading: string | null;
   /** Nesting level, 0-based. Render as indentation rather than repeating the path. */
   readonly depth: number;
@@ -148,7 +150,7 @@ export function isNavigable(sectionLengths: readonly number[], totalChars: numbe
  */
 export function buildOutline(markdown: string): { sections: OutlineSection[]; navigable: boolean } {
   const sections = splitSections(markdown).map((section) => ({
-    heading: section.headings.at(-1) ?? null,
+    heading: section.headings.at(-1) ? displayHeading(section.headings.at(-1) ?? "") : null,
     depth: Math.max(0, section.headings.length - 1),
     offset: section.start,
     chars: section.end - section.start,
@@ -161,6 +163,20 @@ export function buildOutline(markdown: string): { sections: OutlineSection[]; na
       markdown.length,
     ),
   };
+}
+
+/**
+ * Makes a Markdown heading readable without altering page content.
+ *
+ * `splitSections` retains raw headings because it addresses the original
+ * Markdown and feeds matching. Public outline labels and find paths instead
+ * need one shared display spelling: a renderer commonly writes `2\\.1` or
+ * `busy\\_timeout`, neither of which a caller should have to normalize before
+ * comparing the two operations. This only removes CommonMark escapes; bold,
+ * links, and all returned page Markdown remain untouched.
+ */
+export function displayHeading(heading: string): string {
+  return heading.includes("\\") ? heading.replace(MARKDOWN_ESCAPE, "$1") : heading;
 }
 
 /**

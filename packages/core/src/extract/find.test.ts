@@ -558,21 +558,21 @@ describe("findSections and Markdown escaping", () => {
     // reason, which is why replacing that rule exposed this.
     const [match] = matchesIn(escaped, "busy_timeout", 6_000);
 
-    // The path is the document's own heading text, escape and all: only the
-    // token stream is normalized, never what comes back.
-    expect(match?.path.at(-1)).toBe("busy\\_timeout");
+    // The returned Markdown remains escaped, while the path has the same
+    // readable label outline presents for cross-tool navigation.
+    expect(match?.path.at(-1)).toBe("busy_timeout");
     expect(match?.coverage).toBe(1);
   });
 
   it("accepts a query written the escaped way too", () => {
     // Both sides are normalized, because the invariant is that the query and
     // the document are compared as the same characters.
-    expect(matchesIn(escaped, "busy\\_timeout", 6_000)[0]?.path.at(-1)).toBe("busy\\_timeout");
+    expect(matchesIn(escaped, "busy\\_timeout", 6_000)[0]?.path.at(-1)).toBe("busy_timeout");
   });
 
   it("still tells two identifiers on the same page apart", () => {
     // Unescaping must not blur them back together.
-    expect(matchesIn(escaped, "analysis_limit", 6_000)[0]?.path.at(-1)).toBe("analysis\\_limit");
+    expect(matchesIn(escaped, "analysis_limit", 6_000)[0]?.path.at(-1)).toBe("analysis_limit");
   });
 
   it("leaves a backslash that is not a Markdown escape alone", () => {
@@ -591,11 +591,14 @@ describe("findSections and Markdown escaping", () => {
     expect(matchesIn(page, "digits", 6_000)[0]?.markdown).toContain("\\d+");
   });
 
-  it("does not rewrite the Markdown it returns", () => {
+  it("uses the same readable heading labels as outline without rewriting Markdown", () => {
     const [match] = matchesIn(escaped, "busy_timeout", 6_000);
+    const headings = buildOutline(escaped).sections.map((section) => section.heading);
 
-    // Escapes still render as their author intended; only the token stream
-    // was normalized.
+    expect(match?.path.at(-1)).toBe("busy_timeout");
+    expect(headings).toContain(match?.path.at(-1));
+    // Escapes still render as their author intended; only display labels
+    // change, never the source-derived Markdown.
     expect(match?.markdown).toContain("busy\\_timeout");
   });
 });
