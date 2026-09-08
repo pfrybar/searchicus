@@ -483,7 +483,9 @@ export class ExtractionService {
       // A rate limit or upstream outage is evidence about this attempt, not
       // the next five minutes. Stable outcomes and parsed pages remain worth
       // caching; transient remote failures must be retried on the next read.
-      if (!isTransientAssessment(page.assessment)) this.#cache?.set(cacheKey, page);
+      if (!isTransientAssessment(page.assessment)) {
+        this.#cache?.set(page.finalUrl, page, cacheKey === page.finalUrl ? [] : [cacheKey]);
+      }
     }
     return { page, cached };
   }

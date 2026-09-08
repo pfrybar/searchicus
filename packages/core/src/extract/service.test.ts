@@ -514,6 +514,31 @@ describe("ExtractionService page cache", () => {
     expect(renderer.rendered).toEqual([PAGE_URL]);
   });
 
+  it("reuses a redirected page when its final URL is read directly", async () => {
+    const redirect = "https://example.test/go";
+    const rendered: string[] = [];
+    const renderer: PageRenderer = {
+      async render(url) {
+        rendered.push(url);
+        return {
+          finalUrl: PAGE_URL,
+          html: "<html></html>",
+          status: 200,
+          redirects: url === redirect ? 1 : 0,
+        };
+      },
+      close: async () => undefined,
+    };
+    const extraction = service({ renderer, parse: longParse });
+
+    const redirected = usable(await extraction.extract({ url: redirect, maxChars: 900 }));
+    const direct = usable(await extraction.extract({ url: PAGE_URL, maxChars: 900, offset: redirected.nextOffset }));
+
+    expect(redirected.finalUrl).toBe(PAGE_URL);
+    expect(direct.offset).toBeGreaterThan(0);
+    expect(rendered).toEqual([redirect]);
+  });
+
   it("renders every window when caching is off", async () => {
     const renderer = new FakeRenderer();
     const extraction = service({

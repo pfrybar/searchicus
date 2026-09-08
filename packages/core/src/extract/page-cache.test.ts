@@ -23,6 +23,27 @@ describe("PageCache", () => {
     expect(cache.get("missing")).toBeUndefined();
   });
 
+  it("serves requested redirect aliases from the final URL's one entry", () => {
+    const cache = new PageCache(options);
+    cache.set("canonical", page("hello"), ["redirect"]);
+
+    expect(cache.size).toBe(1);
+    expect(cache.chars).toBe(5);
+    expect(cache.get("canonical")?.markdown).toBe("hello");
+    expect(cache.get("redirect")?.markdown).toBe("hello");
+  });
+
+  it("drops redirect aliases when the final URL expires", () => {
+    let now = 0;
+    const cache = new PageCache({ ...options, now: () => now });
+    cache.set("canonical", page("hello"), ["redirect"]);
+
+    now = 1001;
+    expect(cache.get("redirect")).toBeUndefined();
+    expect(cache.get("canonical")).toBeUndefined();
+    expect(cache.size).toBe(0);
+  });
+
   it("stops serving an entry once its time is up", () => {
     let now = 0;
     const cache = new PageCache({ ...options, now: () => now });
