@@ -343,6 +343,19 @@ describe.skipIf(!available)("ExtractionBrowser (live Chromium)", () => {
     expect((await extractionBrowser(origin).render(`${origin}/`, never)).degradedBy).toBeUndefined();
   });
 
+  it("reports status and content type from the final page-initiated document", async () => {
+    const origin = await serve({
+      "/": { body: `<html><body><script>location.href='/denied'</script></body></html>` },
+      "/denied": { body: "access denied", status: 403, type: "text/plain; charset=utf-8" },
+    });
+
+    const page = await extractionBrowser(origin, { settleTimeoutMs: 200 }).render(`${origin}/`, never);
+
+    expect(page.finalUrl).toBe(`${origin}/denied`);
+    expect(page.status).toBe(403);
+    expect(page.contentType).toBe("text/plain");
+  });
+
   it("applies the document cap to a navigation the page starts for itself", async () => {
     // Otherwise the bound holds only for the URL the caller named, and one
     // meta-refresh is enough to walk around it.

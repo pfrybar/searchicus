@@ -72,6 +72,9 @@ export interface SearchTotals {
 export interface ExtractionTotals {
   attempted: number;
   completed: number;
+  /** Pages rendered successfully but withheld as unusable. */
+  unusable: number;
+  unusableReasons: Array<{ kind: string; count: number }>;
   failed: number;
   /** Failure kinds, commonest first. Never includes this server's own load. */
   failures: Array<{ kind: string; count: number }>;
@@ -158,8 +161,10 @@ export interface ArchivedExtraction {
   createdAt: string;
   requestedUrl: string;
   finalUrl: string | null;
-  status: "completed" | "failed";
+  status: "completed" | "unusable" | "failed";
   errorKind: string | null;
+  unusableKind: string | null;
+  httpStatus: number | null;
   title: string | null;
   chars: number | null;
   tookMs: number;

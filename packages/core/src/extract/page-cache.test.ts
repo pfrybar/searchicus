@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { PageCache, type CachedPage } from "./page-cache.js";
 
 function page(markdown: string): CachedPage {
-  return { finalUrl: "https://example.test/a", redirects: 0, title: "A", markdown, wordCount: 1 };
+  return {
+    finalUrl: "https://example.test/a",
+    assessment: { outcome: "usable", classifierVersion: "1" },
+    redirects: 0,
+    title: "A",
+    markdown,
+    documentChars: markdown.length,
+    wordCount: 1,
+  };
 }
 
 const options = { ttlMs: 1000, maxEntries: 3, maxChars: 100 };

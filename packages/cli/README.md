@@ -46,7 +46,11 @@ shell loop calling the CLI repeatedly gets no spacing between searches.
 
 Renders a page and prints its main content as Markdown. Disabled unless
 `SEARCHICUS_EXTRACT_ENABLED=true`; read the root README's "Extraction" section
-before enabling it.
+before enabling it. A completed render that is an HTTP error, empty document,
+or known interstitial prints `Page content unavailable` and its stable reason,
+with exit status 0; `--json` exposes the common `outcome: "unusable"` branch
+without returning the remote error-page text. `find` and `outline` use the same
+classification.
 
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/

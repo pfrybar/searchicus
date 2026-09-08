@@ -62,6 +62,11 @@ function Totals({ report }: { report: EngineMetricsBody }) {
               detail={`${extractions.domains} ${extractions.domains === 1 ? "host" : "hosts"}`}
             />
             <Stat
+              label="unusable"
+              value={extractions.unusable}
+              detail={extractions.unusableReasons[0] ? `mostly ${extractions.unusableReasons[0].kind}` : undefined}
+            />
+            <Stat
               label="failed"
               value={extractions.failed}
               detail={worstExtractFailure ? `mostly ${worstExtractFailure.kind}` : undefined}

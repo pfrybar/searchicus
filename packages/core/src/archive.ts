@@ -1,4 +1,5 @@
-import type { ExtractFailureKind, RenderDegradation } from "./extract/types.js";
+import type { ExtractFailureKind, PageUnusableReason, RenderDegradation } from "./extract/types.js";
+import type { PageAssessment } from "./extract/usability.js";
 import type { EngineSearchOutcome, MergedSearchResponse, SearchQuery } from "./types.js";
 
 /**
@@ -32,13 +33,12 @@ export interface SearchArchive {
   close?(): Promise<void>;
 }
 
-/** A durable record of one extraction attempt. Metadata only, never content. */
-export interface ExtractionArchiveRecord {
+/** Metadata shared by every durable extraction attempt. */
+interface ExtractionArchiveRecordBase {
   readonly startedAt: string;
   readonly requestedUrl: string;
   readonly finalUrl?: string;
-  readonly status: "completed" | "failed";
-  readonly errorKind?: ExtractFailureKind;
+  readonly operation?: "extract" | "find" | "outline";
   readonly httpStatus?: number;
   readonly contentType?: string;
   readonly redirects?: number;
@@ -51,6 +51,8 @@ export interface ExtractionArchiveRecord {
   /** Length of the Markdown returned to the caller. */
   readonly chars?: number;
   readonly wordCount?: number;
+  /** Whole parsed document size; distinct from content returned to a caller. */
+  readonly documentChars?: number;
   readonly truncated?: boolean;
   /**
    * Digest of the returned Markdown. Lets two extractions be compared for
@@ -78,6 +80,37 @@ export interface ExtractionArchiveRecord {
    */
   readonly degradedBy?: RenderDegradation;
 }
+
+/**
+ * A durable record of one extraction attempt. Metadata only, never content.
+ *
+ * The discriminant mirrors SQLite's integrity constraint so an invalid row is
+ * rejected by TypeScript rather than later by a best-effort archive write.
+ */
+export type ExtractionArchiveRecord = ExtractionArchiveRecordBase &
+  (
+    | {
+        readonly status: "completed";
+        readonly errorKind?: never;
+        readonly unusableKind?: never;
+        readonly classifierVersion?: never;
+        readonly signatureId?: never;
+      }
+    | {
+        readonly status: "unusable";
+        readonly errorKind?: never;
+        readonly unusableKind: PageUnusableReason;
+        readonly classifierVersion?: PageAssessment["classifierVersion"];
+        readonly signatureId?: "github_whoa_there_v1" | "cloudflare_challenge_v1";
+      }
+    | {
+        readonly status: "failed";
+        readonly errorKind: ExtractFailureKind;
+        readonly unusableKind?: never;
+        readonly classifierVersion?: never;
+        readonly signatureId?: never;
+      }
+  );
 
 /**
  * The archive surface extraction needs: one write.

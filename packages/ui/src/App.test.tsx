@@ -85,6 +85,7 @@ describe("App", () => {
       {
         url: "/api/outline",
         body: {
+          outcome: "usable",
           url: "https://example.com/cats",
           finalUrl: "https://example.com/cats",
           title: "Cats 101",
@@ -92,11 +93,13 @@ describe("App", () => {
           navigable: true,
           sections: [{ heading: "Care", depth: 0, offset: 0, chars: 180 }],
           tookMs: 20,
+          untrusted: true,
         },
       },
       {
         url: "/api/find",
         body: {
+          outcome: "usable",
           url: "https://example.com/cats",
           finalUrl: "https://example.com/cats",
           title: "Cats 101",
@@ -127,6 +130,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^outline$/i }));
     expect(await screen.findByText("Care", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/untrusted page title and headings/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^find$/i }));
     expect(await screen.findByText("Cats need care.", { exact: false })).toBeInTheDocument();
@@ -140,6 +144,7 @@ describe("App", () => {
       {
         url: "/api/extract",
         body: {
+          outcome: "usable",
           url: "https://example.com/cats",
           finalUrl: "https://example.com/cats",
           title: "Cats 101",
@@ -164,6 +169,34 @@ describe("App", () => {
     expect(panel.textContent).toContain("<script>alert(1)</script>");
     expect(panel.querySelector("script")).toBeNull();
     expect(screen.getByText(/untrusted page content/i)).toBeInTheDocument();
+  });
+
+  it("shows an unusable-page warning and never renders withheld content", async () => {
+    mockFetchSequence([
+      { url: "/api/health", body: { status: "ok", extract: true } },
+      { url: "/api/search", body: searchResponse() },
+      {
+        url: "/api/extract",
+        body: {
+          outcome: "unusable",
+          reason: "access_denied",
+          url: "https://example.com/cats",
+          finalUrl: "https://example.com/cats",
+          httpStatus: 403,
+          tookMs: 20,
+        },
+      },
+    ]);
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
+    fireEvent.click(screen.getByRole("button", { name: /search/i }));
+    await screen.findByText("Cats 101");
+    fireEvent.click(await screen.findByRole("button", { name: /extract/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Page content unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("access_denied · remote HTTP 403");
+    expect(screen.queryByText(/untrusted page content/i)).not.toBeInTheDocument();
   });
 
   it("shows why an extraction failed without losing the result list", async () => {

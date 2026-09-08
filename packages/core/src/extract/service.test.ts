@@ -3,7 +3,7 @@ import type { ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
 import { ExtractionService } from "./service.js";
-import type { DocumentParser, PageRenderer, RenderedPage } from "./types.js";
+import type { DocumentParser, PageRenderer, RenderedPage, UsableExtractResponse } from "./types.js";
 
 const PAGE_URL = "https://example.test/article";
 
@@ -59,6 +59,11 @@ function service(options: Partial<ConstructorParameters<typeof ExtractionService
   });
 }
 
+function usable<T extends { outcome: "usable" | "unusable" }>(response: T): Extract<T, { outcome: "usable" }> {
+  expect(response.outcome).toBe("usable");
+  return response as Extract<T, { outcome: "usable" }>;
+}
+
 /** Lets background archive writes land before a test inspects them. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -98,7 +103,7 @@ describe("ExtractionService", () => {
       wordCount: 6,
     });
 
-    const response = await service({ parse: injected }).extract({ url: PAGE_URL });
+    const response = usable(await service({ parse: injected }).extract({ url: PAGE_URL }));
 
     expect(response.untrusted).toBe(true);
   });
@@ -115,7 +120,7 @@ describe("ExtractionService", () => {
         wordCount: 200,
       });
 
-      const response = await service({ parse: long }).extract({ url: PAGE_URL, maxChars: 100 });
+      const response = usable(await service({ parse: long }).extract({ url: PAGE_URL, maxChars: 100 }));
 
       expect(response.truncated).toBe(true);
       expect(response.chars).toBe(response.markdown.length);
@@ -165,13 +170,13 @@ describe("ExtractionService", () => {
       expect((failure as ExtractFailedError).kind).toBe("timeout");
     });
 
-    it("refuses a page with nothing readable on it", async () => {
+    it("returns a distinct unusable outcome for a page with nothing readable", async () => {
       const empty: DocumentParser = async () => ({ title: "Nothing", markdown: "   \n  ", wordCount: 0 });
 
-      const failure = await service({ parse: empty })
-        .extract({ url: PAGE_URL })
-        .catch((err: unknown) => err);
-      expect((failure as ExtractFailedError).kind).toBe("no_content");
+      await expect(service({ parse: empty }).extract({ url: PAGE_URL })).resolves.toMatchObject({
+        outcome: "unusable",
+        reason: "empty_content",
+      });
     });
   });
 
@@ -367,6 +372,97 @@ describe("ExtractionService admission and shutdown", () => {
   });
 });
 
+describe("ExtractionService usability outcomes", () => {
+  it("classifies once and gives extract, find, and outline the same cached status-first outcome", async () => {
+    const archive = new FakeArchive();
+    const renderer = new FakeRenderer({ status: 403, html: "<article>hostile wall text</article>" });
+    const parser = vi.fn(parse);
+    const extraction = service({ archive, renderer, parse: parser });
+
+    const results = [
+      await extraction.extract({ url: PAGE_URL }),
+      await extraction.find({ url: PAGE_URL, query: "readable prose" }),
+      await extraction.outline({ url: PAGE_URL }),
+    ];
+    expect(results).toEqual(
+      results.map(() => expect.objectContaining({ outcome: "unusable", reason: "access_denied", httpStatus: 403 })),
+    );
+    expect(renderer.rendered).toEqual([PAGE_URL]);
+    expect(parser).not.toHaveBeenCalled();
+
+    await extraction.drain();
+    expect(archive.extractions).toHaveLength(3);
+    expect(archive.extractions.map((record) => record.operation).sort()).toEqual(["extract", "find", "outline"]);
+    expect(archive.extractions.every((record) => record.status === "unusable")).toBe(true);
+    expect(JSON.stringify(archive.extractions)).not.toContain("hostile wall text");
+  });
+
+  it.each([
+    {
+      name: "empty 200",
+      renderer: new FakeRenderer({ status: 200 }),
+      parser: async () => ({ title: "Empty", markdown: " \n", wordCount: 0 }),
+      reason: "empty_content",
+    },
+    {
+      name: "known 200 interstitial",
+      renderer: new FakeRenderer({ status: 200, finalUrl: "https://github.com/example/repository" }),
+      parser: async () => ({
+        title: "Whoa there!",
+        markdown: "We detected unusual activity. Sign in to continue.",
+        wordCount: 8,
+      }),
+      reason: "known_interstitial",
+    },
+  ])("keeps all operations consistent for $name", async ({ renderer, parser, reason }) => {
+    const extraction = service({ renderer, parse: parser });
+    const results = [
+      await extraction.outline({ url: PAGE_URL }),
+      await extraction.find({ url: PAGE_URL, query: "readable prose" }),
+      await extraction.extract({ url: PAGE_URL }),
+    ];
+
+    expect(results.every((result) => result.outcome === "unusable" && result.reason === reason)).toBe(true);
+    expect(renderer.rendered).toHaveLength(1);
+  });
+
+  it.each([
+    { status: 429, reason: "rate_limited" },
+    { status: 503, reason: "upstream_error" },
+  ] as const)("does not cache a transient $status response", async ({ status, reason }) => {
+    let renders = 0;
+    const renderer: PageRenderer = {
+      render: async (url) => {
+        renders++;
+        return {
+          finalUrl: url,
+          html: "<html></html>",
+          status: renders === 1 ? status : 200,
+          redirects: 0,
+        };
+      },
+      close: async () => undefined,
+    };
+    const extraction = service({ renderer });
+
+    await expect(extraction.extract({ url: PAGE_URL })).resolves.toMatchObject({
+      outcome: "unusable",
+      reason,
+    });
+    await expect(extraction.extract({ url: PAGE_URL })).resolves.toMatchObject({ outcome: "usable" });
+    expect(renders).toBe(2);
+  });
+
+  it("keeps tiny, flat, and zero-word symbolic pages usable", async () => {
+    const tiny: DocumentParser = async () => ({ title: "Status", markdown: "✓", wordCount: 0 });
+    const extraction = service({ parse: tiny });
+
+    expect((await extraction.extract({ url: PAGE_URL })).outcome).toBe("usable");
+    expect((await extraction.find({ url: PAGE_URL, query: "anything" })).outcome).toBe("usable");
+    expect((await extraction.outline({ url: PAGE_URL })).outcome).toBe("usable");
+  });
+});
+
 describe("ExtractionService page cache", () => {
   const long = Array.from({ length: 20 }, (_, i) => `## Section ${i}\n\n${"word ".repeat(40)}`).join("\n\n");
   const longParse: DocumentParser = async () => ({ title: "Long", markdown: long, wordCount: 800 });
@@ -381,11 +477,13 @@ describe("ExtractionService page cache", () => {
     let offset: number | undefined = 0;
     let windows = 0;
     while (offset !== undefined && windows < 50) {
-      const page: Awaited<ReturnType<typeof extraction.extract>> = await extraction.extract({
-        url: PAGE_URL,
-        maxChars: 900,
-        offset,
-      });
+      const page: UsableExtractResponse = usable(
+        await extraction.extract({
+          url: PAGE_URL,
+          maxChars: 900,
+          offset,
+        }),
+      );
       windows++;
       offset = page.nextOffset;
     }
@@ -440,7 +538,7 @@ describe("ExtractionService page cache", () => {
     void blocking.catch(() => undefined);
     await settle();
 
-    const cached = await extraction.extract({ url: PAGE_URL, maxChars: 900, offset: 900 });
+    const cached = usable(await extraction.extract({ url: PAGE_URL, maxChars: 900, offset: 900 }));
     expect(cached.offset).toBeGreaterThan(0);
     expect(rendered).toEqual([PAGE_URL, "https://example.test/blocking"]);
   });
@@ -463,7 +561,7 @@ describe("ExtractionService.find", () => {
   const findParse: DocumentParser = async () => ({ title: "Storage", markdown: doc, wordCount: 40 });
 
   it("returns the section that answers the query, addressed the way extract takes it", async () => {
-    const page = await service({ parse: findParse }).find({ url: PAGE_URL, query: "checkpoint starvation" });
+    const page = usable(await service({ parse: findParse }).find({ url: PAGE_URL, query: "checkpoint starvation" }));
 
     expect(page.matches[0]?.path).toEqual(["Storage", "Checkpointing"]);
     expect(page.matches[0]?.markdown).toContain("Checkpoint starvation");
@@ -474,17 +572,19 @@ describe("ExtractionService.find", () => {
   it("scores the whole document, not the part a window would have held", async () => {
     // The answer here is past any small window from the top, so a find that
     // ranked only what fit would miss it.
-    const page = await service({ parse: findParse }).find({
-      url: PAGE_URL,
-      query: "checkpoint starvation",
-      maxChars: 300,
-    });
+    const page = usable(
+      await service({ parse: findParse }).find({
+        url: PAGE_URL,
+        query: "checkpoint starvation",
+        maxChars: 300,
+      }),
+    );
 
     expect(page.matches[0]?.path.at(-1)).toBe("Checkpointing");
   });
 
   it("answers a page that does not discuss the query with no matches, not an error", async () => {
-    const page = await service({ parse: findParse }).find({ url: PAGE_URL, query: "kubernetes ingress" });
+    const page = usable(await service({ parse: findParse }).find({ url: PAGE_URL, query: "kubernetes ingress" }));
 
     expect(page.matches).toEqual([]);
     // Still a complete answer: the caller can see how big the page was and
@@ -517,7 +617,7 @@ describe("ExtractionService.find", () => {
     const extraction = service({ renderer, parse: findParse });
 
     await extraction.outline({ url: PAGE_URL });
-    const page = await extraction.find({ url: PAGE_URL, query: "checkpoint starvation" });
+    const page = usable(await extraction.find({ url: PAGE_URL, query: "checkpoint starvation" }));
     await extraction.extract({ url: PAGE_URL, offset: page.matches[0]?.offset, maxChars: 200 });
 
     expect(renderer.rendered).toEqual([PAGE_URL]);
@@ -542,9 +642,10 @@ describe("ExtractionService.outline", () => {
   const outlineParse: DocumentParser = async () => ({ title: "Guide", markdown: doc, wordCount: 8 });
 
   it("describes structure without returning content", async () => {
-    const page = await service({ parse: outlineParse }).outline({ url: PAGE_URL });
+    const page = usable(await service({ parse: outlineParse }).outline({ url: PAGE_URL }));
     expect(page.sections.map((s) => s.heading)).toEqual(["Guide", "First", "Second"]);
     expect(page.totalChars).toBe(doc.length);
+    expect(page.untrusted).toBe(true);
     expect(page).not.toHaveProperty("markdown");
   });
 
@@ -552,9 +653,9 @@ describe("ExtractionService.outline", () => {
     const renderer = new FakeRenderer();
     const extraction = service({ renderer, parse: outlineParse });
 
-    const page = await extraction.outline({ url: PAGE_URL });
+    const page = usable(await extraction.outline({ url: PAGE_URL }));
     const second = page.sections[1];
-    const read = await extraction.extract({ url: PAGE_URL, offset: second?.offset, maxChars: 200 });
+    const read = usable(await extraction.extract({ url: PAGE_URL, offset: second?.offset, maxChars: 200 }));
 
     expect(read.markdown.startsWith("## First")).toBe(true);
     expect(renderer.rendered).toEqual([PAGE_URL]);

@@ -26,7 +26,7 @@ import type { EngineFailureKind, EngineSearchOutcome, MergedSearchResponse, Sear
 import { defaultStorePath, searchArchiveEnabled } from "./paths.js";
 
 /** Current SQLite schema. Future changes are appended as numbered migrations. */
-export const ARCHIVE_SCHEMA_VERSION = 5;
+export const ARCHIVE_SCHEMA_VERSION = 6;
 /** Wait briefly for another API/CLI process holding the shared database lock. */
 export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
 
@@ -96,8 +96,9 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       `INSERT INTO extractions (
         created_at, requested_url, final_url, status, error_kind,
         http_status, content_type, redirects, took_ms, title, domain, language, author,
-        published, chars, word_count, truncated, markdown_sha256, cached, degraded_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        published, chars, word_count, truncated, markdown_sha256, cached, degraded_by,
+        operation, unusable_kind, classifier_version, signature_id, document_chars
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.startedAt,
       record.requestedUrl,
@@ -119,6 +120,11 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       record.markdownSha256 ?? null,
       record.cached === undefined ? null : Number(record.cached),
       record.degradedBy ?? null,
+      record.operation ?? null,
+      record.unusableKind ?? null,
+      record.classifierVersion ?? null,
+      record.signatureId ?? null,
+      record.documentChars ?? null,
     );
   }
 
@@ -237,6 +243,8 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     const empty: ExtractionTotals = {
       attempted: 0,
       completed: 0,
+      unusable: 0,
+      unusableReasons: [],
       failed: 0,
       failures: [],
       cached: 0,
@@ -249,6 +257,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     const summary = firstRow<{
       attempted: number;
       completed: number;
+      unusable: number;
       failed: number;
       cached: number;
       domains: number;
@@ -257,14 +266,22 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       db.prepare(`SELECT
            count(*) AS attempted,
            sum(status = 'completed') AS completed,
+           sum(status = 'unusable') AS unusable,
            sum(status = 'failed') AS failed,
-           sum(cached = 1) AS cached,
+           sum(status = 'completed' AND cached = 1) AS cached,
            count(DISTINCT domain) AS domains,
-           avg(chars) AS chars
+           avg(chars) FILTER (WHERE status = 'completed') AS chars
          FROM extractions WHERE created_at >= ?`),
       since,
     );
     if (!summary || Number(summary.attempted) === 0) return empty;
+
+    const unusableReasons = rows<{ unusable_kind: string | null; n: number }>(
+      db.prepare(`SELECT unusable_kind, count(*) AS n FROM extractions
+                  WHERE created_at >= ? AND status = 'unusable'
+                  GROUP BY unusable_kind ORDER BY n DESC, unusable_kind`),
+      since,
+    );
 
     const kinds = rows<{ error_kind: string | null; n: number }>(
       db.prepare(`SELECT error_kind, count(*) AS n FROM extractions
@@ -286,6 +303,8 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     return {
       attempted: Number(summary.attempted),
       completed: Number(summary.completed ?? 0),
+      unusable: Number(summary.unusable ?? 0),
+      unusableReasons: unusableReasons.map((row) => ({ kind: row.unusable_kind ?? "unknown", count: Number(row.n) })),
       failed: Number(summary.failed ?? 0),
       failures: kinds.map((row) => ({ kind: row.error_kind ?? "unknown", count: Number(row.n) })),
       cached: Number(summary.cached ?? 0),
@@ -323,9 +342,10 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     );
     const extractions = this.#extractionsFor(db, page);
 
-    return page.map((row) =>
-      this.#summarize(row, outcomes.get(row.search_id) ?? [], extractions.get(row.search_id)?.length ?? 0),
-    );
+    return page.map((row) => {
+      const matched = extractions.get(row.search_id) ?? [];
+      return this.#summarize(row, outcomes.get(row.search_id) ?? [], matched.filter(isCompletedExtraction).length);
+    });
   }
 
   /** Everything stored about one search, including each engine's own page. */
@@ -338,7 +358,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
     const extractions = this.#extractionsFor(db, [row]).get(searchId) ?? [];
 
     return {
-      ...this.#summarize(row, outcomes, extractions.length),
+      ...this.#summarize(row, outcomes, extractions.filter(isCompletedExtraction).length),
       merged: parseMerged(row.merged_response_json),
       engines: outcomes.map((outcome) => ({ ...outcome, results: outcome.results ?? [] })),
       extractionDetails: extractions.map((extraction): ArchivedExtraction => ({
@@ -347,6 +367,8 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
         finalUrl: extraction.final_url,
         status: extraction.status,
         errorKind: extraction.error_kind,
+        unusableKind: extraction.unusable_kind,
+        httpStatus: extraction.http_status,
         title: extraction.title,
         chars: extraction.chars,
         tookMs: extraction.took_ms,
@@ -736,6 +758,60 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
         db.exec("ALTER TABLE extractions ADD COLUMN degraded_by TEXT CHECK (degraded_by IN ('bytes', 'requests'))");
       }
 
+      if (version < 6) {
+        // A loaded error/interstitial is neither a readable page nor an
+        // infrastructure failure. Rebuild to widen the status constraint;
+        // legacy completed rows remain completed and keep historical credit.
+        db.exec(`
+          CREATE TABLE extractions_v6 (
+            extraction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            requested_url TEXT NOT NULL,
+            final_url TEXT,
+            status TEXT NOT NULL CHECK (status IN ('completed', 'unusable', 'failed')),
+            error_kind TEXT,
+            http_status INTEGER,
+            content_type TEXT,
+            redirects INTEGER,
+            took_ms INTEGER NOT NULL CHECK (took_ms >= 0),
+            title TEXT,
+            domain TEXT,
+            language TEXT,
+            author TEXT,
+            published TEXT,
+            chars INTEGER,
+            word_count INTEGER,
+            truncated INTEGER CHECK (truncated IN (0, 1)),
+            markdown_sha256 TEXT,
+            cached INTEGER CHECK (cached IN (0, 1)),
+            degraded_by TEXT CHECK (degraded_by IN ('bytes', 'requests')),
+            operation TEXT CHECK (operation IN ('extract', 'find', 'outline')),
+            unusable_kind TEXT,
+            classifier_version TEXT,
+            signature_id TEXT,
+            document_chars INTEGER,
+            CHECK (
+              (status = 'completed' AND error_kind IS NULL AND unusable_kind IS NULL) OR
+              (status = 'unusable' AND error_kind IS NULL AND unusable_kind IS NOT NULL) OR
+              (status = 'failed' AND error_kind IS NOT NULL AND unusable_kind IS NULL)
+            )
+          );
+          INSERT INTO extractions_v6 (
+            extraction_id, created_at, requested_url, final_url, status, error_kind, http_status,
+            content_type, redirects, took_ms, title, domain, language, author, published, chars,
+            word_count, truncated, markdown_sha256, cached, degraded_by
+          ) SELECT
+            extraction_id, created_at, requested_url, final_url, status, error_kind, http_status,
+            content_type, redirects, took_ms, title, domain, language, author, published, chars,
+            word_count, truncated, markdown_sha256, cached, degraded_by
+          FROM extractions;
+          DROP TABLE extractions;
+          ALTER TABLE extractions_v6 RENAME TO extractions;
+          CREATE INDEX extractions_by_domain ON extractions (domain, created_at);
+          CREATE INDEX extractions_recent ON extractions (created_at);
+        `);
+      }
+
       db.exec(`PRAGMA user_version = ${ARCHIVE_SCHEMA_VERSION}`);
       db.exec("COMMIT");
     } catch (err) {
@@ -787,7 +863,7 @@ const WINDOWED_ENGINE_RESULTS = `
  */
 /** Every extraction from a period, for matching back to searches by URL. */
 const EXTRACTIONS_SINCE = `
-  SELECT created_at, requested_url, final_url, status, error_kind, title, chars, took_ms, cached
+  SELECT created_at, requested_url, final_url, status, error_kind, unusable_kind, http_status, title, chars, took_ms, cached
   FROM extractions WHERE created_at >= ? ORDER BY extraction_id
 `;
 
@@ -808,6 +884,10 @@ const WINDOWED_EXTRACTED_URLS = `
  * #migrate by hand, and nothing checks that they still agree. A column
  * renamed there is a silent `undefined` here.
  */
+function isCompletedExtraction(row: ExtractionRow): boolean {
+  return row.status === "completed";
+}
+
 function rows<T>(statement: StatementSync, ...params: SQLInputValue[]): T[] {
   return statement.all(...params) as unknown as T[];
 }
@@ -858,8 +938,10 @@ interface ExtractionRow {
   created_at: string;
   requested_url: string;
   final_url: string | null;
-  status: "completed" | "failed";
+  status: "completed" | "unusable" | "failed";
   error_kind: string | null;
+  unusable_kind: string | null;
+  http_status: number | null;
   title: string | null;
   chars: number | null;
   took_ms: number;

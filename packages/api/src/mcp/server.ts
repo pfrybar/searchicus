@@ -18,6 +18,9 @@ import {
   type FindMatch,
   type FindResponse,
   type OutlineResponse,
+  type UsableExtractResponse,
+  type UsableFindResponse,
+  type UsableOutlineResponse,
   type PublicSearchResponse,
 } from "@searchicus/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -94,6 +97,14 @@ export function createMcpServer(
       log.debug("tool extract", { url: request.url, maxChars: request.maxChars });
       try {
         const response = await extraction.extract(request);
+        if (response.outcome === "unusable") {
+          log.info("tool extract unusable", {
+            reason: response.reason,
+            status: response.httpStatus,
+            tookMs: response.tookMs,
+          });
+          return { content: [{ type: "text", text: formatUnusable(response) }] };
+        }
         log.info("tool extract", { chars: response.chars, truncated: response.truncated, tookMs: response.tookMs });
         // The page's Markdown stays in its own block. The preceding readable
         // metadata keeps it unescaped without making a text-only MCP surface
@@ -141,6 +152,10 @@ export function createMcpServer(
       log.debug("tool find", { url: request.url, maxChars: request.maxChars });
       try {
         const page = await extraction.find(request);
+        if (page.outcome === "unusable") {
+          log.info("tool find unusable", { reason: page.reason, status: page.httpStatus, tookMs: page.tookMs });
+          return { content: [{ type: "text", text: formatUnusable(page) }] };
+        }
         log.info("tool find", {
           matches: page.matches.length,
           chars: page.matches.reduce((total, match) => total + match.chars, 0),
@@ -196,6 +211,10 @@ export function createMcpServer(
       log.debug("tool outline", { url: request.url });
       try {
         const page = await extraction.outline(request);
+        if (page.outcome === "unusable") {
+          log.info("tool outline unusable", { reason: page.reason, status: page.httpStatus, tookMs: page.tookMs });
+          return { content: [{ type: "text", text: formatUnusable(page) }] };
+        }
         log.info("tool outline", { sections: page.sections.length, navigable: page.navigable, tookMs: page.tookMs });
         return {
           content: [{ type: "text", text: formatOutline(page) }],
@@ -215,6 +234,16 @@ export function createMcpServer(
   );
 
   return server;
+}
+
+function formatUnusable(response: ExtractResponse | FindResponse | OutlineResponse): string {
+  if (response.outcome !== "unusable") return "Page content is usable.";
+  return [
+    "Page content was not returned because the rendered page was unusable.",
+    `URL: ${response.finalUrl}`,
+    `Reason: ${response.reason}`,
+    ...(response.httpStatus === undefined ? [] : [`Remote HTTP status: ${response.httpStatus}`]),
+  ].join("\n");
 }
 
 function formatSearch(response: PublicSearchResponse): string {
@@ -240,7 +269,7 @@ function formatSearch(response: PublicSearchResponse): string {
   return lines.join("\n").trimEnd();
 }
 
-function formatExtract(response: ExtractResponse): string {
+function formatExtract(response: UsableExtractResponse): string {
   return [
     `Page: ${response.title}`,
     `URL: ${response.finalUrl}`,
@@ -254,7 +283,7 @@ function formatExtract(response: ExtractResponse): string {
   ].join("\n");
 }
 
-function formatFindSummary(response: FindResponse): string {
+function formatFindSummary(response: UsableFindResponse): string {
   return [
     `Page: ${response.title}`,
     `URL: ${response.finalUrl}`,
@@ -265,7 +294,7 @@ function formatFindSummary(response: FindResponse): string {
   ].join("\n");
 }
 
-function formatFindMiss(response: FindResponse): string {
+function formatFindMiss(response: UsableFindResponse): string {
   const guidance = response.navigable
     ? "No answering sections found. This does NOT prove the page lacks the information; try a different question or read it."
     : "No targeted section selection is possible on this flat page. Read it with extract instead.";
@@ -293,7 +322,7 @@ function formatFindMatch(match: FindMatch, index: number): string {
   ].join("\n");
 }
 
-function formatOutline(response: OutlineResponse): string {
+function formatOutline(response: UsableOutlineResponse): string {
   const sections = response.sections.map(
     (section) =>
       `${"  ".repeat(section.depth)}- offset ${section.offset} · ${section.chars} characters · ${section.heading ?? "(untitled)"}`,

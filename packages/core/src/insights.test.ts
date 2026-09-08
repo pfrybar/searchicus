@@ -274,6 +274,8 @@ describe("engineMetrics", () => {
     expect(report.extractions).toEqual({
       attempted: 3,
       completed: 2,
+      unusable: 0,
+      unusableReasons: [],
       failed: 1,
       failures: [{ kind: "navigation_failed", count: 1 }],
       // None of these were served from cache, so all of them count toward the
@@ -339,6 +341,8 @@ describe("engineMetrics", () => {
       extractions: {
         attempted: 0,
         completed: 0,
+        unusable: 0,
+        unusableReasons: [],
         failed: 0,
         failures: [],
         cached: 0,

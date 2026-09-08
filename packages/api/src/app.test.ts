@@ -172,6 +172,8 @@ describe("POST /outline", () => {
       });
 
     expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe("usable");
+    expect(res.body.untrusted).toBe(true);
     expect(res.body.sections.length).toBeGreaterThan(0);
     expect(res.body.sections[0]).toMatchObject({ offset: expect.any(Number), chars: expect.any(Number) });
     expect(res.body).not.toHaveProperty("markdown");
@@ -294,6 +296,31 @@ describe("POST /extract", () => {
     expect(String(port.body.details)).toMatch(/allowed port/);
   });
 
+  it("returns a completed-but-unusable page as HTTP 200 without its body", async () => {
+    const missing: PageRenderer = {
+      render: async (url) => ({
+        finalUrl: url,
+        html: "<article>substantial hostile or error-page body</article>",
+        status: 404,
+        redirects: 0,
+      }),
+      close: async () => undefined,
+    };
+
+    const res = await request(extractApp(missing)).post("/extract").send({ url: "https://example.test/missing" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      outcome: "unusable",
+      reason: "not_found",
+      url: "https://example.test/missing",
+      finalUrl: "https://example.test/missing",
+      httpStatus: 404,
+      tookMs: expect.any(Number),
+    });
+    expect(res.body).not.toHaveProperty("markdown");
+  });
+
   it("reports a failed render as 502 without leaking the browser's error", async () => {
     const broken: PageRenderer = {
       render: () =>
@@ -326,6 +353,8 @@ describe("dashboard endpoints", () => {
     extractions: {
       attempted: 3,
       completed: 2,
+      unusable: 0,
+      unusableReasons: [],
       failed: 1,
       failures: [{ kind: "navigation_failed", count: 1 }],
       cached: 1,
