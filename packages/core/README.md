@@ -171,7 +171,17 @@ const registry = createBrowserRegistry("api", { archive });
 const extraction = createBrowserExtraction({ archive });
 
 const page = await extraction.extract({ url: "https://example.com/" });
+if (page.outcome === "usable") console.log(page.markdown);
+else console.log(page.reason);
 ```
+
+All three read methods share one cached usability assessment. Final remote
+HTTP errors are classified before parsing; successful documents are withheld
+only when wholly unreadable or when a narrow, deterministic known-interstitial
+signature matches. The public `usable | unusable` union prevents adapters from
+mistaking a challenge or 404 body for page content while keeping this distinct
+from thrown transport/render/parser failures. Small positive word counts, flat
+structure, generic error words, and `find` misses are not rejection signals.
 
 The pieces are separable. `ExtractionService` depends on a `PageRenderer`
 interface rather than Playwright, so the whole flow can be driven with no
@@ -189,11 +199,14 @@ without losing one. Read the
 root README's "Extraction" section — particularly its network warning — before
 enabling it.
 
-Each attempt is recorded as metadata only: status, timings, HTTP status,
-title, domain, sizes, and a digest of the Markdown. Page text is never
-persisted, and the `extractions` table has nowhere to put it — though a parsed
-page is held in memory briefly so that reading its second window does not
-render it again. See the root README's "Extraction" for that bound.
+Extract/find attempts and unusable outline observations are recorded as
+metadata only: operation/status, stable unusable reason and
+classifier/signature identifiers, timings, HTTP status, title, domain, and
+sizes. Successful outlines are not archived. Usable returned Markdown may have
+a digest; withheld bodies do not. Page text is never persisted, and the
+`extractions` table has nowhere to put it — though a parsed page is held in
+memory briefly so that reading its second window does not render it again. See
+the root README's "Extraction" for that bound.
 
 `find(request)` is the third read operation: it scores the page's sections
 against a query with BM25 over that page's own sections — document frequency

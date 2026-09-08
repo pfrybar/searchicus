@@ -14,6 +14,7 @@ import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, Extra
 import { findSections } from "./find.js";
 import { PageCache, type CachedPage } from "./page-cache.js";
 import { buildOutline, sliceWindow } from "./sections.js";
+import { classifyParsedPage, classifyRenderedStatus } from "./usability.js";
 import type {
   DocumentParser,
   ExtractRequest,
@@ -25,6 +26,7 @@ import type {
   PageRenderer,
   ParsedDocument,
   RenderedPage,
+  UnusablePageResponse,
 } from "./types.js";
 
 const log = createLogger("extract");
@@ -127,6 +129,11 @@ export class ExtractionService {
       await assertPublicHost(url.hostname, this.#lookup);
 
       const { page, cached } = await this.#loadPage(url, controller);
+      if (page.assessment.outcome === "unusable") {
+        const response = unusableResponse(request.url, page, Date.now() - started);
+        this.#recordUnusable(base, page, cached, response.tookMs, "extract");
+        return response;
+      }
 
       const window = sliceWindow(page.markdown, {
         maxChars,
@@ -138,6 +145,7 @@ export class ExtractionService {
       }
 
       const response: ExtractResponse = {
+        outcome: "usable",
         url: request.url,
         finalUrl: page.finalUrl,
         title: page.title,
@@ -155,6 +163,7 @@ export class ExtractionService {
         ...base,
         finalUrl: page.finalUrl,
         status: "completed",
+        operation: "extract",
         ...(page.status === undefined ? {} : { httpStatus: page.status }),
         ...(page.contentType === undefined ? {} : { contentType: page.contentType }),
         redirects: page.redirects,
@@ -165,7 +174,8 @@ export class ExtractionService {
         ...(page.author === undefined ? {} : { author: page.author }),
         ...(page.published === undefined ? {} : { published: page.published }),
         chars: markdown.length,
-        wordCount: page.wordCount,
+        documentChars: page.documentChars,
+        ...(page.wordCount === undefined ? {} : { wordCount: page.wordCount }),
         truncated: window.nextOffset !== undefined,
         cached,
         ...(page.degradedBy === undefined ? {} : { degradedBy: page.degradedBy }),
@@ -198,6 +208,7 @@ export class ExtractionService {
       this.#record({
         ...base,
         status: "failed",
+        operation: "extract",
         errorKind: failure.kind,
         tookMs: Date.now() - started,
         domain: domainOf(url.toString()),
@@ -244,6 +255,11 @@ export class ExtractionService {
     try {
       await assertPublicHost(url.hostname, this.#lookup);
       const { page, cached } = await this.#loadPage(url, controller);
+      if (page.assessment.outcome === "unusable") {
+        const response = unusableResponse(request.url, page, Date.now() - started);
+        this.#recordUnusable(base, page, cached, response.tookMs, "find");
+        return response;
+      }
 
       // Scored over the whole document, like an outline and unlike a window:
       // ranking the part that happened to fit would answer a different
@@ -252,6 +268,7 @@ export class ExtractionService {
       const markdown = matches.map((match) => match.markdown).join("\n\n");
 
       const response: FindResponse = {
+        outcome: "usable",
         url: request.url,
         finalUrl: page.finalUrl,
         title: page.title,
@@ -267,6 +284,7 @@ export class ExtractionService {
         ...base,
         finalUrl: page.finalUrl,
         status: "completed",
+        operation: "find",
         ...(page.status === undefined ? {} : { httpStatus: page.status }),
         ...(page.contentType === undefined ? {} : { contentType: page.contentType }),
         redirects: page.redirects,
@@ -277,7 +295,8 @@ export class ExtractionService {
         ...(page.author === undefined ? {} : { author: page.author }),
         ...(page.published === undefined ? {} : { published: page.published }),
         chars: markdown.length,
-        wordCount: page.wordCount,
+        documentChars: page.documentChars,
+        ...(page.wordCount === undefined ? {} : { wordCount: page.wordCount }),
         // Selection always leaves the rest of the document behind, so this
         // is true even where nothing was cut mid-section.
         truncated: markdown.length < page.markdown.length,
@@ -300,6 +319,7 @@ export class ExtractionService {
       this.#record({
         ...base,
         status: "failed",
+        operation: "find",
         errorKind: failure.kind,
         tookMs: Date.now() - started,
         domain: domainOf(url.toString()),
@@ -319,15 +339,18 @@ export class ExtractionService {
    * disguise. It also takes no budget and no offset, which is most of the
    * argument for splitting it out.
    *
-   * Not archived. Nothing was read, so recording it would count structure
-   * probes among the reads the extraction metrics exist to describe.
+   * A usable outline is not archived: nothing was read, so counting structure
+   * probes among reads would distort the metrics. An unusable outline is kept
+   * as an operator-facing page-quality observation.
    */
   async outline(request: OutlineRequest, options: { signal?: AbortSignal } = {}): Promise<OutlineResponse> {
     if (this.#closed) throw new ExtractFailedError("cancelled", "Extraction is shutting down.");
     if (!this.#config.enabled || !this.#renderer) throw new ExtractionDisabledError();
 
+    const startedAt = new Date().toISOString();
     const started = Date.now();
     const url = parseExtractUrl(request.url, this.#config);
+    const base = { startedAt, requestedUrl: url.toString() };
 
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), this.#config.timeoutMs);
@@ -336,12 +359,18 @@ export class ExtractionService {
 
     try {
       await assertPublicHost(url.hostname, this.#lookup);
-      const { page } = await this.#loadPage(url, controller);
+      const { page, cached } = await this.#loadPage(url, controller);
+      if (page.assessment.outcome === "unusable") {
+        const response = unusableResponse(request.url, page, Date.now() - started);
+        this.#recordUnusable(base, page, cached, response.tookMs, "outline");
+        return response;
+      }
       // From the whole document, never from a window: an outline of the part
       // that happened to fit would describe a fifth of a book as the book.
       const { sections, navigable } = buildOutline(page.markdown);
 
       return {
+        outcome: "usable",
         url: request.url,
         finalUrl: page.finalUrl,
         title: page.title,
@@ -349,6 +378,7 @@ export class ExtractionService {
         navigable,
         sections,
         tookMs: Date.now() - started,
+        untrusted: true,
       };
     } catch (err) {
       if (err instanceof ExtractRequestError || err instanceof ExtractionBusyError) throw err;
@@ -418,35 +448,42 @@ export class ExtractionService {
       });
 
       let rendered: RenderedPage;
-      let parsed: ParsedDocument;
+      let parsed: ParsedDocument | undefined;
       try {
         rendered = await renderer.render(cacheKey, controller.signal);
-        // The slot is held across the parse too. Parsing spawns a
-        // memory-capped worker per document, and releasing before it meant
-        // the limit bounded renders while workers piled up behind them —
-        // capping the cheap half of the work and not the expensive one.
-        const parse = this.#parse ?? (await this.#defaultParser());
-        parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
+        if (!classifyRenderedStatus(rendered)) {
+          // The slot is held across the parse too. Parsing spawns a
+          // memory-capped worker per document, and releasing before it meant
+          // the limit bounded renders while workers piled up behind them.
+          const parse = this.#parse ?? (await this.#defaultParser());
+          parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
+        }
       } finally {
         this.#slots.release();
       }
 
+      const assessment = classifyRenderedStatus(rendered) ?? classifyParsedPage(rendered, parsed!);
       // The captured HTML is deliberately not kept: it is the largest thing
-      // here and nothing downstream reads it once the Markdown exists.
+      // here and nothing downstream reads it once classification is complete.
       page = {
         finalUrl: rendered.finalUrl,
+        assessment,
         ...(rendered.status === undefined ? {} : { status: rendered.status }),
         ...(rendered.contentType === undefined ? {} : { contentType: rendered.contentType }),
         redirects: rendered.redirects,
         ...(rendered.degradedBy === undefined ? {} : { degradedBy: rendered.degradedBy }),
-        title: parsed.title,
-        markdown: parsed.markdown,
-        wordCount: parsed.wordCount,
-        ...(parsed.language === undefined ? {} : { language: parsed.language }),
-        ...(parsed.author === undefined ? {} : { author: parsed.author }),
-        ...(parsed.published === undefined ? {} : { published: parsed.published }),
+        title: parsed?.title ?? "",
+        markdown: parsed?.markdown ?? "",
+        documentChars: parsed?.markdown.length ?? 0,
+        ...(validWordCount(parsed?.wordCount) ? { wordCount: parsed!.wordCount } : {}),
+        ...(parsed?.language === undefined ? {} : { language: parsed.language }),
+        ...(parsed?.author === undefined ? {} : { author: parsed.author }),
+        ...(parsed?.published === undefined ? {} : { published: parsed.published }),
       };
-      this.#cache?.set(cacheKey, page);
+      // A rate limit or upstream outage is evidence about this attempt, not
+      // the next five minutes. Stable outcomes and parsed pages remain worth
+      // caching; transient remote failures must be retried on the next read.
+      if (!isTransientAssessment(page.assessment)) this.#cache?.set(cacheKey, page);
     }
     return { page, cached };
   }
@@ -455,6 +492,34 @@ export class ExtractionService {
   async #defaultParser(): Promise<DocumentParser> {
     const { createWorkerParser } = await import("./markdown.js");
     return createWorkerParser();
+  }
+
+  #recordUnusable(
+    base: { startedAt: string; requestedUrl: string },
+    page: CachedPage,
+    cached: boolean,
+    tookMs: number,
+    operation: "extract" | "find" | "outline",
+  ): void {
+    if (page.assessment.outcome !== "unusable") return;
+    this.#record({
+      ...base,
+      finalUrl: page.finalUrl,
+      status: "unusable",
+      operation,
+      unusableKind: page.assessment.reason,
+      classifierVersion: page.assessment.classifierVersion,
+      ...(page.assessment.signatureId === undefined ? {} : { signatureId: page.assessment.signatureId }),
+      ...(page.status === undefined ? {} : { httpStatus: page.status }),
+      ...(page.contentType === undefined ? {} : { contentType: page.contentType }),
+      redirects: page.redirects,
+      tookMs,
+      domain: domainOf(page.finalUrl),
+      documentChars: page.documentChars,
+      ...(page.wordCount === undefined ? {} : { wordCount: page.wordCount }),
+      cached,
+      ...(page.degradedBy === undefined ? {} : { degradedBy: page.degradedBy }),
+    });
   }
 
   /**
@@ -479,6 +544,29 @@ export class ExtractionService {
       .finally(() => this.#pendingWrites.delete(write));
     this.#pendingWrites.add(write);
   }
+}
+
+function unusableResponse(requestedUrl: string, page: CachedPage, tookMs: number): UnusablePageResponse {
+  if (page.assessment.outcome !== "unusable") throw new Error("Expected an unusable page assessment");
+  return {
+    outcome: "unusable",
+    reason: page.assessment.reason,
+    url: requestedUrl,
+    finalUrl: page.finalUrl,
+    ...(page.status === undefined ? {} : { httpStatus: page.status }),
+    tookMs,
+  };
+}
+
+function isTransientAssessment(assessment: CachedPage["assessment"]): boolean {
+  return (
+    assessment.outcome === "unusable" &&
+    (assessment.reason === "rate_limited" || assessment.reason === "upstream_error")
+  );
+}
+
+function validWordCount(value: number | undefined): value is number {
+  return value !== undefined && Number.isSafeInteger(value) && value >= 0;
 }
 
 /** Normalizes anything thrown mid-extraction into a safe public failure. */

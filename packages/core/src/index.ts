@@ -16,6 +16,7 @@ export * from "./extract/errors.js";
 export * from "./extract/config.js";
 export * from "./extract/address.js";
 export * from "./extract/page-cache.js";
+export * from "./extract/usability.js";
 export * from "./extract/sections.js";
 export * from "./extract/find.js";
 export * from "./extract/service.js";

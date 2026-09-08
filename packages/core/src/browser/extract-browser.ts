@@ -121,8 +121,10 @@ export class ExtractionBrowser implements PageRenderer {
       const landing = await this.#resolveChain(context, url, budget);
       budget.preloaded = landing;
       budget.finalUrl = landing.url;
+      budget.status = landing.response.status();
+      budget.contentType = contentTypeValue(landing.response.headers());
 
-      const response = await page
+      await page
         .goto(landing.url, { waitUntil: "domcontentloaded", timeout: this.#config.navigationTimeoutMs })
         .catch((err: unknown) => {
           // Chromium reports all four of these as the same routed-away
@@ -164,8 +166,8 @@ export class ExtractionBrowser implements PageRenderer {
       return {
         finalUrl: budget.finalUrl ?? page.url(),
         html,
-        ...(response ? { status: response.status() } : {}),
-        ...(contentTypeOf(response?.headers()) ?? {}),
+        ...(budget.status === undefined ? {} : { status: budget.status }),
+        ...(budget.contentType === undefined ? {} : { contentType: budget.contentType }),
         redirects: budget.redirects,
         ...(budget.degradedBy === undefined ? {} : { degradedBy: budget.degradedBy }),
       };
@@ -404,6 +406,8 @@ export class ExtractionBrowser implements PageRenderer {
     }
 
     budget.finalUrl = target;
+    budget.status = response.status();
+    budget.contentType = contentTypeValue(response.headers());
     await route.fulfill({ response });
   }
 
@@ -565,8 +569,10 @@ interface PageBudget {
    */
   docTooLarge: boolean;
   redirectsExceeded: boolean;
-  /** The destination the chain resolved to, reported as the extraction's finalUrl. */
+  /** The final main-document tuple, updated together on page-initiated navigation. */
   finalUrl?: string;
+  status?: number;
+  contentType?: string;
   /** The destination's response, held until the navigation asks for it. */
   preloaded?: PreloadedDocument;
 }
@@ -594,9 +600,9 @@ function redirectTarget(response: APIResponse): string | undefined {
   return response.headers()["location"];
 }
 
-function contentTypeOf(headers: Record<string, string> | undefined): { contentType: string } | undefined {
+function contentTypeValue(headers: Record<string, string> | undefined): string | undefined {
   const value = headers?.["content-type"];
-  return value ? { contentType: value.split(";")[0]?.trim() ?? value } : undefined;
+  return value ? (value.split(";")[0]?.trim() ?? value) : undefined;
 }
 
 /** Builds the extraction renderer a front door uses, from the environment. */

@@ -24,7 +24,13 @@ the dashboard links without an archive. A control that can only fail is worse
 than no control.
 
 Extracted page content is rendered as preformatted text, never as HTML: it is
-Markdown a stranger's website wrote.
+Markdown a stranger's website wrote. Every read checks the shared
+`usable | unusable` outcome first; usable reads mark page-derived content as
+untrusted, including outline titles and headings. Unusable pages show a warning
+with a stable reason and remote status instead of rendering an access wall or
+error body.
+The dashboard reports unusable observations separately from completed reads
+and infrastructure failures.
 
 ## Running
 

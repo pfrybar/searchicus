@@ -441,6 +441,78 @@ describe("SqliteSearchArchive", () => {
     }
   });
 
+  it("migrates schema 5 rows before recording unusable outcomes", async () => {
+    const filePath = temporaryDatabase();
+    const archive = new SqliteSearchArchive(filePath);
+    await archive.archive(record());
+    await archive.close();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const rolled = new DatabaseSync(filePath);
+    rolled.exec(`
+      DROP TABLE extractions;
+      CREATE TABLE extractions (
+        extraction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        requested_url TEXT NOT NULL,
+        final_url TEXT,
+        status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+        error_kind TEXT,
+        http_status INTEGER,
+        content_type TEXT,
+        redirects INTEGER,
+        took_ms INTEGER NOT NULL CHECK (took_ms >= 0),
+        title TEXT,
+        domain TEXT,
+        language TEXT,
+        author TEXT,
+        published TEXT,
+        chars INTEGER,
+        word_count INTEGER,
+        truncated INTEGER CHECK (truncated IN (0, 1)),
+        markdown_sha256 TEXT,
+        cached INTEGER CHECK (cached IN (0, 1)),
+        degraded_by TEXT CHECK (degraded_by IN ('bytes', 'requests')),
+        CHECK (
+          (status = 'completed' AND error_kind IS NULL) OR
+          (status = 'failed' AND error_kind IS NOT NULL)
+        )
+      );
+      CREATE INDEX extractions_by_domain ON extractions (domain, created_at);
+      CREATE INDEX extractions_recent ON extractions (created_at);
+      INSERT INTO extractions (created_at, requested_url, status, took_ms, domain)
+        VALUES ('2026-09-07T16:01:00.000Z', 'https://example.test/legacy', 'completed', 700, 'example.test');
+      PRAGMA user_version = 5;
+    `);
+    rolled.close();
+
+    const upgraded = new SqliteSearchArchive(filePath);
+    await upgraded.recordExtraction({
+      startedAt: "2026-09-07T16:02:00.000Z",
+      requestedUrl: "https://example.test/denied",
+      status: "unusable",
+      operation: "extract",
+      unusableKind: "access_denied",
+      classifierVersion: "1",
+      httpStatus: 403,
+      tookMs: 300,
+    });
+    await upgraded.close();
+
+    const reopened = new DatabaseSync(filePath);
+    try {
+      expect(reopened.prepare("PRAGMA user_version").get()).toEqual({ user_version: ARCHIVE_SCHEMA_VERSION });
+      expect(
+        reopened.prepare("SELECT requested_url, status, unusable_kind FROM extractions ORDER BY extraction_id").all(),
+      ).toEqual([
+        { requested_url: "https://example.test/legacy", status: "completed", unusable_kind: null },
+        { requested_url: "https://example.test/denied", status: "unusable", unusable_kind: "access_denied" },
+      ]);
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("rebuilds an archive that still records where a caller said they came from", async () => {
     const filePath = temporaryDatabase();
     const archive = new SqliteSearchArchive(filePath);
@@ -581,6 +653,45 @@ describe("SqliteSearchArchive", () => {
       } finally {
         db.close();
       }
+    });
+
+    it("stores unusable diagnostics separately without granting successful-read credit", async () => {
+      const filePath = temporaryDatabase();
+      const store = new SqliteSearchArchive(filePath);
+      await store.archive(record());
+      await store.recordExtraction({
+        startedAt: "2026-09-04T16:01:00.000Z",
+        requestedUrl: "https://example.test/cats",
+        finalUrl: "https://example.test/cats",
+        status: "unusable",
+        operation: "outline",
+        unusableKind: "access_denied",
+        classifierVersion: "1",
+        httpStatus: 403,
+        contentType: "text/html",
+        documentChars: 0,
+        tookMs: 300,
+      });
+
+      const report = await store.engineMetrics();
+      expect(report.extractions).toMatchObject({
+        attempted: 1,
+        completed: 0,
+        unusable: 1,
+        failed: 0,
+        unusableReasons: [{ kind: "access_denied", count: 1 }],
+      });
+      expect(report.engines.find((engine) => engine.engineId === "bing")?.extracted).toBe(0);
+      const detail = await store.searchDetail("search-123");
+      expect(detail?.extractions).toBe(0);
+      // Unusable observations still appear to operators, but do not say the
+      // offered result was successfully read.
+      expect(detail?.extractionDetails[0]).toMatchObject({
+        status: "unusable",
+        unusableKind: "access_denied",
+        httpStatus: 403,
+      });
+      await store.close();
     });
 
     it("keeps no column that could hold page content", async () => {

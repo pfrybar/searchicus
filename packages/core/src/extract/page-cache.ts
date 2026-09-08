@@ -20,9 +20,12 @@
  */
 
 import type { RenderDegradation } from "./types.js";
+import type { PageAssessment } from "./usability.js";
 
 export interface CachedPage {
   readonly finalUrl: string;
+  /** One query-independent decision shared by extract, find, and outline. */
+  readonly assessment: PageAssessment;
   /**
    * Carried so a cached read is archived like the render that produced it.
    * Dropping it would make the same page look degraded once and clean for the
@@ -34,7 +37,9 @@ export interface CachedPage {
   readonly redirects: number;
   readonly title: string;
   readonly markdown: string;
-  readonly wordCount: number;
+  readonly wordCount?: number;
+  /** Length of parsed Markdown before any caller-specific selection. */
+  readonly documentChars: number;
   readonly language?: string;
   readonly author?: string;
   readonly published?: string;

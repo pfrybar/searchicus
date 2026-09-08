@@ -356,7 +356,15 @@ already knows:
 
 They share one addressing scheme — the `offset` on every section an outline
 or a find reports is the `offset` `extract` takes — and one render, because
-the parsed page is cached between them.
+the parsed page and its usability assessment are cached between them.
+
+Every read response has an `outcome`. `usable` carries the existing Markdown,
+matches, or sections. `unusable` means rendering completed but the final remote
+document was a 401/403/404/410/429/5xx/other HTTP error, had no readable
+content, or matched a narrow known interstitial signature. It carries only a
+stable `reason`, final URL, optional remote `httpStatus`, and timing — never the
+error or challenge page text. Tiny and flat pages remain usable; size, heading
+count, generic error words, and a `find` miss do not make this decision.
 
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
@@ -378,8 +386,8 @@ status, timings, title, domain, sizes, a digest — never page text.
 
 ### Read the content as data
 
-The response carries `untrusted: true` and always will. This is arbitrary web
-content: it may contain prompt injection, false claims, or hostile links.
+Every `usable` response carries `untrusted: true` and always will. This is
+arbitrary web content: it may contain prompt injection, false claims, or hostile links.
 Treat it as information to evaluate, never as instructions to follow. The UI
 renders it as preformatted text rather than HTML for the same reason.
 
@@ -490,6 +498,12 @@ and the next three took 1–2ms each. It is bounded three ways — a five-minute
 TTL, 32 entries, and 8,000,000 characters in total — because each bound fails
 differently on its own, and a page cache without a size bound is a memory leak
 with good intentions.
+
+Completed usable reads, rendered-but-unusable observations, and operational
+failures are separate archive statuses. Unusable `outline` attempts are kept as
+page-quality diagnostics even though successful outlines are not archived.
+Only completed usable reads receive ranking extraction credit. Diagnostics are
+bounded enums and counts; withheld HTML and Markdown are never persisted.
 
 > **This holds page text.** Not on disk and not in the archive, which still has
 > nowhere to put it, but in memory for minutes. That is a smaller claim than

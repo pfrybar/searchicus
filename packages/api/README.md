@@ -170,6 +170,7 @@ Response:
 
 ```json
 {
+  "outcome": "usable",
   "url": "https://example.com/article",
   "finalUrl": "https://www.example.com/article",
   "title": "Example article",
@@ -197,16 +198,25 @@ whole budget: it cannot be returned whole, so it is cut at a line or word
 boundary and the offset is honoured exactly, because snapping would return the
 same prefix forever.
 
-`untrusted` is always present and always `true`: the Markdown is arbitrary web
-content and must be treated as data to evaluate, never as instructions.
+On every `usable` response, `untrusted` is present and `true`: Markdown,
+titles, and headings are arbitrary web content and must be treated as data to
+evaluate, never as instructions. An `unusable` response contains none of that
+page-controlled content.
 
 `url` is capped at 2048 characters.
 
 | Status | Meaning                                                                        |
 | -----: | ------------------------------------------------------------------------------ |
+|  `200` | The read completed. Check `outcome`: `usable` or `unusable`.                   |
 |  `400` | The request is wrong — a bad URL, a disallowed port, or a budget out of range. |
-|  `502` | Extraction ran and failed. The message is generic by design.                   |
+|  `502` | Extraction transport/render/parser work failed. The message is generic.        |
 |  `503` | Extraction is not enabled on this server, or its queue is full.                |
+
+An `unusable` 200 carries a stable `reason` (`not_found`,
+`authentication_required`, `access_denied`, `rate_limited`, `upstream_error`,
+`http_error`, `empty_content`, or `known_interstitial`), final URL, optional
+remote `httpStatus`, and timing. It never carries Markdown, matches, or
+sections. MCP reports the same result as a normal, non-error tool response.
 
 The two `503`s are told apart by `Retry-After`: a full queue sets it, because
 waiting helps. A disabled endpoint does not, because only an operator can
@@ -241,6 +251,7 @@ operation pointless.
 
 ```json
 {
+  "outcome": "usable",
   "url": "https://www.sqlite.org/wal.html",
   "finalUrl": "https://www.sqlite.org/wal.html",
   "title": "Write-Ahead Logging",
@@ -322,13 +333,15 @@ A page's structure, without its content. Same enablement and address rules as
 
 ```json
 {
+  "outcome": "usable",
   "title": "Write-Ahead Logging",
   "totalChars": 35026,
   "navigable": true,
   "sections": [
     { "heading": "1. Overview", "depth": 0, "offset": 84, "chars": 3646 },
     { "heading": "2.1. Checkpointing", "depth": 1, "offset": 4840, "chars": 1109 }
-  ]
+  ],
+  "untrusted": true
 }
 ```
 
@@ -347,8 +360,10 @@ the read that follows is served from memory. Measured against
 1,580-character windows found an answer that cost 23,338 characters across 22
 calls when paging from the top.
 
-Outlines are not archived: nothing was read, and counting structure probes as
-reads would distort the extraction metrics.
+Usable outlines are not archived: nothing was read, and counting structure
+probes as reads would distort extraction metrics. An unusable outline is kept
+as an operator-facing page-quality observation. Its page body and headings are
+not stored.
 
 ### Dashboard endpoints
 

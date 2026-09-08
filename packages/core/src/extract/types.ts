@@ -23,8 +23,30 @@ export interface OutlineRequest {
   url: string;
 }
 
+/** Why a successfully rendered page was withheld instead of returned as content. */
+export type PageUnusableReason =
+  | "not_found"
+  | "authentication_required"
+  | "access_denied"
+  | "rate_limited"
+  | "upstream_error"
+  | "http_error"
+  | "empty_content"
+  | "known_interstitial";
+
+/** Safe metadata shared by all completed-but-unusable read operations. */
+export interface UnusablePageResponse {
+  outcome: "unusable";
+  reason: PageUnusableReason;
+  url: string;
+  finalUrl: string;
+  httpStatus?: number;
+  tookMs: number;
+}
+
 /** A page's structure, addressed by the offsets `extract` already takes. */
-export interface OutlineResponse {
+export interface UsableOutlineResponse {
+  outcome: "usable";
   url: string;
   finalUrl: string;
   title: string;
@@ -40,7 +62,11 @@ export interface OutlineResponse {
   navigable: boolean;
   sections: OutlineSection[];
   tookMs: number;
+  /** Always true. Page-derived titles and headings are untrusted web text. */
+  untrusted: true;
 }
+
+export type OutlineResponse = UsableOutlineResponse | UnusablePageResponse;
 
 /**
  * A request for the parts of one page that answer a question.
@@ -59,8 +85,9 @@ export interface FindRequest {
   maxChars?: number;
 }
 
-/** The sections of a page that best answer a query, best first. */
-export interface FindResponse {
+/** The sections of a usable page that best answer a query, best first. */
+export interface UsableFindResponse {
+  outcome: "usable";
   url: string;
   finalUrl: string;
   title: string;
@@ -85,8 +112,10 @@ export interface FindResponse {
   navigable: boolean;
   tookMs: number;
   /** Always true. Page content is data to evaluate, never instructions. */
-  untrusted: boolean;
+  untrusted: true;
 }
+
+export type FindResponse = UsableFindResponse | UnusablePageResponse;
 
 export interface ExtractRequest {
   /** Absolute http(s) URL to render. */
@@ -109,7 +138,8 @@ export interface ExtractRequest {
 }
 
 /** Readable page content, plus what a caller needs to interpret it. */
-export interface ExtractResponse {
+export interface UsableExtractResponse {
+  outcome: "usable";
   /** The URL as requested. */
   url: string;
   /** Where the page actually resolved, after redirects. */
@@ -153,6 +183,8 @@ export interface ExtractResponse {
    */
   untrusted: true;
 }
+
+export type ExtractResponse = UsableExtractResponse | UnusablePageResponse;
 
 /** Stable categories for archived extraction failures. */
 export type ExtractFailureKind =

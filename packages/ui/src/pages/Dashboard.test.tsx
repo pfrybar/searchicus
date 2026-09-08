@@ -57,6 +57,8 @@ function totals(overrides: Record<string, unknown> = {}) {
     extractions: {
       attempted: 4,
       completed: 3,
+      unusable: 0,
+      unusableReasons: [],
       failed: 1,
       failures: [{ kind: "navigation_failed", count: 1 }],
       cached: 2,

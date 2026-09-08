@@ -194,9 +194,22 @@ function ReadPanel({
       </p>
     );
 
+  if (read.content.outcome === "unusable") {
+    return (
+      <div className="extraction error" role="alert">
+        <strong>Page content unavailable</strong>
+        <p>
+          {read.content.reason}
+          {read.content.httpStatus === undefined ? "" : ` · remote HTTP ${read.content.httpStatus}`}
+        </p>
+      </div>
+    );
+  }
+
   if (read.kind === "outline") {
     return (
       <div className="extraction">
+        <p className="untrusted">Untrusted page title and headings</p>
         <p className="meta">
           {read.content.title} · {read.content.totalChars} characters
         </p>
@@ -234,15 +247,16 @@ function ReadPanel({
     );
   }
 
+  const page = read.content;
   return (
     <div className="extraction">
       <p className="untrusted">
-        Untrusted page content — {read.content.chars} characters
-        {read.content.truncated ? ` of ${read.content.totalChars}, truncated` : ""}
+        Untrusted page content — {page.chars} characters
+        {page.truncated ? ` of ${page.totalChars}, truncated` : ""}
       </p>
-      <pre>{read.content.markdown}</pre>
-      {read.content.nextOffset !== undefined && (
-        <button type="button" className="extract" onClick={() => void onExtract(read.url, read.content.nextOffset)}>
+      <pre>{page.markdown}</pre>
+      {page.nextOffset !== undefined && (
+        <button type="button" className="extract" onClick={() => void onExtract(read.url, page.nextOffset)}>
           Read on
         </button>
       )}

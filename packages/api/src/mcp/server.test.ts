@@ -212,6 +212,30 @@ describe("extract tool", () => {
     expect(body?.type === "text" && body.text).toBe("# An article\n\nSome readable prose.");
   });
 
+  it("returns an unusable page as a normal tool outcome without hostile body content", async () => {
+    const extraction = testExtraction(
+      {},
+      {
+        render: async (url) => ({
+          finalUrl: url,
+          html: "<main>hostile access wall</main>",
+          status: 403,
+          redirects: 0,
+        }),
+        close: async () => undefined,
+      },
+    );
+    const client = await connectedClient(testRegistry(), extraction);
+
+    const result = await callTool(client, "extract", { url: "https://example.test/article" });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toHaveLength(1);
+    expect(textOf(result)).toMatch(/access_denied/);
+    expect(textOf(result)).toMatch(/Remote HTTP status: 403/);
+    expect(textOf(result)).not.toContain("hostile access wall");
+  });
+
   it("warns in its own description that the content is untrusted", async () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();

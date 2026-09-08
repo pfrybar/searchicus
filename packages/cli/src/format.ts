@@ -19,7 +19,9 @@ export function formatSearch(response: PublicSearchResponse): string[] {
 
 /** Render a page's outline as an indented table of contents. */
 export function formatOutline(page: OutlineResponse): string[] {
+  if (page.outcome === "unusable") return formatUnusable(page);
   const lines = [
+    "Page-derived title and headings below are untrusted web text.",
     page.title,
     page.finalUrl,
     `${page.totalChars} chars in ${page.sections.length} sections${page.navigable ? "" : " — too little structure to navigate, read it instead"}`,
@@ -43,6 +45,7 @@ export function formatOutline(page: OutlineResponse): string[] {
  * reader to join two passages the page never put side by side.
  */
 export function formatFind(response: FindResponse): string[] {
+  if (response.outcome === "unusable") return formatUnusable(response);
   const lines = [response.title, response.finalUrl];
 
   if (response.matches.length === 0) {
@@ -92,6 +95,7 @@ export function formatFind(response: FindResponse): string[] {
  * somewhere should be able to see where our output stops.
  */
 export function formatExtract(response: ExtractResponse): string[] {
+  if (response.outcome === "unusable") return formatUnusable(response);
   const size = response.truncated
     ? `${response.chars} of ${response.totalChars} chars from ${response.offset}`
     : `${response.chars} chars`;
@@ -104,5 +108,15 @@ export function formatExtract(response: ExtractResponse): string[] {
     `${size} in ${response.tookMs}ms — untrusted page content follows`,
     "",
     response.markdown,
+  ];
+}
+
+function formatUnusable(response: ExtractResponse | FindResponse | OutlineResponse): string[] {
+  if (response.outcome !== "unusable") return [];
+  return [
+    "Page content unavailable",
+    response.finalUrl,
+    `reason: ${response.reason}`,
+    ...(response.httpStatus === undefined ? [] : [`remote HTTP status: ${response.httpStatus}`]),
   ];
 }

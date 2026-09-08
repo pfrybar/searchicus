@@ -82,9 +82,15 @@ export function SearchDetailPage({ searchId }: { searchId: string }) {
                 <p className="meta">
                   <code>{result.ref}</code> · score {result.score.toFixed(4)} · shown from {result.bestSource}
                   {extraction && (
-                    <span className={extraction.status === "completed" ? "good" : "bad"}>
+                    <span
+                      className={
+                        extraction.status === "completed" ? "good" : extraction.status === "unusable" ? "warn" : "bad"
+                      }
+                    >
                       {" "}
-                      · extracted{extraction.status === "failed" ? ` (${extraction.errorKind ?? "failed"})` : ""}
+                      · {extraction.status === "completed" ? "extracted" : extraction.status}
+                      {extraction.status === "failed" ? ` (${extraction.errorKind ?? "failed"})` : ""}
+                      {extraction.status === "unusable" ? ` (${extraction.unusableKind ?? "unknown"})` : ""}
                     </span>
                   )}
                 </p>
@@ -146,12 +152,24 @@ export function SearchDetailPage({ searchId }: { searchId: string }) {
           <ul className="extraction-list">
             {detail.extractionDetails.map((extraction, index) => (
               <li key={`${extraction.createdAt}-${index}`}>
-                <span className={extraction.status === "completed" ? "chip ok" : "chip bad"}>{extraction.status}</span>{" "}
+                <span
+                  className={
+                    extraction.status === "completed"
+                      ? "chip ok"
+                      : extraction.status === "unusable"
+                        ? "chip warn"
+                        : "chip bad"
+                  }
+                >
+                  {extraction.status}
+                </span>{" "}
                 {extraction.title ?? extraction.requestedUrl}
                 <p className="meta">
                   {extraction.finalUrl ?? extraction.requestedUrl} · {extraction.tookMs}ms
                   {extraction.chars !== null && ` · ${extraction.chars} chars`}
                   {extraction.errorKind && <span className="bad"> · {extraction.errorKind}</span>}
+                  {extraction.unusableKind && <span className="warn"> · {extraction.unusableKind}</span>}
+                  {extraction.httpStatus !== null && ` · remote HTTP ${extraction.httpStatus}`}
                 </p>
               </li>
             ))}
