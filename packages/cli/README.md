@@ -4,15 +4,16 @@ The `searchicus` command-line interface — a thin adapter over the `core`
 package's `SearchEngineRegistry`. It uses the registered browser-backed
 engines; see the repo root `README.md` for adding another one.
 
-The CLI builds its registry with `createBrowserRegistry("cli")`, so it gets
-its own Chromium profile at `.searchicus/profile/cli/` and shares the local
-archive at `.searchicus/searchicus.sqlite` with other surfaces. Set
-`paths.dataDir` to relocate both, or `paths.profileDir` /
-`paths.storePath` to override one component; `archive.enabled: false`
-disables archival. Because a search can return results while its browser
-session is still running, the CLI drains sessions and queued archive writes
-before exiting rather than killing them mid-flight — so the process may stay
-alive briefly after printing results.
+The CLI builds its registry with `createBrowserRegistry("cli", config)`, so it
+gets its own Chromium profile at `.searchicus/profile/cli/` and shares the
+local archive at `.searchicus/searchicus.sqlite` with other surfaces. Set
+`paths.dataDir` to relocate both, or `paths.profileDir` / `paths.storePath` to
+override one component; relative values resolve against the application root,
+never the working directory. `archive.enabled: false` disables archival.
+Because a search can return results while its browser session is still
+running, the CLI drains sessions and queued archive writes before exiting
+rather than killing them mid-flight — so the process may stay alive briefly
+after printing results.
 
 ## Usage
 

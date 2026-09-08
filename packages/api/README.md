@@ -29,18 +29,22 @@ npm run build -w @searchicus/api && npm run start -w @searchicus/api
 ```
 
 Listens on `server.port` (default `3000`) at `server.host` (default
-`127.0.0.1`). Loopback
-is the default because this server has no authentication and its dashboard
-endpoints serve every query ever made through it; set `HOST=0.0.0.0` to accept
-connections from elsewhere. The Docker image sets that already, since a
-container listening only on its own loopback cannot be reached at all.
+`127.0.0.1`). Loopback is the default because this server has no
+authentication and its dashboard endpoints serve every query ever made
+through it; set `server.host: 0.0.0.0` — or `SEARCHICUS_SERVER_HOST=0.0.0.0` —
+to accept connections from elsewhere. The Docker image sets that already,
+since a container listening only on its own loopback cannot be reached at all.
 
-The server builds its registry with `createBrowserRegistry("api")`, giving it
-its own Chromium profile at `.searchicus/profile/api/` and a shared archive at
-`.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or
-use `paths.profileDir` / `paths.storePath` for a component
-override. `archive.enabled: false` disables best-effort archival. Chromium
-launches lazily — nothing starts until an engine actually asks for a browser.
+The server reads the whole configuration once at startup with `loadConfig()`,
+reports what it is running on, and exits if any value is invalid rather than
+starting on a setting nobody wrote. It builds its registry with
+`createBrowserRegistry("api", config)`, giving it its own Chromium profile at
+`.searchicus/profile/api/` and a shared archive at
+`.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or use
+`paths.profileDir` / `paths.storePath` for a component override; relative
+values resolve against the application root, never the working directory.
+`archive.enabled: false` disables best-effort archival. Chromium launches
+lazily — nothing starts until an engine actually asks for a browser.
 
 On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits
 for in-flight browser sessions and queued archive writes to finish, since a
@@ -55,7 +59,8 @@ serve the whole application same-origin — no reverse proxy, no CORS, and no
 build-time API URL baked into the bundle.
 
 - `server.ui: false` disables it.
-- `server.uiDir` points at a different build directory.
+- `server.uiDir` points at a different build directory. A relative value
+  resolves against the application root, like every other path setting.
 - With no build present, `/` simply 404s and the API is unaffected.
 
 There is deliberately **no SPA history fallback**: the UI is a single page

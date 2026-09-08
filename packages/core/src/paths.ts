@@ -78,23 +78,36 @@ export interface PathsConfig {
 }
 
 /**
+ * Resolves one configured path against the application root.
+ *
+ * The rule for every path setting, not just the state root: an absolute value
+ * is taken as written, and a relative one hangs off the application root
+ * rather than the working directory. That is the reason applicationRoot()
+ * exists — `npm run -w @searchicus/api` sets the working directory to
+ * `packages/api`, so a relative value read against it would put the API's
+ * profile and archive somewhere the CLI never looks, and move them again
+ * depending on how the process was started.
+ */
+export function resolveApplicationPath(value: string): string {
+  return path.resolve(applicationRoot(), value);
+}
+
+/**
  * Resolves the root for all persistent searchicus state. Change this one
  * value to move both Chromium profiles and the SQLite archive together.
- *
- * A relative value resolves against the application root rather than the
- * working directory, for the reason applicationRoot() exists: `npm run -w`
- * would otherwise give each package its own state tree.
  */
 export function resolveDataDir(paths: PathsConfig): string {
-  return path.resolve(applicationRoot(), paths.dataDir);
+  return resolveApplicationPath(paths.dataDir);
 }
 
 /** Resolves one surface's Chromium user-data directory. */
 export function resolveProfileDir(paths: PathsConfig, surface: string): string {
-  return paths.profileDir ?? path.join(resolveDataDir(paths), DEFAULT_PROFILE_ROOT, surface);
+  if (paths.profileDir === null) return path.join(resolveDataDir(paths), DEFAULT_PROFILE_ROOT, surface);
+  return resolveApplicationPath(paths.profileDir);
 }
 
 /** Resolves the shared application archive path, separate from Chromium data. */
 export function resolveStorePath(paths: PathsConfig): string {
-  return paths.storePath ?? path.join(resolveDataDir(paths), DEFAULT_STORE_FILENAME);
+  if (paths.storePath === null) return path.join(resolveDataDir(paths), DEFAULT_STORE_FILENAME);
+  return resolveApplicationPath(paths.storePath);
 }

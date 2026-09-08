@@ -12,9 +12,10 @@
 
 # paths:
 #   # Root for all persistent state: the archive and one Chromium profile per
-#   # surface. Relative values resolve against the application root, never the
-#   # working directory, so every surface reaches the same state whatever
-#   # `npm run -w` sets the working directory to.
+#   # surface. Every path setting here follows one rule: an absolute value is
+#   # taken as written, and a relative one resolves against the application
+#   # root, never the working directory — so every surface reaches the same
+#   # state whatever `npm run -w` sets the working directory to.
 #   dataDir: .searchicus
 #   # Overrides for the two things below the root. Unset derives them.
 #   profileDir: null          # <dataDir>/profile/<surface>
@@ -33,7 +34,10 @@
 #   mcp: true
 #   # Serve the built web UI, when a build is actually present.
 #   ui: true
+#   # Relative to the application root, like every other path setting.
 #   uiDir: null               # packages/ui/dist
+#   # A byte size (64kb, 1.5mb) or a plain count. Checked at startup rather
+#   # than by express on the first oversized request.
 #   jsonBodyLimit: 64kb
 
 # log:
@@ -109,4 +113,6 @@
 #   # six months ago answers nothing.
 #   metricsWindow: 500
 #   searchPageSize: 50
-#   maxLimit: 2000            # ceiling on both, so a caller cannot ask for it all
+#   # The ceiling on both, so a caller cannot ask for it all. It covers the
+#   # two windows above as well: lowering it lowers them with it.
+#   maxLimit: 2000

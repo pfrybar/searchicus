@@ -98,6 +98,28 @@ const positiveInt = () => z.preprocess(coerceNumber, z.number().int().positive()
 const nonNegativeInt = () => z.preprocess(coerceNumber, z.number().int().min(0));
 const fraction = () => z.preprocess(coerceNumber, z.number().min(0).max(1));
 const nonEmptyString = () => z.string().trim().min(1);
+
+/**
+ * A byte size as express reads it: "64kb", "1.5mb", or a plain byte count.
+ *
+ * Checked here rather than left to `express.json()`, which would otherwise
+ * throw `option limit "not-a-size" is invalid` from inside the app factory —
+ * after the configuration has been reported as valid, and past the point
+ * where anything can say which setting or which layer produced it.
+ */
+const BYTE_SIZE = /^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb|pb)?$/i;
+const byteSize = () =>
+  z
+    .string()
+    .trim()
+    .refine(
+      (value) => {
+        const match = BYTE_SIZE.exec(value);
+        // Zero is a valid size and a useless limit: it refuses every body.
+        return match !== null && Number(match[1]) > 0;
+      },
+      { error: 'expected a byte size such as "64kb", "1.5mb" or "65536"' },
+    );
 const optionalPath = () => z.preprocess(coerceOptional, z.string().trim().min(1).nullable());
 
 /**
@@ -124,7 +146,7 @@ export const SearchicusConfigSchema = z.strictObject({
     /** Where the UI build is read from. Null uses the packaged location. */
     uiDir: optionalPath(),
     /** Largest request body the API will accept, as an express byte string. */
-    jsonBodyLimit: nonEmptyString(),
+    jsonBodyLimit: byteSize(),
   }),
   log: z.strictObject({
     level: z.enum(["debug", "info", "warn", "error", "silent"]),
@@ -472,10 +494,10 @@ function describeIssues(error: z.ZodError, sources: Map<string, string>, file: s
 /**
  * Turns validated settings into the shapes the application uses.
  *
- * Only two values are derived rather than read, and both are here so that
- * neither happens twice: the port list becomes the set the address policy
- * tests against, and the document cap is held at or below the transfer
- * budget it is fetched within.
+ * Nothing here is read from a source; these are the derivations, gathered so
+ * that none of them happens twice: the port list becomes the set the address
+ * policy tests against, and the two ceilings are applied to the values they
+ * are ceilings over.
  */
 function finalize(parsed: ParsedConfig): SearchicusConfig {
   return {
@@ -485,7 +507,38 @@ function finalize(parsed: ParsedConfig): SearchicusConfig {
       maxDocumentBytes: documentCap(parsed.extract.maxDocumentBytes, parsed.extract.maxBytes),
       allowedPorts: new Set(parsed.extract.allowedPorts),
     },
+    dashboard: dashboardWindows(parsed.dashboard),
   };
+}
+
+/**
+ * The dashboard windows, held under the ceiling documented to cover them.
+ *
+ * `maxLimit` bounds what a caller may ask the process to read, and the two
+ * window sizes are what it reads when a caller asks for nothing. A default
+ * above the ceiling would be the one request nobody could make — the
+ * dashboard's own — so an operator who lowered `maxLimit` to protect the
+ * archive would still have every unqualified query read past it.
+ */
+function dashboardWindows(dashboard: ParsedConfig["dashboard"]): DashboardConfig {
+  return {
+    maxLimit: dashboard.maxLimit,
+    metricsWindow: underCeiling("dashboard.metricsWindow", dashboard.metricsWindow, dashboard.maxLimit),
+    searchPageSize: underCeiling("dashboard.searchPageSize", dashboard.searchPageSize, dashboard.maxLimit),
+  };
+}
+
+/** Clamps one window to the ceiling, saying so rather than silently differing. */
+function underCeiling(setting: string, requested: number, ceiling: number): number {
+  if (requested <= ceiling) return requested;
+
+  log.warn("dashboard window lowered to the configured ceiling", {
+    setting,
+    requested,
+    applied: ceiling,
+    ceiling: "dashboard.maxLimit",
+  });
+  return ceiling;
 }
 
 /**

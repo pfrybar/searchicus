@@ -118,6 +118,35 @@ describe("loadConfig", () => {
 
     expect(config.extract.maxDocumentBytes).toBe(1_000_000);
   });
+
+  it("holds the dashboard windows under the ceiling documented to cover them", () => {
+    // maxLimit is written down as the ceiling on both windows, but it only
+    // ever clamped a caller-supplied limit. The dashboard supplies none, so
+    // an operator who lowered maxLimit to protect the archive still had every
+    // unqualified query read past it.
+    const file = configFile("dashboard:\n  metricsWindow: 5000\n  searchPageSize: 5000\n  maxLimit: 1000\n");
+    const config = loadConfig({ env: {}, file });
+
+    expect(config.dashboard).toEqual({ metricsWindow: 1_000, searchPageSize: 1_000, maxLimit: 1_000 });
+  });
+
+  it("leaves dashboard windows below the ceiling alone", () => {
+    const file = configFile("dashboard:\n  metricsWindow: 800\n  maxLimit: 1000\n");
+    const config = loadConfig({ env: {}, file });
+
+    expect(config.dashboard).toEqual({ metricsWindow: 800, searchPageSize: 50, maxLimit: 1_000 });
+  });
+
+  it("accepts a request body limit in any form express reads", () => {
+    for (const [written, expected] of [
+      ["1.5mb", "1.5mb"],
+      ["65536", "65536"],
+      ["  256kb  ", "256kb"],
+    ]) {
+      const config = loadConfig({ env: { SEARCHICUS_SERVER_JSON_BODY_LIMIT: written as string }, file: null });
+      expect(config.server.jsonBodyLimit).toBe(expected);
+    }
+  });
 });
 
 describe("loadConfig failures", () => {
@@ -158,6 +187,20 @@ describe("loadConfig failures", () => {
     expect(error).toBeInstanceOf(ConfigError);
     expect(error?.message).toMatch(/SEARCHICUS_SERVER_PORT/);
     expect(error?.message).toMatch(/SEARCHICUS_BROWSER_MAX_PAGES/);
+  });
+
+  it("rejects a request body limit express would reject later", () => {
+    // express.json() would otherwise throw `option limit "not-a-size" is
+    // invalid` from inside the app factory: after this configuration had been
+    // reported as valid, and past anything that could name the layer it came
+    // from. A zero is refused for the same reason it is useless — it rejects
+    // every body — rather than being accepted as a size and quietly meaning
+    // "no requests".
+    for (const value of ["not-a-size", "64kbs", "64 kilobytes", "0", "0kb", "-1mb"]) {
+      expect(() => loadConfig({ env: { SEARCHICUS_SERVER_JSON_BODY_LIMIT: value }, file: null }), value).toThrow(
+        /server\.jsonBodyLimit .*expected a byte size/s,
+      );
+    }
   });
 
   it("refuses a file that is not a mapping", () => {

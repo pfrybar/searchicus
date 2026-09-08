@@ -91,6 +91,10 @@ trusting changes to `browser.ts`, `browser/session.ts`, or
 - Operator values only. Tuned algorithm constants stay in the module that owns
   them, and so do caller-facing bounds wired into the request schemas or MCP
   tool descriptions.
+- A path setting is resolved with `resolveApplicationPath()`, never used raw
+  and never resolved against the working directory: `npm run -w` would give
+  each package its own state. A setting that bounds another is applied where
+  the tree is finalized, so the value the process reports is the one in force.
 - When a shared type, schema, or plugin contract changes, update every affected
   adapter, test, and package README in the same change.
 
