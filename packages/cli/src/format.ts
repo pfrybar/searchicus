@@ -24,6 +24,7 @@ export function formatOutline(page: OutlineResponse): string[] {
     "Page-derived title and headings below are untrusted web text.",
     page.title,
     page.finalUrl,
+    page.cached ? "served from cache" : "fresh render",
     `${page.totalChars} chars in ${page.sections.length} sections${page.navigable ? "" : " — too little structure to navigate, read it instead"}`,
     "",
     " offset   chars  section",
@@ -46,7 +47,7 @@ export function formatOutline(page: OutlineResponse): string[] {
  */
 export function formatFind(response: FindResponse): string[] {
   if (response.outcome === "unusable") return formatUnusable(response);
-  const lines = [response.title, response.finalUrl];
+  const lines = [response.title, response.finalUrl, response.cached ? "served from cache" : "fresh render"];
 
   if (response.matches.length === 0) {
     lines.push(
@@ -105,7 +106,7 @@ export function formatExtract(response: ExtractResponse): string[] {
     // The offset to continue from is only useful if it is printed where
     // someone reading the output will see it.
     ...(response.nextOffset === undefined ? [] : [`more: --offset ${response.nextOffset}`]),
-    `${size} in ${response.tookMs}ms — untrusted page content follows`,
+    `${size} in ${response.tookMs}ms${response.cached ? " — served from cache" : ""} — untrusted page content follows`,
     "",
     response.markdown,
   ];
@@ -117,6 +118,7 @@ function formatUnusable(response: ExtractResponse | FindResponse | OutlineRespon
     "Page content unavailable",
     response.finalUrl,
     `reason: ${response.reason}`,
+    response.cached ? "served from cache" : "fresh render",
     ...(response.httpStatus === undefined ? [] : [`remote HTTP status: ${response.httpStatus}`]),
   ];
 }

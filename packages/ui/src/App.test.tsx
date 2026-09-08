@@ -93,6 +93,7 @@ describe("App", () => {
           navigable: true,
           sections: [{ heading: "Care", depth: 0, offset: 0, chars: 180 }],
           tookMs: 20,
+          cached: true,
           untrusted: true,
         },
       },
@@ -107,6 +108,7 @@ describe("App", () => {
           totalChars: 200,
           navigable: true,
           tookMs: 10,
+          cached: true,
           untrusted: true,
           matches: [
             {
@@ -131,6 +133,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^outline$/i }));
     expect(await screen.findByText("Care", { exact: false })).toBeInTheDocument();
     expect(screen.getByText(/untrusted page title and headings/i)).toBeInTheDocument();
+    expect(screen.getByText(/served from cache/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^find$/i }));
     expect(await screen.findByText("Cats need care.", { exact: false })).toBeInTheDocument();
@@ -154,6 +157,7 @@ describe("App", () => {
           totalChars: 47,
           offset: 0,
           tookMs: 800,
+          cached: true,
           untrusted: true,
         },
       },
@@ -184,6 +188,7 @@ describe("App", () => {
           finalUrl: "https://example.com/cats",
           httpStatus: 403,
           tookMs: 20,
+          cached: true,
         },
       },
     ]);
@@ -195,7 +200,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /extract/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Page content unavailable");
-    expect(screen.getByRole("alert")).toHaveTextContent("access_denied · remote HTTP 403");
+    expect(screen.getByRole("alert")).toHaveTextContent("access_denied · remote HTTP 403 · served from cache");
     expect(screen.queryByText(/untrusted page content/i)).not.toBeInTheDocument();
   });
 

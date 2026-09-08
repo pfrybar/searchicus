@@ -366,6 +366,11 @@ stable `reason`, final URL, optional remote `httpStatus`, and timing — never t
 error or challenge page text. Tiny and flat pages remain usable; size, heading
 count, generic error words, and a `find` miss do not make this decision.
 
+Every response also has `cached`. It is true only when the request reused an
+in-memory parsed page without rendering or parsing again. It does not say the
+origin served a fresh response; cache entries may be up to the configured TTL
+old.
+
 A `text/plain` response is already text to read, not HTML to extract. Chromium
 decodes its declared charset before the renderer captures it; searchicus keeps
 the resulting body as Markdown, normalizing line endings without turning a

@@ -130,7 +130,7 @@ export class ExtractionService {
 
       const { page, cached } = await this.#loadPage(url, controller);
       if (page.assessment.outcome === "unusable") {
-        const response = unusableResponse(request.url, page, Date.now() - started);
+        const response = unusableResponse(request.url, page, cached, Date.now() - started);
         this.#recordUnusable(base, page, cached, response.tookMs, "extract");
         return response;
       }
@@ -156,6 +156,7 @@ export class ExtractionService {
         offset: window.offset,
         ...(window.nextOffset === undefined ? {} : { nextOffset: window.nextOffset }),
         tookMs: Date.now() - started,
+        cached,
         untrusted: true,
       };
 
@@ -256,7 +257,7 @@ export class ExtractionService {
       await assertPublicHost(url.hostname, this.#lookup);
       const { page, cached } = await this.#loadPage(url, controller);
       if (page.assessment.outcome === "unusable") {
-        const response = unusableResponse(request.url, page, Date.now() - started);
+        const response = unusableResponse(request.url, page, cached, Date.now() - started);
         this.#recordUnusable(base, page, cached, response.tookMs, "find");
         return response;
       }
@@ -277,6 +278,7 @@ export class ExtractionService {
         navigable,
         matches,
         tookMs: Date.now() - started,
+        cached,
         untrusted: true,
       };
 
@@ -361,7 +363,7 @@ export class ExtractionService {
       await assertPublicHost(url.hostname, this.#lookup);
       const { page, cached } = await this.#loadPage(url, controller);
       if (page.assessment.outcome === "unusable") {
-        const response = unusableResponse(request.url, page, Date.now() - started);
+        const response = unusableResponse(request.url, page, cached, Date.now() - started);
         this.#recordUnusable(base, page, cached, response.tookMs, "outline");
         return response;
       }
@@ -378,6 +380,7 @@ export class ExtractionService {
         navigable,
         sections,
         tookMs: Date.now() - started,
+        cached,
         untrusted: true,
       };
     } catch (err) {
@@ -548,7 +551,12 @@ export class ExtractionService {
   }
 }
 
-function unusableResponse(requestedUrl: string, page: CachedPage, tookMs: number): UnusablePageResponse {
+function unusableResponse(
+  requestedUrl: string,
+  page: CachedPage,
+  cached: boolean,
+  tookMs: number,
+): UnusablePageResponse {
   if (page.assessment.outcome !== "unusable") throw new Error("Expected an unusable page assessment");
   return {
     outcome: "unusable",
@@ -557,6 +565,7 @@ function unusableResponse(requestedUrl: string, page: CachedPage, tookMs: number
     finalUrl: page.finalUrl,
     ...(page.status === undefined ? {} : { httpStatus: page.status }),
     tookMs,
+    cached,
   };
 }
 

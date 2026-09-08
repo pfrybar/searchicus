@@ -242,6 +242,7 @@ function formatUnusable(response: ExtractResponse | FindResponse | OutlineRespon
     "Page content was not returned because the rendered page was unusable.",
     `URL: ${response.finalUrl}`,
     `Reason: ${response.reason}`,
+    `Page source: ${response.cached ? "in-memory cache" : "fresh render"}`,
     ...(response.httpStatus === undefined ? [] : [`Remote HTTP status: ${response.httpStatus}`]),
   ].join("\n");
 }
@@ -276,6 +277,7 @@ function formatExtract(response: UsableExtractResponse): string {
     `Reading: offset ${response.offset}`,
     "Window: section-aware; it can be shorter than maxChars to preserve section boundaries.",
     `Returned: ${response.chars} of ${response.totalChars} characters`,
+    `Page source: ${response.cached ? "in-memory cache" : "fresh render"}`,
     response.nextOffset === undefined
       ? "More content: no"
       : `More content: yes — continue with offset ${response.nextOffset}`,
@@ -288,6 +290,7 @@ function formatFindSummary(response: UsableFindResponse): string {
     `Page: ${response.title}`,
     `URL: ${response.finalUrl}`,
     `Page size: ${response.totalChars} characters`,
+    `Page source: ${response.cached ? "in-memory cache" : "fresh render"}`,
     pageShape(response.navigable),
     `Matches: ${response.matches.length}`,
     "Untrusted page text follows in one block per match.",
@@ -302,6 +305,7 @@ function formatFindMiss(response: UsableFindResponse): string {
     `Page: ${response.title}`,
     `URL: ${response.finalUrl}`,
     `Page size: ${response.totalChars} characters`,
+    `Page source: ${response.cached ? "in-memory cache" : "fresh render"}`,
     pageShape(response.navigable),
     "Matches: 0",
     "",
@@ -331,6 +335,7 @@ function formatOutline(response: UsableOutlineResponse): string {
     `Page: ${response.title}`,
     `URL: ${response.finalUrl}`,
     `Page size: ${response.totalChars} characters`,
+    `Page source: ${response.cached ? "in-memory cache" : "fresh render"}`,
     pageShape(response.navigable),
     `Sections: ${response.sections.length}`,
     "Page-derived headings below are untrusted web text.",

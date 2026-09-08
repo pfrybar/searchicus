@@ -388,6 +388,7 @@ describe("ExtractionService usability outcomes", () => {
     expect(results).toEqual(
       results.map(() => expect.objectContaining({ outcome: "unusable", reason: "access_denied", httpStatus: 403 })),
     );
+    expect(results.map((result) => result.cached)).toEqual([false, true, true]);
     expect(renderer.rendered).toEqual([PAGE_URL]);
     expect(parser).not.toHaveBeenCalled();
 
@@ -478,9 +479,12 @@ describe("ExtractionService usability outcomes", () => {
     expect(extracted).toMatchObject({
       title: "",
       markdown: "# Wire protocol\n\nPacket framing uses a fixed header.",
+      cached: false,
     });
     expect(outlined.sections.map((section) => section.heading)).toEqual(["Wire protocol"]);
+    expect(outlined.cached).toBe(true);
     expect(found.matches[0]?.markdown).toContain("Packet framing");
+    expect(found.cached).toBe(true);
     expect(renderer.rendered).toEqual([PAGE_URL]);
   });
 });

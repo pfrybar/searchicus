@@ -206,6 +206,7 @@ describe("extract tool", () => {
     expect(textOf(result)).toMatch(/Page: An article/);
     expect(textOf(result)).toMatch(/Reading: offset 0/);
     expect(textOf(result)).toMatch(/Returned: 34 of 34 characters/);
+    expect(textOf(result)).toMatch(/Page source: fresh render/);
     expect(textOf(result)).toMatch(/More content: no/);
     expect(textOf(result)).toMatch(/untrusted web text/i);
     const body = result.content[1];
@@ -232,6 +233,7 @@ describe("extract tool", () => {
     expect(result.isError).toBeFalsy();
     expect(result.content).toHaveLength(1);
     expect(textOf(result)).toMatch(/access_denied/);
+    expect(textOf(result)).toMatch(/Page source: fresh render/);
     expect(textOf(result)).toMatch(/Remote HTTP status: 403/);
     expect(textOf(result)).not.toContain("hostile access wall");
   });

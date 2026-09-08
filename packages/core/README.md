@@ -182,6 +182,8 @@ signature matches. The public `usable | unusable` union prevents adapters from
 mistaking a challenge or 404 body for page content while keeping this distinct
 from thrown transport/render/parser failures. Small positive word counts, flat
 structure, generic error words, and `find` misses are not rejection signals.
+Every response has `cached`, true only when that request reused an in-memory
+parsed page without a render or parse; it is not an origin freshness signal.
 
 A `text/plain` render bypasses Defuddle: Chromium has already decoded its
 charset, so the captured body is retained as Markdown with normalized line

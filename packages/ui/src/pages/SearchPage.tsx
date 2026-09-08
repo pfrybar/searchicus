@@ -201,6 +201,7 @@ function ReadPanel({
         <p>
           {read.content.reason}
           {read.content.httpStatus === undefined ? "" : ` · remote HTTP ${read.content.httpStatus}`}
+          {read.content.cached ? " · served from cache" : ""}
         </p>
       </div>
     );
@@ -212,6 +213,7 @@ function ReadPanel({
         <p className="untrusted">Untrusted page title and headings</p>
         <p className="meta">
           {read.content.title} · {read.content.totalChars} characters
+          {read.content.cached ? " · served from cache" : ""}
         </p>
         <ol className="outline-list">
           {read.content.sections.map((section) => (
@@ -230,7 +232,10 @@ function ReadPanel({
   if (read.kind === "find") {
     return (
       <div className="extraction">
-        <p className="untrusted">Untrusted page content — {read.content.matches.length} matching sections</p>
+        <p className="untrusted">
+          Untrusted page content — {read.content.matches.length} matching sections
+          {read.content.cached ? " · served from cache" : ""}
+        </p>
         {read.content.matches.length === 0 ? (
           <p className="meta">No matching sections found.</p>
         ) : (
@@ -253,6 +258,7 @@ function ReadPanel({
       <p className="untrusted">
         Untrusted page content — {page.chars} characters
         {page.truncated ? ` of ${page.totalChars}, truncated` : ""}
+        {page.cached ? " · served from cache" : ""}
       </p>
       <pre>{page.markdown}</pre>
       {page.nextOffset !== undefined && (
