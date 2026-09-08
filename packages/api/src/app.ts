@@ -170,7 +170,7 @@ export function createApp(
     // its own limit was the reason. Left to the branch below it became a 500,
     // which reads as "this server is broken" rather than "send less".
     if (isTooLargeError(err)) {
-      res.status(413).json({ error: `Request body must not exceed ${jsonBodyLimit}.` });
+      res.status(413).json({ error: `Request body must not exceed ${describeLimit(jsonBodyLimit)}.` });
       return;
     }
 
@@ -179,6 +179,16 @@ export function createApp(
   });
 
   return app;
+}
+
+/**
+ * The configured body limit, as a caller should read it.
+ *
+ * `64kb` says its own unit; a plain byte count does not, and "must not exceed
+ * 200" leaves the caller guessing at which unit 200 is.
+ */
+function describeLimit(limit: string): string {
+  return /^\d+$/.test(limit.trim()) ? `${limit.trim()} bytes` : limit;
 }
 
 /**

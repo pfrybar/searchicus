@@ -106,20 +106,36 @@ const nonEmptyString = () => z.string().trim().min(1);
  * throw `option limit "not-a-size" is invalid` from inside the app factory —
  * after the configuration has been reported as valid, and past the point
  * where anything can say which setting or which layer produced it.
+ *
+ * A plain count is a size, so YAML's `65536` is read as one rather than
+ * refused for being a number: an operator who writes the documented form
+ * without quotes meant the documented thing. A bare fraction is not a size,
+ * though — 1.5 bytes rounds to one — so `1.5` is an error that asks for the
+ * unit the writer plainly had in mind.
  */
 const BYTE_SIZE = /^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb|pb)?$/i;
+
+function coerceByteSize(value: unknown): unknown {
+  return typeof value === "number" ? String(value) : value;
+}
+
 const byteSize = () =>
-  z
-    .string()
-    .trim()
-    .refine(
-      (value) => {
-        const match = BYTE_SIZE.exec(value);
-        // Zero is a valid size and a useless limit: it refuses every body.
-        return match !== null && Number(match[1]) > 0;
-      },
-      { error: 'expected a byte size such as "64kb", "1.5mb" or "65536"' },
-    );
+  z.preprocess(
+    coerceByteSize,
+    z
+      .string()
+      .trim()
+      .refine(
+        (value) => {
+          const match = BYTE_SIZE.exec(value);
+          if (match === null) return false;
+          const size = Number(match[1]);
+          // Zero is a valid size and a useless limit: it refuses every body.
+          return match[2] === undefined ? Number.isInteger(size) && size >= 1 : size > 0;
+        },
+        { error: 'expected a byte size such as "64kb", "1.5mb" or "65536"' },
+      ),
+  );
 const optionalPath = () => z.preprocess(coerceOptional, z.string().trim().min(1).nullable());
 
 /**

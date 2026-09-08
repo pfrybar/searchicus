@@ -137,6 +137,15 @@ describe("loadConfig", () => {
     expect(config.dashboard).toEqual({ metricsWindow: 800, searchPageSize: 50, maxLimit: 1_000 });
   });
 
+  it("reads an unquoted YAML byte count as the size it plainly is", () => {
+    // `jsonBodyLimit: 65536` is the documented plain-count form written the
+    // way YAML writes numbers. Refusing it for arriving as a number would be
+    // the schema disagreeing with its own documentation.
+    const file = configFile("server:\n  jsonBodyLimit: 65536\n");
+
+    expect(loadConfig({ env: {}, file }).server.jsonBodyLimit).toBe("65536");
+  });
+
   it("accepts a request body limit in any form express reads", () => {
     for (const [written, expected] of [
       ["1.5mb", "1.5mb"],
@@ -196,7 +205,9 @@ describe("loadConfig failures", () => {
     // from. A zero is refused for the same reason it is useless — it rejects
     // every body — rather than being accepted as a size and quietly meaning
     // "no requests".
-    for (const value of ["not-a-size", "64kbs", "64 kilobytes", "0", "0kb", "-1mb"]) {
+    // A bare fraction is refused with them: 1.5 bytes rounds to one, so it is
+    // never what was meant — the writer wanted a unit.
+    for (const value of ["not-a-size", "64kbs", "64 kilobytes", "0", "0kb", "-1mb", "1.5"]) {
       expect(() => loadConfig({ env: { SEARCHICUS_SERVER_JSON_BODY_LIMIT: value }, file: null }), value).toThrow(
         /server\.jsonBodyLimit .*expected a byte size/s,
       );
