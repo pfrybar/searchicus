@@ -94,7 +94,7 @@ export interface CreateAppOptions {
  * (see app.test.ts) instead of depending on module-level state. Its default
  * is core's browser-free registry, which reports a generic unavailable search
  * when every browser-backed engine fails. The executable server entry point
- * injects createBrowserRegistry("api").
+ * injects createBrowserRegistry("api", config).
  */
 export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
@@ -194,8 +194,8 @@ function describeLimit(limit: string): string {
 /**
  * One line per request, once the response is done.
  *
- * Level follows the status, so `SEARCHICUS_LOG=warn` leaves a quiet server
- * quiet and still shows every 4xx and 5xx. Query text is deliberately absent:
+ * Level follows the status, so `log.level: warn` leaves a quiet server quiet
+ * and still shows every 4xx and 5xx. Query text is deliberately absent:
  * it lives in the body, it is the sensitive part of this system, and logs get
  * copied and shipped far more casually than a database file does. The MCP
  * tool logger records it at debug for the same reason.
