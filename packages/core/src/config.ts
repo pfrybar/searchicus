@@ -48,9 +48,10 @@ export const ENV_PREFIX = "SEARCHICUS";
 /**
  * The vocabulary for boolean values, shared by the file and the environment.
  *
- * Reading the same word two ways in one program is its own bug: `STORE=0`
- * once left archiving on, because that switch understood only the literal
- * string "false" while `MCP_ENABLED=0` beside it meant off. One list, and
+ * Reading the same word two ways in one program is its own bug. Before this
+ * tree existed each switch parsed its own variable, and the one behind
+ * `archive.enabled` understood only the literal string "false" — so a `0`
+ * that switched off the one beside it left archiving on. One list now, and
  * anything outside it is an error rather than a silent no.
  */
 const AFFIRMATIVE = new Set(["true", "1", "yes", "on"]);
