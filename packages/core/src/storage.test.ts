@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchArchiveRecord } from "./archive.js";
 import { DEFAULT_CONFIG_INPUT } from "./config.js";
 import { DEFAULT_DASHBOARD_CONFIG } from "./insights.js";
-import { resolveDataDir, resolveProfileDir, resolveStorePath, type PathsConfig } from "./paths.js";
+import { applicationRoot, resolveDataDir, resolveProfileDir, resolveStorePath, type PathsConfig } from "./paths.js";
 import { ARCHIVE_SCHEMA_VERSION, createDefaultSearchArchive, SqliteSearchArchive } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
@@ -135,6 +135,17 @@ describe("persistent data paths", () => {
     expect(resolveStorePath(configured)).toBe("/archive/searchicus.sqlite");
     // The root still moves everything that was not overridden.
     expect(resolveDataDir(configured)).toBe("/data");
+  });
+
+  it("resolves a relative override against the application root as well", () => {
+    // The same failure as the state root, one level down: `npm run -w
+    // @searchicus/api` would have put the API's profile and archive under
+    // packages/api while the CLI looked at the repository root. An override
+    // is a different location, not a different rule for finding one.
+    const configured = paths({ profileDir: "state/browser", storePath: "state/archive.sqlite" });
+
+    expect(resolveProfileDir(configured, "api")).toBe(path.join(applicationRoot(), "state/browser"));
+    expect(resolveStorePath(configured)).toBe(path.join(applicationRoot(), "state/archive.sqlite"));
   });
 
   it("builds no archive at all when archiving is switched off", () => {

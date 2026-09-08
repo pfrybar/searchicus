@@ -100,6 +100,13 @@ describe("boundedLimit", () => {
     expect(boundedLimit(10, 50)).toBe(10);
     expect(boundedLimit(999_999, 50)).toBe(MAX_INSIGHTS_LIMIT);
   });
+
+  it("holds the fallback under the maximum too", () => {
+    // Asking for nothing is still a read of the archive. A fallback above the
+    // ceiling would make the dashboard's own unqualified query the one thing
+    // the ceiling did not apply to.
+    expect(boundedLimit(undefined, 5_000, 1_000)).toBe(1_000);
+  });
 });
 
 describe("round", () => {

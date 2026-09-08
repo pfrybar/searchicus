@@ -213,9 +213,15 @@ export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
   maxLimit: MAX_INSIGHTS_LIMIT,
 };
 
-/** Clamps a caller-supplied limit into a range the process will actually read. */
+/**
+ * Clamps a caller-supplied limit into a range the process will actually read.
+ *
+ * The ceiling applies to the fallback too. Asking for nothing is still a read
+ * of the archive, and a default above the maximum would be the one query that
+ * ignored it — which is exactly the query the dashboard makes.
+ */
 export function boundedLimit(value: number | undefined, fallback: number, max = MAX_INSIGHTS_LIMIT): number {
-  if (value === undefined || !Number.isSafeInteger(value) || value < 1) return fallback;
+  if (value === undefined || !Number.isSafeInteger(value) || value < 1) return Math.min(fallback, max);
   return Math.min(value, max);
 }
 

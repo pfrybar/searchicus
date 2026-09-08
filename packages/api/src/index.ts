@@ -7,6 +7,7 @@ import {
   discoverConfigFile,
   createLogger,
   loadConfig,
+  resolveApplicationPath,
   resolveDataDir,
   setLogLevel,
   type SearchicusConfig,
@@ -50,7 +51,11 @@ function configure(): { config: SearchicusConfig; file: string | null } {
 // The UI is served only when a build is actually present, so running the API
 // from a fresh checkout doesn't 404 confusingly at /. In development the Vite
 // dev server on :5173 serves the UI instead and proxies /api here.
-const uiDir = config.server.uiDir ?? defaultUiDir();
+//
+// A configured directory resolves the way every other path setting does:
+// against the application root, so `npm run -w @searchicus/api` doesn't look
+// for the build inside packages/api and quietly serve nothing.
+const uiDir = config.server.uiDir === null ? defaultUiDir() : resolveApplicationPath(config.server.uiDir);
 const ui = config.server.ui && existsSync(path.join(uiDir, "index.html"));
 
 // One archive, shared: search and extraction write to the same file, and one
