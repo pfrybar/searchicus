@@ -6,7 +6,7 @@ engines; see the repo root `README.md` for adding another one.
 
 The CLI builds its registry with `createBrowserRegistry("cli")`, so it gets
 its own Chromium profile at `.searchicus/profile/cli/` and shares the local
-archive at `.searchicus/searches.sqlite` with other surfaces. Set
+archive at `.searchicus/searchicus.sqlite` with other surfaces. Set
 `SEARCHICUS_DATA_DIR` to relocate both, or `SEARCHICUS_PROFILE_DIR` /
 `SEARCHICUS_STORE_PATH` to override one component; `SEARCHICUS_STORE=false`
 disables archival. Because a search can return results while its browser

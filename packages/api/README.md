@@ -36,7 +36,7 @@ container listening only on its own loopback cannot be reached at all.
 
 The server builds its registry with `createBrowserRegistry("api")`, giving it
 its own Chromium profile at `.searchicus/profile/api/` and a shared archive at
-`.searchicus/searches.sqlite`. Set `SEARCHICUS_DATA_DIR` to relocate both, or
+`.searchicus/searchicus.sqlite`. Set `SEARCHICUS_DATA_DIR` to relocate both, or
 use `SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component
 override. `SEARCHICUS_STORE=false` disables best-effort archival. Chromium
 launches lazily — nothing starts until an engine actually asks for a browser.

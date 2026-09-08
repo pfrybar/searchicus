@@ -13,7 +13,7 @@ const directories: string[] = [];
 function archive(): SqliteSearchArchive {
   const directory = mkdtempSync(path.join(tmpdir(), "searchicus-insights-"));
   directories.push(directory);
-  return new SqliteSearchArchive(path.join(directory, "searches.sqlite"));
+  return new SqliteSearchArchive(path.join(directory, "searchicus.sqlite"));
 }
 
 afterEach(() => {
