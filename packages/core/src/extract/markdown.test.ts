@@ -46,11 +46,29 @@ describe("createWorkerParser", () => {
   });
 
   it("returns nothing readable for a page that has nothing", async () => {
-    // The service turns this into a no_content failure rather than an empty
-    // success, so the parser only has to be honest about it.
+    // The service turns this into an unusable outcome, so the parser only has
+    // to be honest about empty content.
     const parsed = await parse("<html><body></body></html>", "https://example.test/", never);
 
     expect(parsed.markdown.trim()).toBe("");
+  });
+
+  it("preserves Chromium-decoded text/plain bodies as Markdown", async () => {
+    // Chromium has decoded the response and wrapped the source body in a
+    // <pre> by the time the renderer serializes the DOM. Its content is
+    // already Markdown, so Defuddle must not turn it into a code block.
+    const parsed = await parse(
+      "<html><head><title>ignored</title></head><body><pre># Guide\r\n\r\nCafé keeps its heading and accents.\r\n</pre></body></html>",
+      "https://example.test/guide.md",
+      never,
+      "text/plain; charset=iso-8859-1",
+    );
+
+    expect(parsed).toMatchObject({
+      title: "",
+      markdown: "# Guide\n\nCafé keeps its heading and accents.\n",
+    });
+    expect(parsed.wordCount).toBeGreaterThan(0);
   });
 
   it("survives malformed markup instead of throwing", async () => {

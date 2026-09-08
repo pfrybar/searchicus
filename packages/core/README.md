@@ -183,6 +183,11 @@ mistaking a challenge or 404 body for page content while keeping this distinct
 from thrown transport/render/parser failures. Small positive word counts, flat
 structure, generic error words, and `find` misses are not rejection signals.
 
+A `text/plain` render bypasses Defuddle: Chromium has already decoded its
+charset, so the captured body is retained as Markdown with normalized line
+endings. This preserves headings in plain-text Markdown, RFCs, and READMEs for
+both `outline` and `find`.
+
 The pieces are separable. `ExtractionService` depends on a `PageRenderer`
 interface rather than Playwright, so the whole flow can be driven with no
 browser installed; the address policy in `extract/address.ts` is pure; and

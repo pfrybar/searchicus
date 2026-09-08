@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtractionArchive, ExtractionArchiveRecord } from "../archive.js";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "./config.js";
 import { ExtractFailedError, ExtractionBusyError, ExtractionDisabledError, ExtractRequestError } from "./errors.js";
+import { createWorkerParser } from "./markdown.js";
 import { ExtractionService } from "./service.js";
 import type { DocumentParser, PageRenderer, RenderedPage, UsableExtractResponse } from "./types.js";
 
@@ -460,6 +461,27 @@ describe("ExtractionService usability outcomes", () => {
     expect((await extraction.extract({ url: PAGE_URL })).outcome).toBe("usable");
     expect((await extraction.find({ url: PAGE_URL, query: "anything" })).outcome).toBe("usable");
     expect((await extraction.outline({ url: PAGE_URL })).outcome).toBe("usable");
+  });
+
+  it("uses the text/plain fast path across extract, outline, and find", async () => {
+    const markdown = "# Wire protocol\r\n\r\nPacket framing uses a fixed header.\r\n";
+    const renderer = new FakeRenderer({
+      html: `<html><body><pre>${markdown}</pre></body></html>`,
+      contentType: "text/plain",
+    });
+    const extraction = service({ renderer, parse: createWorkerParser() });
+
+    const extracted = usable(await extraction.extract({ url: PAGE_URL }));
+    const outlined = usable(await extraction.outline({ url: PAGE_URL }));
+    const found = usable(await extraction.find({ url: PAGE_URL, query: "packet framing" }));
+
+    expect(extracted).toMatchObject({
+      title: "",
+      markdown: "# Wire protocol\n\nPacket framing uses a fixed header.",
+    });
+    expect(outlined.sections.map((section) => section.heading)).toEqual(["Wire protocol"]);
+    expect(found.matches[0]?.markdown).toContain("Packet framing");
+    expect(renderer.rendered).toEqual([PAGE_URL]);
   });
 });
 

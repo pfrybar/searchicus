@@ -50,7 +50,8 @@ before enabling it. A completed render that is an HTTP error, empty document,
 or known interstitial prints `Page content unavailable` and its stable reason,
 with exit status 0; `--json` exposes the common `outcome: "unusable"` branch
 without returning the remote error-page text. `find` and `outline` use the same
-classification.
+classification. Plain-text documents are retained as Markdown, so their
+headings remain usable by `outline` and `find`.
 
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/

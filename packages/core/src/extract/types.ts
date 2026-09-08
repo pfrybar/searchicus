@@ -247,5 +247,10 @@ export interface ParsedDocument {
   published?: string;
 }
 
-/** Converts captured DOM into readable Markdown. */
-export type DocumentParser = (html: string, url: string, signal: AbortSignal) => Promise<ParsedDocument>;
+/** Converts a captured DOM into readable Markdown for its media type. */
+export type DocumentParser = (
+  html: string,
+  url: string,
+  signal: AbortSignal,
+  contentType?: string,
+) => Promise<ParsedDocument>;

@@ -37,46 +37,58 @@ const PARSE_WORKER_SOURCE = `
 import { parentPort, workerData } from "node:worker_threads";
 
 const { parseHTML } = await import(workerData.linkedom);
-const { Defuddle } = await import(workerData.defuddle);
-
 const { document } = parseHTML(workerData.html);
+const contentType = String(workerData.contentType || "").split(";", 1)[0].trim().toLowerCase();
 
-// Defuddle expects a few DOM APIs linkedom does not provide. Its own node
-// entry applies these when handed an HTML string, but that path is marked
-// deprecated and the helper is not exported, so they are applied here.
-if (!document.styleSheets) document.styleSheets = [];
-if (document.defaultView && !document.defaultView.getComputedStyle) {
-  document.defaultView.getComputedStyle = () => ({ display: "" });
+if (contentType === "text/plain") {
+  // Chromium has already decoded the response with its declared charset and
+  // rendered it as a <pre>. Passing that DOM to Defuddle makes Markdown look
+  // like code (and raw plain-text bodies can make its DOM parser throw), so
+  // preserve the body as the Markdown the origin actually supplied.
+  const markdown = String(document.body?.textContent || "").replace(/^\\uFEFF/, "").replace(/\\r\\n?/g, "\\n");
+  const words = new Intl.Segmenter("en", { granularity: "word" });
+  let wordCount = 0;
+  for (const part of words.segment(markdown)) if (part.isWordLike) wordCount++;
+  parentPort.postMessage({ title: "", markdown, wordCount });
+} else {
+  // Defuddle expects a few DOM APIs linkedom does not provide. Its own node
+  // entry applies these when handed an HTML string, but that path is marked
+  // deprecated and the helper is not exported, so they are applied here.
+  if (!document.styleSheets) document.styleSheets = [];
+  if (document.defaultView && !document.defaultView.getComputedStyle) {
+    document.defaultView.getComputedStyle = () => ({ display: "" });
+  }
+  document.URL = workerData.url;
+
+  // The one that matters. Defuddle's metadata reads doc.location.href before
+  // anything else, and linkedom has no location at all -- so it fell through to
+  // the page's own og:url, twitter:url, schema.org url or canonical. Two
+  // consequences, both bad: a relative canonical (href="/story", which is
+  // everywhere) made it throw and log a warning on every such extraction, and a
+  // page supplying an absolute one decided what Defuddle believed its domain to
+  // be, a value that feeds Defuddle's own title cleaning. Handing it the URL we
+  // actually fetched settles both.
+  document.location = { href: workerData.url };
+
+  const { Defuddle } = await import(workerData.defuddle);
+  const result = await Defuddle(document, workerData.url, {
+    markdown: true,
+    useAsync: false,
+    removeImages: true,
+  });
+
+  // Only these fields cross back. Defuddle also returns favicon and image URLs,
+  // raw meta-tag maps, schema.org blobs, debug data, and the original HTML,
+  // none of which belong in a response or an archive row.
+  parentPort.postMessage({
+    title: typeof result.title === "string" ? result.title : "",
+    markdown: typeof result.content === "string" ? result.content : "",
+    wordCount: typeof result.wordCount === "number" ? result.wordCount : 0,
+    language: result.language || undefined,
+    author: result.author || undefined,
+    published: result.published || undefined,
+  });
 }
-document.URL = workerData.url;
-
-// The one that matters. Defuddle's metadata reads doc.location.href before
-// anything else, and linkedom has no location at all -- so it fell through to
-// the page's own og:url, twitter:url, schema.org url or canonical. Two
-// consequences, both bad: a relative canonical (href="/story", which is
-// everywhere) made it throw and log a warning on every such extraction, and a
-// page supplying an absolute one decided what Defuddle believed its domain to
-// be, a value that feeds Defuddle's own title cleaning. Handing it the URL we
-// actually fetched settles both.
-document.location = { href: workerData.url };
-
-const result = await Defuddle(document, workerData.url, {
-  markdown: true,
-  useAsync: false,
-  removeImages: true,
-});
-
-// Only these fields cross back. Defuddle also returns favicon and image URLs,
-// raw meta-tag maps, schema.org blobs, debug data, and the original HTML,
-// none of which belong in a response or an archive row.
-parentPort.postMessage({
-  title: typeof result.title === "string" ? result.title : "",
-  markdown: typeof result.content === "string" ? result.content : "",
-  wordCount: typeof result.wordCount === "number" ? result.wordCount : 0,
-  language: result.language || undefined,
-  author: result.author || undefined,
-  published: result.published || undefined,
-});
 `;
 
 /**
@@ -91,7 +103,7 @@ export function createWorkerParser(): DocumentParser {
   const linkedom = import.meta.resolve("linkedom");
   const defuddle = import.meta.resolve("defuddle/node");
 
-  return (html, url, signal) =>
+  return (html, url, signal, contentType) =>
     new Promise<ParsedDocument>((resolve, reject) => {
       if (signal.aborted) {
         reject(new ExtractFailedError("cancelled", "Extraction was cancelled."));
@@ -99,7 +111,7 @@ export function createWorkerParser(): DocumentParser {
       }
 
       const worker = new Worker(new URL(`data:text/javascript,${encodeURIComponent(PARSE_WORKER_SOURCE)}`), {
-        workerData: { html, url, linkedom, defuddle },
+        workerData: { html, url, contentType, linkedom, defuddle },
         resourceLimits: { maxOldGenerationSizeMb: PARSE_MAX_HEAP_MB },
         // The page's own content decides nothing about this process.
         env: {},
