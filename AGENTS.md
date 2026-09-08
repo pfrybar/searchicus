@@ -1,274 +1,207 @@
 # AGENTS.md
 
-Notes for anyone (human or AI coding agent) working in this repository.
+Agent-facing guidance for working in this repository. `README.md` explains the
+product and its public behavior; this file records the commands, boundaries,
+and invariants needed to change it safely.
 
-## What this is
+## Project overview
 
-`searchicus` is a search proxy: one query in, results from multiple backend
-search engines out. It's a TypeScript npm-workspaces monorepo with a shared
-`core` package and four front doors: a CLI, an HTTP API, an MCP server
-(Streamable HTTP transport), and a web UI. The HTTP API and MCP server share
-one process and one package (`packages/api`). See `README.md` for the
-architecture picture.
+`searchicus` is a TypeScript npm-workspaces monorepo. One query fans out to
+multiple browser-driven search engines and returns a merged result list. It has
+four public surfaces:
 
-Backend engines drive a real headless browser. `core` owns a single
-long-lived Chromium instance (Playwright `launchPersistentContext`) and
-hands each search a page from it; engines parse results out of that page.
-The `bing`, `brave`, `duckduckgo` and `startpage` engines are all registered
-by default and drive the real sites, so an unfiltered search fans out to all of
-them. Tests inject deterministic test doubles where they need browser-free
-adapter coverage.
+- `packages/core` — shared types, schemas, engine registry, browser sessions,
+  ranking, SQLite archive, extraction, and diagnostics
+- `packages/cli` — the `searchicus` command-line interface
+- `packages/api` — Express HTTP API and Streamable HTTP MCP endpoint at `/mcp`
+- `packages/ui` — Vite/React search and archive dashboard
 
-Extraction renders caller-supplied URLs in a **second, non-persistent**
-browser and must never reach the search profile. It is disabled by default;
-before touching it, read the "Extraction" section of `README.md`, especially
-the note that application-side address checks are defense in depth and the
-operator's outbound network restriction is the actual control.
+Bing, Brave, DuckDuckGo, and Startpage are registered by default in
+`createDefaultRegistry()`. The API and MCP endpoint deliberately share one
+process, registry, throttle, browser profile, and archive connection.
 
-It exposes three read operations — `outline`, `find`, `extract` — as separate
-methods rather than flags on one. That is a standing decision: a boolean that
-changes the shape of a response is a mode in disguise, and the parameter
-matrix that grows around one is worse than another method. They share a
-single addressing scheme (the character `offset` into the rendered Markdown),
-one chunker (`splitSections`), and one page cache, so surveying then asking
-then reading costs one render.
+Search and extraction use different browsers. Search uses one long-lived
+persistent Chromium context so cookies and cache survive. Extraction renders
+caller-supplied URLs in a separate non-persistent browser with a fresh context
+per read and must never reach the search profile.
 
-## Repo layout
+## Setup and common commands
 
-```
-packages/
-  core/   shared types + SearchEngine interface + registry + engines
-          + browser session (Playwright) + rate-limit throttle
-          + browser realism (stealth/human/dwell/click-through) + relevance gate
-          + ranking/fusion + SQLite archive and its read side (insights.ts)
-          + rendered extraction (src/extract/)
-          + logging (logger.ts) and environment switches (env.ts)
-  cli/    `searchicus` CLI (commander)
-  api/    HTTP API (express) + MCP endpoint at /mcp, mounted from src/mcp/
-  ui/     web UI (vite + react): search, plus dashboard metrics/history pages
-```
-
-Each package is independently versioned/built under `packages/*`. Internal
-packages currently declare the matching `0.1.0` version of `@searchicus/core`;
-npm workspaces resolves that compatible dependency to the local workspace, so
-no publishing is required for local development. Keep those versions aligned
-if a package version changes.
-
-## Conventions
-
-- **Language**: TypeScript everywhere, `strict` mode on. Compiled output
-  goes to each package's `dist/`, which is git-ignored.
-- **Module format**: ESM (`"type": "module"`) across all packages.
-- **Package manager**: npm (workspaces). Don't add a lockfile from another
-  package manager (pnpm/yarn) — `package-lock.json` at the repo root is the
-  single source of truth for installed versions.
-- **Shared config**: `tsconfig.base.json` at the repo root holds common
-  compiler options; each package's `tsconfig.json` extends it.
-- **Naming**: package directories are the unscoped feature name
-  (`packages/cli`, not `packages/searchicus-cli`); npm package names are
-  scoped as `@searchicus/<name>`.
-
-## Common commands
-
-Run from the repo root unless noted otherwise.
+Requires Node 22.5 or newer and npm. Run commands from the repository root.
 
 ```bash
-npm install         # install everything
-npm run build       # build all packages; dependent package hooks build core first
-npm run test         # build core as needed, then run all Vitest suites
-npm run lint         # eslint across the repo
-npm run format       # prettier --write
-npm run typecheck    # build core declarations as needed, then tsc --noEmit
+npm install
+npm run build
+npm run test
+npm run typecheck
+npm run lint
+npm run format:check
+npm run format          # writes formatting changes
 ```
 
-Browser-backed tests skip automatically when Chromium can't launch (a slim
-container usually lacks `libnss3`/`libgbm`/`libX11`, and
-`playwright install-deps` needs root). They are the only coverage of the real
-Playwright wiring, so run them somewhere with a working browser before
-trusting changes to `browser.ts`.
-
-`npm run dev` starts the API, MCP server, and UI dev servers together
-(via `concurrently`); each is also runnable on its own:
+Run development servers:
 
 ```bash
-npm run dev -w @searchicus/api   # HTTP API + MCP with reload, :3000 (MCP at /mcp)
-npm run dev -w @searchicus/ui    # Vite dev server, :5173 (proxies /api to :3000)
-npm run build -w @searchicus/cli && node packages/cli/dist/index.js search "query"
+npm run dev                         # API/MCP :3000 and UI :5173
+npm run dev -w @searchicus/api      # API and MCP only
+npm run dev -w @searchicus/ui       # UI only; proxies /api to :3000
 ```
 
-## Working style expected in this repo
+Run the built CLI:
 
-- Prefer small, focused commits that each leave the repo in a working
-  state (installs, builds, and — once tests exist — passes them).
-- When adding a package, give it its own `package.json`, `tsconfig.json`,
-  and a short `README.md` describing what it does and how to run it.
-- Keep the `SearchEngine` interface in `core` minimal and stable; the CLI,
-  API, and MCP server should each be a thin adapter over
-  `SearchEngineRegistry`, not reimplement search logic themselves.
-- Engines are registered once, in core's `createDefaultRegistry()`
-  (`packages/core/src/registry.ts`) — every front door defaults to calling
-  it rather than building its own registry. Add a new engine there, not per
-  package. An engine's optional `indexFamily` names a correlated underlying
-  corpus for merged ranking (DuckDuckGo shares Bing's family); omit it for an
-  independent engine. It's a factory (fresh instance per call), not a shared
-  singleton, so `createApp`/`createProgram`/`createMcpServer` can keep accepting an
-  injectable `registry` parameter for tests.
-- **Playwright must never reach core's main entry.** `createDefaultRegistry()`
-  has no browser attached on purpose; `browser.ts` is published separately as
-  `@searchicus/core/browser` and only entry points import it. The UI
-  type-imports from core, so a value import of Playwright there would drag
-  browser binaries into a Vite bundle. The registry depends on the
-  `BrowserProvider` interface, never on the `BrowserSession` class.
-  For the same reason, `ranking.ts` is published as
-  `@searchicus/core/ranking`: the UI imports `canonicalizeUrl` as a value, and
-  taking it from the root would bundle the archive with it.
-  `human.ts`, `dwell.ts`, `click-through.ts` and `relevance.ts` import
-  Playwright for **types only**, which is why an engine in the main entry may
-  use them; `stealth.ts` reads the browser binary with `node:child_process`
-  and so is reachable only from `browser.ts`. Check with: import
-  `core/dist/index.js` and confirm nothing matching `playwright` lands in the
-  module cache.
-- **Browser identity lives in `stealth.ts`, not in engines.** Context options
-  and one init script, applied by `createDefaultBrowserSession()`. The
-  init script is installed inside the launch path, so it survives a crash
-  relaunch; `launchOptions` may be a factory, resolved on first launch, so
-  values that require asking the binary about itself (the UA has to name the
-  version the binary actually is) don't break the rule that an engine which
-  never calls `acquireBrowser()` starts no browser. `channel: "chromium"` is
-  load-bearing — Playwright's default headless is a different, much barer
-  binary. Timezone and locale must stay plausible for the egress IP;
-  `SEARCHICUS_TIMEZONE` / `SEARCHICUS_LOCALE` override them.
-- **Click through only after dwelling.** `click-through.ts` runs after the
-  passive SERP dwell, considers only organic linked results, and samples 40%
-  of searches with a weighted preference for higher ranks. Its decision and
-  landing pauses are deliberately lighter than `extractDwell()`. A popup must
-  be scoped to its originating SERP page and closed after that landing pause;
-  click-through must stay best-effort and never turn ready results into a
-  failed search.
-- **Parse with `textContent`, not `innerText`, and guard every read with
-  `count()`.** Both were learned from the live site. `innerText` is a
-  function of CSS, and a real SERP hid an organic result's heading with a
-  style rule, so `innerText` returned `""` and the parser discarded a good
-  result. And Playwright's text/attribute readers _auto-wait_: reading a
-  field that isn't there blocks for the full default timeout (30s) before any
-  `catch` runs, which is enough to exhaust the registry's whole results
-  budget. `count()` never waits. Both rules live in `engines/parse.ts` now —
-  use `readText`/`readCollapsed`/`readSnippet` rather than calling
-  `textContent` directly. `textContent` has one cost they handle: it also
-  returns the text of `<style>` and `<script>` nodes, so a site that parks
-  styles inline (Startpage does, mid-hydration) yields titles with CSS in
-  them. Reaching for `innerText` to fix that brings the hiding problem back —
-  and note the trigger is `visibility:hidden`, not `display:none`, which
-  `innerText` falls back to `textContent` for (pinned in parse.test.ts).
-- **Auto-wait bites on input too, not just reads.** `pressSequentially` waits
-  with Playwright's 30s default, so a renamed search box used to burn the
-  registry's whole results budget and fail with a raw locator timeout. The
-  flow confirms the box first and bounds typing, raising
-  `SearchBoxUnavailableError` in ~5s naming the engine.
-- **The interaction is shared; the selectors are not.** `engines/flow.ts`
-  owns the sequence every engine performs (homepage, type, submit, wait,
-  parse, relevance-gate, then dwell and click-through as `completed`) and
-  `engines/parse.ts` owns how a field is read. An engine supplies only a
-  `BrowserSearchSpec`: its homepage, its selectors and its own parser. Put
-  behaviour in the flow and site knowledge in the engine — the selectors are
-  the part that rots, and each site rots differently.
-- **Hand back a union of search-box candidates, never `.first()` of one.** A
-  comma selector is matched in _document order_, not in the order its
-  alternatives are written, so `.first()` means "whichever is first in the
-  DOM", not "the preferred one". Startpage's homepage puts four
-  `<input type="hidden" name="query">` ahead of its real `#q`. The flow
-  filters to visible before choosing; an engine that narrows first defeats it.
-- **Result markup belongs to the engine.** Each engine owns its own selectors
-  and passes them to anything shared — `clickThroughResult` takes the engine's
-  `linkSelector` because Bing links from `h2 a` and Brave has no heading
-  element at all, and a wrong selector there fails silently rather than
-  loudly. Prefer selectors the site
-  means (ids, `data-*`, semantic class fragments) over ones its build emits:
-  Brave's UI is compiled from Svelte and every styled element carries a hash
-  like `svelte-jmfu5f` that changes whenever they ship CSS. Where a site mixes
-  units into one class, name the organic one positively (`data-type="web"`)
-  instead of enumerating what to exclude, so a new unit type is ignored by
-  default rather than returned as a result. Check what an _ad_ looks like
-  before trusting a selector: DuckDuckGo's ads are siblings of its organic
-  results carrying the identical title-link test id, separated only by the
-  parent's `data-layout`, so selecting on the link returns paid placements as
-  search results — output that looks entirely plausible and is wrong.
-- **Content-level failures are shared.** `NoResultsError` and
-  `OffTargetResultsError` live in `engines/errors.ts` and carry the engine
-  name; don't redeclare them per engine, or core's star exports collide.
-- **Check that results answer the query that was asked.** `relevance.ts`
-  scores token coverage, because a search engine can return HTTP 200 with
-  valid markup and real results that are answers to a different question —
-  classically, only the query's first term. Nothing about the transport looks
-  wrong, so it has to be caught from the content.
-- **Results and sessions are separate signals.** `search()` resolving means
-  results are ready; the returned `SearchSession.completed` settling means
-  the browser work is done. An engine may return results and keep using its
-  page. The registry releases the browser lease when `completed` settles —
-  or when the session cap fires, whichever comes first. That cap is a hard
-  bound rather than a request: aborting the run's signal only asks an engine
-  to stop, and one that ignores it must not be able to hold a page, `drain()`
-  and `close()` open forever (the CLI has no outer timeout at all). Settling
-  `completed` remains the engine's job. Engines with nothing to do afterwards
-  just return a bare `SearchResponse` and the registry normalizes it.
-- **Anything short-lived must `drain()` before exiting.** Sessions outlive the
-  call that started them, so exiting as soon as results arrive kills live
-  browser work. The CLI `close()`s in a `finally`; the servers drain on
-  SIGINT/SIGTERM with a grace period.
-- **Rate limiting is the registry's job, not each engine's.** One global
-  throttle gates entry to `searchAll()`, so a single incoming search still
-  fans out to every engine in parallel while _consecutive_ searches are
-  spaced apart (5s ±30% jitter by default). Tests that run searches back to
-  back should pass `{ throttle: null }`.
-- **One browser, one context, a page per search — deliberately no pool.** A
-  pool would isolate concurrent searches; sharing one persistent context is
-  what carries cookies, dismissed consent banners, and cache across searches
-  and across restarts. Each surface gets its own profile directory because a
-  Chromium user-data dir is single-writer and `npm run dev` starts the API
-  and MCP server together.
-- **MCP is mounted, not a separate service.** `createMcpRouter` is stateless
-  (a fresh `McpServer` per request), so it mounts as an ordinary router in
-  the API app and is toggled with `createApp(registry, { mcp })` /
-  `MCP_ENABLED`. Keep it mounted _before_ the catch-all 404, which would
-  otherwise swallow every MCP request, and keep MCP failures in JSON-RPC
-  error shape — body-parse errors reach the shared error middleware, not the
-  MCP router, so that branch has to stay.
-- **The search router is mounted twice**, at `/` and `/api`, so the UI can
-  call `/api/*` same-origin in production while the original root contract
-  keeps working. Static UI files are mounted after those routes (a build
-  must never shadow an endpoint) and before the 404. There is no SPA history
-  fallback on purpose — it would turn API 404s into HTML, and the UI has no
-  client-side router.
-- **Log through `core/logger.ts`, on stderr, never `console`.** The package
-  was silent before, which read as tidy and was not: every handled failure
-  was swallowed with nothing written anywhere, and the one time it mattered
-  an extraction 502 could not be diagnosed at all. The reasoning behind each
-  swallow — never let this affect the response — was right; implementing it
-  as "never tell anyone" was not. stderr is load-bearing: the CLI prints
-  results to stdout and people pipe them into `jq`. Suites run silent
-  (`VITEST` is detected) because several of them exercise failure paths on
-  purpose. Query text stays at `debug` and below.
-- **Tokenize with ICU, not a character class.** `relevance.ts` tokenizes with
-  `Intl.Segmenter`, not a character class: `/[^a-z0-9]+/` treated every
-  non-ASCII character as a separator, so a Cyrillic, Greek, Arabic or CJK
-  query produced no tokens, and no tokens means `queryTokenCoverage` returns 1
-  — the off-target gate was absent for those queries rather than lenient. No
-  regex fixes it, because Japanese has no spaces and finding the words needs a
-  dictionary. Accent folding happens before segmentation and only where a mark
-  decorates a _Latin_ letter: folding everything turned Cyrillic "й" into "и",
-  which is a different letter, not an accented one. Tokens come back in NFC.
-- Validate untrusted requests through the shared core schemas. `SearchQuery`
-  is the engine input; `SearchRequest` adds the optional engine selection for
-  API/MCP callers. Do not recover `engines` by casting raw request bodies.
-- If you touch the plugin interface or shared request schemas, update every
-  adapter (CLI/API/MCP/UI) that assumes their current shape, plus their tests
-  and package README files.
-- **The Dockerfile pins the Playwright base image to the `playwright`
-  version in `packages/core/package.json`.** The image's bundled Chromium
-  must match the client revision; bump both together or it fails at launch.
-  `.dockerignore` must keep excluding `node_modules` — this repo is developed
-  from a macOS bind mount, so the host tree can hold the wrong platform's
-  native binaries.
-- Consumers import core's built ESM entry point. Their `prebuild`, `predev`,
-  `pretest`, and `pretypecheck` hooks deliberately build core first, so keep
-  those hooks when changing package scripts or adding another core consumer.
+```bash
+npm run build -w @searchicus/cli
+node packages/cli/dist/index.js search "query"
+```
+
+Browser-backed tests skip when Chromium or its system libraries cannot launch.
+A green suite with skips does not validate real Playwright wiring. Before
+trusting changes to `browser.ts`, `browser/session.ts`, or
+`browser/extract-browser.ts`, run the affected tests with working Chromium.
+
+## Code and workspace conventions
+
+- Package source is strict TypeScript and ESM. JavaScript/MJS is used only for
+  repository tooling and configuration.
+- Use npm workspaces and the root `package-lock.json`. Do not add pnpm or Yarn
+  lockfiles.
+- Build output belongs in package `dist/` directories and is not committed.
+- Package directories are unscoped (`packages/core`); package names are scoped
+  (`@searchicus/core`).
+- Keep workspace versions aligned. Internal consumers currently depend on
+  `@searchicus/core` version `0.1.0`.
+- Preserve consumer `prebuild`, `pretest`, `pretypecheck`, and package-specific
+  `predev` hooks that build core before importing its compiled ESM output.
+- New packages need their own `package.json`, `tsconfig.json`, and concise
+  `README.md`.
+- Validate untrusted HTTP and MCP input with the shared Zod schemas in core.
+  `SearchQuery` is engine input; `SearchRequest` adds the merged-result limit.
+  Do not recover request fields by casting raw bodies.
+- Log through `packages/core/src/logger.ts`, never directly with `console` in
+  application code. Logs go to stderr so CLI stdout remains pipeable. Query
+  text stays at `debug` or below.
+- When a shared type, schema, or plugin contract changes, update every affected
+  adapter, test, and package README in the same change.
+
+## Module boundaries
+
+- Keep `SearchEngine` small. CLI, API, and MCP are adapters over
+  `SearchEngineRegistry`; they must not reproduce search logic.
+- Register engines once in `createDefaultRegistry()`. It is a factory, not a
+  singleton, so tests and front doors can inject or modify registries safely.
+- `createDefaultRegistry()` is browser-free. Playwright must not become
+  reachable from core's main entry point.
+- Playwright-backed code is exported through `@searchicus/core/browser`.
+  Browser-adjacent modules imported by the main entry may use Playwright types
+  only.
+- The UI imports `canonicalizeUrl` from `@searchicus/core/ranking`, not the
+  core root, so Vite does not pull in the SQLite archive or Node built-ins.
+- After changing these boundaries, build core and verify importing
+  `core/dist/index.js` does not load a module whose path contains
+  `playwright`.
+
+## Search-engine rules
+
+- One browser, one persistent context, and one page per engine run is
+  deliberate; do not introduce a browser pool. Independently running surfaces use separate
+  profile directories because Chromium profiles are single-writer. API and MCP
+  share the API process and profile.
+- Browser identity belongs in `browser/stealth.ts`, not in individual engines.
+  Preserve `channel: "chromium"`; locale and timezone must remain plausible
+  for the egress IP.
+- Shared interaction belongs in `engines/flow.ts`; site-specific selectors and
+  result parsing belong in each engine. Selector decay is engine-specific.
+- Use `engines/parse.ts` helpers. Read with `textContent`, not `innerText`, and
+  call `count()` before text or attribute reads to avoid Playwright auto-waiting
+  for missing fields.
+- Treat typing as bounded input work too. Confirm a visible search-box candidate
+  before `pressSequentially`; return all candidates rather than calling
+  `.first()` on a comma selector.
+- Select organic result containers positively. Do not infer that a title link
+  is organic: DuckDuckGo ads intentionally resemble normal results.
+- Pass engine-specific result link selectors to click-through behavior. Shared
+  code must not guess site markup.
+- Dwell before click-through. Click-through remains best-effort and must never
+  turn already parsed results into a failed search.
+- Shared content failures live in `engines/errors.ts`. Relevance checks belong
+  in the shared flow rather than individual engines.
+- Tokenize relevance and retrieval text with the shared ICU-based logic. Do not
+  replace it with ASCII character-class splitting; that breaks non-Latin and
+  unspaced languages.
+- An engine may return results before its browser work finishes.
+  `SearchSession.completed` is the later session-lifetime signal. The registry
+  owns lease cleanup and its hard cap; short-lived callers must drain or close
+  before exiting.
+- Rate limiting belongs to the registry and gates a whole fan-out, not each
+  engine. Tests that run searches back-to-back should use `{ throttle: null }`.
+- Set `indexFamily` for correlated corpora so ranking counts one family vote;
+  DuckDuckGo shares Bing's family. Omit it for independent engines.
+
+## Extraction and security
+
+Read the root README's **Extraction** section before changing or enabling this
+feature.
+
+- Extraction is disabled by default. It renders arbitrary caller-selected
+  URLs, so application address checks are defense in depth; operator-enforced
+  outbound network restrictions are the actual SSRF control.
+- Extraction must stay structurally isolated from the persistent search
+  profile. Do not share its browser, context, cookies, cache, localStorage, or
+  history.
+- Keep `outline`, `find`, and `extract` as separate operations. A flag that
+  changes response shape is a hidden mode. They share one Markdown offset
+  scheme, `splitSections`, and one page cache.
+- Every successful read returns an `outcome`. `usable` may carry page-derived
+  content; `unusable` carries safe metadata only. Classify final HTTP status
+  before parsing, then reject empty content or narrow known interstitial
+  signatures. Do not reject a page merely for being short, flat, or having a
+  zero parser word count when it contains meaningful symbols.
+- Treat all page-derived titles, headings, snippets, and Markdown as untrusted
+  data. Usable responses expose `untrusted: true`; front doors must preserve a
+  visible trust boundary.
+- Cache parsed pages and stable usability outcomes so outline/find/extract can
+  share one render. Do not cache transient rate-limit or upstream-server
+  outcomes.
+- Extraction uses a total transfer tripwire and a separate main-document cap.
+  The tripwire degrades a render; only the document cap fails it. Preserve that
+  distinction and archive `degradedBy` rather than warning every caller.
+- Archive extraction metadata only, never HTML or Markdown. `completed`,
+  `unusable`, and `failed` are distinct outcomes. Only completed usable reads
+  receive extraction-interest credit. Successful outlines are not reads;
+  unusable outlines may be retained as page-quality diagnostics.
+
+## API, MCP, and UI routing
+
+- Mount MCP before the catch-all 404. It uses a fresh stateless `McpServer` per
+  request and must keep JSON-RPC error shapes, including body-parser failures.
+- Mount search/read routes at both `/` and `/api`. The UI uses `/api` in
+  production while the root paths remain public API compatibility routes.
+- Serve built UI files after API routes and before the JSON 404 so static files
+  cannot shadow endpoints.
+- The UI uses hash routing. Do not add an Express history fallback; it would
+  turn genuine API 404s into HTML.
+
+## Testing expectations
+
+- Add or update focused tests for changed behavior, including failure and
+  boundary cases. Do not rely only on broad suites.
+- Before committing, run the relevant focused tests and, when practical,
+  `npm run build`, `npm run typecheck`, `npm test`, `npm run lint`, and
+  `npm run format:check`.
+- If a browser-backed test skips, report it explicitly. Run it in an environment
+  with Chromium before treating browser lifecycle or request-policy work as
+  fully validated.
+- The Dockerfile Playwright image version must match the `playwright` version in
+  `packages/core/package.json`. Update both together.
+- Keep `.dockerignore` excluding `node_modules`; host-mounted dependencies may
+  contain binaries for the wrong platform.
+
+## Commit instructions
+
+- Keep commits small, focused, and working. Do not include unrelated local or
+  generated files.
+- Match the established message style: keep subject and body lines at 72
+  characters or fewer and hard-wrap prose paragraphs.
+- End AI-authored commits with a `Co-Authored-By` footer naming the actual model
+  used and its provider-appropriate noreply address. Do not copy a stale model
+  name from another commit.
