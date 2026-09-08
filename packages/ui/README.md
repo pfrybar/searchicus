@@ -28,7 +28,8 @@ Markdown a stranger's website wrote. Every read checks the shared
 `usable | unusable` outcome first; usable reads mark page-derived content as
 untrusted, including outline titles and headings. Unusable pages show a warning
 with a stable reason and remote status instead of rendering an access wall or
-error body.
+error body. Read panels also identify when the server reused an in-memory page
+cache entry rather than rendering the URL again.
 The dashboard reports unusable observations separately from completed reads
 and infrastructure failures.
 

@@ -51,7 +51,9 @@ or known interstitial prints `Page content unavailable` and its stable reason,
 with exit status 0; `--json` exposes the common `outcome: "unusable"` branch
 without returning the remote error-page text. `find` and `outline` use the same
 classification. Plain-text documents are retained as Markdown, so their
-headings remain usable by `outline` and `find`.
+headings remain usable by `outline` and `find`. Text output identifies a
+cached page; `--json` exposes `cached`, true only when this request reused an
+in-memory parsed page rather than rendering or parsing again.
 
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/

@@ -174,6 +174,7 @@ describe("POST /outline", () => {
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBe("usable");
     expect(res.body.untrusted).toBe(true);
+    expect(res.body.cached).toBe(false);
     expect(res.body.sections.length).toBeGreaterThan(0);
     expect(res.body.sections[0]).toMatchObject({ offset: expect.any(Number), chars: expect.any(Number) });
     expect(res.body).not.toHaveProperty("markdown");
@@ -200,6 +201,7 @@ describe("POST /find", () => {
     expect(res.body).toMatchObject({
       query: "readable prose",
       untrusted: true,
+      cached: false,
       totalChars: expect.any(Number),
       navigable: expect.any(Boolean),
     });
@@ -254,6 +256,7 @@ describe("POST /extract", () => {
       markdown: "# An article\n\nSome readable prose.",
       truncated: false,
       chars: 34,
+      cached: false,
       untrusted: true,
     });
   });
@@ -317,6 +320,7 @@ describe("POST /extract", () => {
       finalUrl: "https://example.test/missing",
       httpStatus: 404,
       tookMs: expect.any(Number),
+      cached: false,
     });
     expect(res.body).not.toHaveProperty("markdown");
   });

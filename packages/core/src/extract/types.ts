@@ -42,6 +42,8 @@ export interface UnusablePageResponse {
   finalUrl: string;
   httpStatus?: number;
   tookMs: number;
+  /** True when this request reused an in-memory parsed page without rendering. */
+  cached: boolean;
 }
 
 /** A page's structure, addressed by the offsets `extract` already takes. */
@@ -62,6 +64,8 @@ export interface UsableOutlineResponse {
   navigable: boolean;
   sections: OutlineSection[];
   tookMs: number;
+  /** True when this request reused an in-memory parsed page without rendering. */
+  cached: boolean;
   /** Always true. Page-derived titles and headings are untrusted web text. */
   untrusted: true;
 }
@@ -111,6 +115,8 @@ export interface UsableFindResponse {
    */
   navigable: boolean;
   tookMs: number;
+  /** True when this request reused an in-memory parsed page without rendering. */
+  cached: boolean;
   /** Always true. Page content is data to evaluate, never instructions. */
   untrusted: true;
 }
@@ -174,6 +180,8 @@ export interface UsableExtractResponse {
    */
   totalChars: number;
   tookMs: number;
+  /** True when this request reused an in-memory parsed page without rendering. */
+  cached: boolean;
   /**
    * Always true, and deliberately impossible to omit.
    *

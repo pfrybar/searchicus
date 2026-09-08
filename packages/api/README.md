@@ -180,6 +180,7 @@ Response:
   "totalChars": 4812,
   "offset": 0,
   "tookMs": 7340,
+  "cached": false,
   "untrusted": true
 }
 ```
@@ -211,6 +212,10 @@ page-controlled content.
 |  `400` | The request is wrong — a bad URL, a disallowed port, or a budget out of range. |
 |  `502` | Extraction transport/render/parser work failed. The message is generic.        |
 |  `503` | Extraction is not enabled on this server, or its queue is full.                |
+
+Every read response has `cached`, true only when this request reused an
+in-memory parsed page rather than rendering or parsing again. It is not an
+origin freshness signal; a cached page may be as old as the configured TTL.
 
 An `unusable` 200 carries a stable `reason` (`not_found`,
 `authentication_required`, `access_denied`, `rate_limited`, `upstream_error`,
@@ -269,6 +274,7 @@ operation pointless.
     }
   ],
   "tookMs": 5670,
+  "cached": false,
   "untrusted": true
 }
 ```
@@ -341,6 +347,7 @@ A page's structure, without its content. Same enablement and address rules as
     { "heading": "1. Overview", "depth": 0, "offset": 84, "chars": 3646 },
     { "heading": "2.1. Checkpointing", "depth": 1, "offset": 4840, "chars": 1109 }
   ],
+  "cached": false,
   "untrusted": true
 }
 ```
