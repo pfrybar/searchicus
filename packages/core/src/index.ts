@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./archive.js";
 export * from "./paths.js";
+export * from "./config.js";
 export * from "./storage.js";
 export * from "./context.js";
 export * from "./schemas.js";

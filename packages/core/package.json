@@ -24,6 +24,7 @@
     "linkedom": "0.18.13",
     "playwright": "1.62.1",
     "stemmer": "2.0.1",
+    "yaml": "2.9.0",
     "zod": "4.5.4"
   },
   "devDependencies": {
