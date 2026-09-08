@@ -366,6 +366,11 @@ stable `reason`, final URL, optional remote `httpStatus`, and timing — never t
 error or challenge page text. Tiny and flat pages remain usable; size, heading
 count, generic error words, and a `find` miss do not make this decision.
 
+A `text/plain` response is already text to read, not HTML to extract. Chromium
+decodes its declared charset before the renderer captures it; searchicus keeps
+the resulting body as Markdown, normalizing line endings without turning a
+README, RFC, or other plain-text document into one fenced code block.
+
 ```bash
 SEARCHICUS_EXTRACT_ENABLED=true searchicus extract https://example.com/
 ```

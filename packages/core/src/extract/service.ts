@@ -456,7 +456,7 @@ export class ExtractionService {
           // memory-capped worker per document, and releasing before it meant
           // the limit bounded renders while workers piled up behind them.
           const parse = this.#parse ?? (await this.#defaultParser());
-          parsed = await parse(rendered.html, rendered.finalUrl, controller.signal);
+          parsed = await parse(rendered.html, rendered.finalUrl, controller.signal, rendered.contentType);
         }
       } finally {
         this.#slots.release();
