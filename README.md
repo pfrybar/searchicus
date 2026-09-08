@@ -305,34 +305,34 @@ INFO api configured setting=search.throttle.minIntervalMs value=8000 from=SEARCH
 INFO api configured setting=extract.enabled value=true from=/srv/searchicus/config.yaml
 ```
 
-| Setting                         | Default                             | Effect                                                                                                                      |
-| ------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `server.port`                   | `3000`                              | Port to listen on.                                                                                                          |
-| `server.host`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.                                                      |
-| `server.mcp`                    | on                                  | Off serves the search API alone; `/mcp` then 404s.                                                                          |
-| `server.ui`                     | on when a build exists              | Off skips the static UI.                                                                                                    |
-| `server.uiDir`                  | `packages/ui/dist`                  | Alternate UI build directory. Relative values resolve against the application root.                                         |
-| `server.jsonBodyLimit`          | `64kb`                              | Largest request body the API accepts. A byte size (`64kb`, `1.5mb`) or a plain count; anything else is rejected at startup. |
-| `paths.dataDir`                 | `.searchicus`; `/data` in the image | Persistent-state root: `searchicus.sqlite` and `profile/<surface>/`.                                                        |
-| `paths.profileDir`              | `<dataDir>/profile/<surface>`       | Chromium user-data directory override. One per process.                                                                     |
-| `paths.storePath`               | `<dataDir>/searchicus.sqlite`       | Search archive SQLite file override.                                                                                        |
-| `archive.enabled`               | on                                  | Off disables best-effort archival.                                                                                          |
-| `archive.busyTimeoutMs`         | `5000`                              | Wait for another process holding the database lock.                                                                         |
-| `log.level`                     | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                                    |
-| `search.resultsTimeoutMs`       | `30000`                             | Deadline for a fan-out to produce results.                                                                                  |
-| `search.sessionTimeoutMs`       | `60000`                             | Cap on browser work that outlives the results it produced.                                                                  |
-| `search.reserveMs`              | `12000`                             | Budget below which a caller is refused rather than queued.                                                                  |
-| `search.throttle.minIntervalMs` | `5000`                              | Spacing between consecutive fan-outs.                                                                                       |
-| `search.throttle.jitter`        | `0.3`                               | Spread as a fraction of the interval: `0.3` makes 5s into 3.5–6.5s.                                                         |
-| `search.throttle.maxQueued`     | `60`                                | Callers that may wait for a slot before further ones are refused.                                                           |
-| `browser.maxPages`              | `24`                                | Ceiling on simultaneously open pages. A memory valve, not the rate policy.                                                  |
-| `browser.timezone`              | `America/Chicago`                   | IANA time zone every browser this process starts reports, search and extraction alike. Must suit the egress IP.             |
-| `browser.locale`                | `en-US`                             | Locale every browser this process starts reports, search and extraction alike. Must suit the egress IP.                     |
-| `browser.profileUnlock`         | off                                 | On removes a foreign-host stale `SingletonLock` and retries launch; only for a known single-writer profile.                 |
-| `extract.*`                     | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                                |
-| `dashboard.metricsWindow`       | `500`                               | Recent searches averaged over for engine metrics.                                                                           |
-| `dashboard.searchPageSize`      | `50`                                | Searches listed per page of the browser.                                                                                    |
-| `dashboard.maxLimit`            | `2000`                              | Ceiling on both, so a caller cannot ask the process to read everything. Lowering it lowers the two windows above with it.   |
+| Setting                         | Default                             | Effect                                                                                                                           |
+| ------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `server.port`                   | `3000`                              | Port to listen on.                                                                                                               |
+| `server.host`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.                                                           |
+| `server.mcp`                    | on                                  | Off serves the search API alone; `/mcp` then 404s.                                                                               |
+| `server.ui`                     | on when a build exists              | Off skips the static UI.                                                                                                         |
+| `server.uiDir`                  | `packages/ui/dist`                  | Alternate UI build directory. Relative values resolve against the application root.                                              |
+| `server.jsonBodyLimit`          | `64kb`                              | Largest request body the API accepts. A byte size (`64kb`, `1.5mb`) or a plain byte count; anything else is rejected at startup. |
+| `paths.dataDir`                 | `.searchicus`; `/data` in the image | Persistent-state root: `searchicus.sqlite` and `profile/<surface>/`.                                                             |
+| `paths.profileDir`              | `<dataDir>/profile/<surface>`       | Chromium user-data directory override. One per process.                                                                          |
+| `paths.storePath`               | `<dataDir>/searchicus.sqlite`       | Search archive SQLite file override.                                                                                             |
+| `archive.enabled`               | on                                  | Off disables best-effort archival.                                                                                               |
+| `archive.busyTimeoutMs`         | `5000`                              | Wait for another process holding the database lock.                                                                              |
+| `log.level`                     | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                                         |
+| `search.resultsTimeoutMs`       | `30000`                             | Deadline for a fan-out to produce results.                                                                                       |
+| `search.sessionTimeoutMs`       | `60000`                             | Cap on browser work that outlives the results it produced.                                                                       |
+| `search.reserveMs`              | `12000`                             | Budget below which a caller is refused rather than queued.                                                                       |
+| `search.throttle.minIntervalMs` | `5000`                              | Spacing between consecutive fan-outs.                                                                                            |
+| `search.throttle.jitter`        | `0.3`                               | Spread as a fraction of the interval: `0.3` makes 5s into 3.5–6.5s.                                                              |
+| `search.throttle.maxQueued`     | `60`                                | Callers that may wait for a slot before further ones are refused.                                                                |
+| `browser.maxPages`              | `24`                                | Ceiling on simultaneously open pages. A memory valve, not the rate policy.                                                       |
+| `browser.timezone`              | `America/Chicago`                   | IANA time zone every browser this process starts reports, search and extraction alike. Must suit the egress IP.                  |
+| `browser.locale`                | `en-US`                             | Locale every browser this process starts reports, search and extraction alike. Must suit the egress IP.                          |
+| `browser.profileUnlock`         | off                                 | On removes a foreign-host stale `SingletonLock` and retries launch; only for a known single-writer profile.                      |
+| `extract.*`                     | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                                     |
+| `dashboard.metricsWindow`       | `500`                               | Recent searches averaged over for engine metrics.                                                                                |
+| `dashboard.searchPageSize`      | `50`                                | Searches listed per page of the browser.                                                                                         |
+| `dashboard.maxLimit`            | `2000`                              | Ceiling on both, so a caller cannot ask the process to read everything. Lowering it lowers the two windows above with it.        |
 
 The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the

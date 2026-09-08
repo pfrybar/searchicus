@@ -36,8 +36,8 @@
 #   ui: true
 #   # Relative to the application root, like every other path setting.
 #   uiDir: null               # packages/ui/dist
-#   # A byte size (64kb, 1.5mb) or a plain count. Checked at startup rather
-#   # than by express on the first oversized request.
+#   # A byte size (64kb, 1.5mb) or a plain byte count, quoted or not.
+#   # Checked at startup rather than by express on the first oversized request.
 #   jsonBodyLimit: 64kb
 
 # log:
