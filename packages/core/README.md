@@ -98,7 +98,7 @@ Persistent state defaults to `.searchicus/` at the application root — found
 from the installed files, not from the working directory, so every surface
 resolves the same archive however its process was started. Each surface gets
 its own profile under `profile/<surface>/`, and the application archive is the
-sibling `searches.sqlite`. Chromium profiles are single-writer, so surfaces do not
+sibling `searchicus.sqlite`. Chromium profiles are single-writer, so surfaces do not
 share cookies; the archive uses WAL mode and is safe for API and CLI to share.
 Set `SEARCHICUS_DATA_DIR` to move both together, or use
 `SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component override.

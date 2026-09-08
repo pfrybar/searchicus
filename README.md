@@ -118,7 +118,7 @@ from the installed files, so `npm run dev -w @searchicus/api` and a CLI run
 from anywhere reach the same archive. (They did not always — resolving from
 the working directory gave the API `packages/api/.searchicus` and quietly made
 the shared archive two databases.) Each surface gets its own Chromium profile
-under `profile/<surface>/`, while `searches.sqlite` is the shared application
+under `profile/<surface>/`, while `searchicus.sqlite` is the shared application
 archive beside it. Profiles remain isolated because a
 user-data directory is single-writer; the archive uses SQLite WAL mode so API
 and CLI processes can share it. `SEARCHICUS_DATA_DIR` moves both together;
@@ -259,10 +259,10 @@ profile; it removes that stale lock and retries Chromium once.
 | --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                      | `3000`                              | Port to listen on.                                                                                                  |
 | `HOST`                      | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.                                              |
-| `SEARCHICUS_DATA_DIR`       | `/data` in the image                | Persistent-state root: `searches.sqlite` and `profile/<surface>/`.                                                  |
+| `SEARCHICUS_DATA_DIR`       | `/data` in the image                | Persistent-state root: `searchicus.sqlite` and `profile/<surface>/`.                                                |
 | `SEARCHICUS_PROFILE_DIR`    | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                                                             |
 | `SEARCHICUS_PROFILE_UNLOCK` | disabled                            | `true` removes a foreign-host stale `SingletonLock` and retries launch; only set for a known single-writer profile. |
-| `SEARCHICUS_STORE_PATH`     | `<data-dir>/searches.sqlite`        | Search archive SQLite file override.                                                                                |
+| `SEARCHICUS_STORE_PATH`     | `<data-dir>/searchicus.sqlite`      | Search archive SQLite file override.                                                                                |
 | `SEARCHICUS_STORE`          | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.                                                        |
 | `SEARCHICUS_LOG`            | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                            |
 | `SEARCHICUS_TIMEZONE`       | `America/Chicago`                   | IANA time zone the browser reports.                                                                                 |

@@ -15,7 +15,7 @@ const directories: string[] = [];
 function temporaryDatabase(): string {
   const directory = mkdtempSync(path.join(tmpdir(), "searchicus-archive-"));
   directories.push(directory);
-  return path.join(directory, "searches.sqlite");
+  return path.join(directory, "searchicus.sqlite");
 }
 
 function record(overrides: Partial<SearchArchiveRecord> = {}): SearchArchiveRecord {
@@ -82,7 +82,7 @@ describe("persistent data paths", () => {
 
     expect(defaultDataDir()).toBe("/var/lib/searchicus");
     expect(defaultProfileDir("api")).toBe("/var/lib/searchicus/profile/api");
-    expect(defaultStorePath()).toBe("/var/lib/searchicus/searches.sqlite");
+    expect(defaultStorePath()).toBe("/var/lib/searchicus/searchicus.sqlite");
   });
 
   it("resolves the same state root however the process was started", async () => {
@@ -124,11 +124,11 @@ describe("persistent data paths", () => {
   it("allows a component-specific path override and disables storage on any explicit no", () => {
     vi.stubEnv("SEARCHICUS_DATA_DIR", "/data");
     vi.stubEnv("SEARCHICUS_PROFILE_DIR", "/browser/api");
-    vi.stubEnv("SEARCHICUS_STORE_PATH", "/archive/searches.sqlite");
+    vi.stubEnv("SEARCHICUS_STORE_PATH", "/archive/searchicus.sqlite");
     vi.stubEnv("SEARCHICUS_STORE", "false");
 
     expect(defaultProfileDir("api")).toBe("/browser/api");
-    expect(defaultStorePath()).toBe("/archive/searches.sqlite");
+    expect(defaultStorePath()).toBe("/archive/searchicus.sqlite");
     expect(searchArchiveEnabled()).toBe(false);
     expect(createDefaultSearchArchive()).toBeUndefined();
 

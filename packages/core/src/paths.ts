@@ -8,7 +8,7 @@ export const DEFAULT_DATA_DIR = ".searchicus";
 /** Chromium profiles remain isolated below the shared persistent state root. */
 export const DEFAULT_PROFILE_ROOT = "profile";
 /** Name of the shared, application-owned search archive database. */
-export const DEFAULT_STORE_FILENAME = "searches.sqlite";
+export const DEFAULT_STORE_FILENAME = "searchicus.sqlite";
 /** How far up to look for the workspace root before giving up. */
 const MAX_ROOT_SEARCH_DEPTH = 8;
 
