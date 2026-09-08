@@ -1,60 +1,83 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { createDefaultSearchArchive, createLogger, defaultDataDir, envOptOut, getLogLevel } from "@searchicus/core";
+import {
+  ConfigError,
+  createDefaultSearchArchive,
+  createLogger,
+  loadConfig,
+  resolveDataDir,
+  setLogLevel,
+  type SearchicusConfig,
+} from "@searchicus/core";
 import { createBrowserExtraction, createBrowserRegistry } from "@searchicus/core/browser";
 import { createApp, defaultUiDir } from "./app.js";
 import { shutdownOn } from "./shutdown.js";
 
 const log = createLogger("api");
 
-const port = Number(process.env.PORT ?? 3000);
+/**
+ * Everything this process is configured with, read once.
+ *
+ * An invalid value throws here, before a port is bound or a browser profile
+ * is touched, and the error names both the setting and where it came from.
+ * Nothing below this line reads the environment for itself.
+ */
+const config = configure();
+setLogLevel(config.log.level);
 
 /**
- * Loopback unless told otherwise.
+ * Reads the configuration, or says exactly what is wrong with it and stops.
  *
- * This server has no authentication and its dashboard endpoints serve every
- * query ever made through it, so the default binds where only this machine
- * can reach it. Deployments that need more say so: the image sets
- * HOST=0.0.0.0, because a container that listens only on its own loopback
- * cannot be reached at all.
+ * One line per problem rather than the joined message, so a misconfiguration
+ * reads like every other thing this process reports instead of a paragraph
+ * pushed through a one-line-per-entry format.
  */
-const host = process.env.HOST ?? "127.0.0.1";
-
-// MCP is served from this process by default. Disabling it leaves the
-// search API untouched; see CreateAppOptions for why they share a process.
-const mcp = envOptOut(process.env.MCP_ENABLED);
+function configure(): SearchicusConfig {
+  try {
+    return loadConfig();
+  } catch (err) {
+    if (!(err instanceof ConfigError)) throw err;
+    for (const problem of err.problems) log.error("invalid configuration", { problem });
+    process.exit(1);
+  }
+}
 
 // The UI is served only when a build is actually present, so running the API
 // from a fresh checkout doesn't 404 confusingly at /. In development the Vite
 // dev server on :5173 serves the UI instead and proxies /api here.
-const uiDir = process.env.UI_DIST_DIR ?? defaultUiDir();
-const ui = envOptOut(process.env.SERVE_UI) && existsSync(path.join(uiDir, "index.html"));
+const uiDir = config.server.uiDir ?? defaultUiDir();
+const ui = config.server.ui && existsSync(path.join(uiDir, "index.html"));
 
 // One archive, shared: search and extraction write to the same file, and one
 // connection in one process beats two. They deliberately do not share a
 // browser -- see createBrowserExtraction.
-const archive = createDefaultSearchArchive();
-const registry = createBrowserRegistry("api", { archive });
-const extraction = createBrowserExtraction({ archive });
+const archive = createDefaultSearchArchive(config);
+const registry = createBrowserRegistry("api", config, { archive });
+const extraction = createBrowserExtraction(config, { archive });
 const server = createApp(registry, {
-  mcp,
+  mcp: config.server.mcp,
   ui: ui && uiDir,
   extraction,
   insights: archive,
+  jsonBodyLimit: config.server.jsonBodyLimit,
   runtime: () => ({ search: registry.overload, extract: extraction.overload }),
-}).listen(port, host, () => {
+}).listen(config.server.port, config.server.host, () => {
   // Through the logger, not console: the banner is diagnostics, so it
   // belongs on the same stream and behind the same switch as everything
-  // else this process reports. `SEARCHICUS_LOG` controls the lot.
-  log.info("listening", { url: `http://${host}:${port}`, level: getLogLevel() });
-  log.info("routes", { search: "/api and /", mcp: mcp ? "/mcp" : "disabled", ui: ui ? uiDir : "not served" });
+  // else this process reports. `log.level` controls the lot.
+  log.info("listening", { url: `http://${config.server.host}:${config.server.port}`, level: config.log.level });
+  log.info("routes", {
+    search: "/api and /",
+    mcp: config.server.mcp ? "/mcp" : "disabled",
+    ui: ui ? uiDir : "not served",
+  });
   log.info("features", {
-    extract: extraction.enabled ? "enabled" : "disabled (SEARCHICUS_EXTRACT_ENABLED)",
+    extract: extraction.enabled ? "enabled" : "disabled (extract.enabled)",
     dashboard: archive ? "enabled" : "disabled (no archive)",
   });
   // Reported because the failure this guards against was silent: two data
   // roots, each working perfectly, and nothing to say which was in use.
-  log.info("persistent state", { dataDir: defaultDataDir() });
+  log.info("persistent state", { dataDir: resolveDataDir(config.paths) });
 });
 
 shutdownOn(server, {

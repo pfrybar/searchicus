@@ -196,10 +196,27 @@ export interface ArchiveInsights {
   searchDetail(searchId: string): Promise<SearchDetail | undefined>;
 }
 
+/** How much of the archive the dashboard may read at a time. */
+export interface DashboardConfig {
+  /** Recent searches averaged over for engine metrics. */
+  readonly metricsWindow: number;
+  /** Searches listed per page of the browser. */
+  readonly searchPageSize: number;
+  /** Ceiling on both, so a caller cannot ask the process to read everything. */
+  readonly maxLimit: number;
+}
+
+/** The built-in dashboard window sizes, for callers that configure nothing. */
+export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
+  metricsWindow: DEFAULT_METRICS_WINDOW,
+  searchPageSize: DEFAULT_SEARCH_PAGE_SIZE,
+  maxLimit: MAX_INSIGHTS_LIMIT,
+};
+
 /** Clamps a caller-supplied limit into a range the process will actually read. */
-export function boundedLimit(value: number | undefined, fallback: number): number {
+export function boundedLimit(value: number | undefined, fallback: number, max = MAX_INSIGHTS_LIMIT): number {
   if (value === undefined || !Number.isSafeInteger(value) || value < 1) return fallback;
-  return Math.min(value, MAX_INSIGHTS_LIMIT);
+  return Math.min(value, max);
 }
 
 /**

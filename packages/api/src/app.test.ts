@@ -142,6 +142,18 @@ describe("request limits", () => {
     expect(String(res.body.error)).toMatch(/must not exceed/);
   });
 
+  it("takes the body limit from configuration, and says which one it applied", async () => {
+    const app = createApp(new SearchEngineRegistry(), { jsonBodyLimit: "1kb" });
+
+    const res = await request(app)
+      .post("/search")
+      .set("content-type", "application/json")
+      .send(JSON.stringify({ query: "x".repeat(4_000) }));
+
+    expect(res.status).toBe(413);
+    expect(String(res.body.error)).toContain("1kb");
+  });
+
   it("bounds the fields a caller can send", async () => {
     const app = testApp();
 

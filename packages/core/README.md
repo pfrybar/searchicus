@@ -100,13 +100,13 @@ resolves the same archive however its process was started. Each surface gets
 its own profile under `profile/<surface>/`, and the application archive is the
 sibling `searchicus.sqlite`. Chromium profiles are single-writer, so surfaces do not
 share cookies; the archive uses WAL mode and is safe for API and CLI to share.
-Set `SEARCHICUS_DATA_DIR` to move both together, or use
-`SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component override.
+Set `paths.dataDir` to move both together, or use
+`paths.profileDir` / `paths.storePath` for a component override.
 
 An ungraceful host or container stop can leave Chromium's `SingletonLock`
 behind. If it names a different hostname, launch failure explains the exact
 lock path and the manual fix; searchicus never removes it by default. A
-known-single-writer deployment can set `SEARCHICUS_PROFILE_UNLOCK=true` to
+known-single-writer deployment can set `browser.profileUnlock` to
 remove only that foreign-host lock and retry launch once. Do not enable it
 where another process may legitimately own the profile.
 
@@ -147,7 +147,7 @@ it must never delay or alter the search response. `drain()` waits for queued
 archive writes as well as browser sessions, and `close()` closes the database
 after draining. The archive contains queries, result text and URLs, and engine
 failure messages, so treat the local database as sensitive data. Set
-`SEARCHICUS_STORE=false` to disable it.
+`archive.enabled: false` to disable it.
 
 ## Extraction
 
@@ -196,7 +196,7 @@ browser installed; the address policy in `extract/address.ts` is pure; and
 Defuddle runs in a memory-capped worker so a pathological document cannot take
 the host process with it.
 
-Extraction is disabled unless `SEARCHICUS_EXTRACT_ENABLED=true`, and every
+Extraction is disabled unless `extract.enabled` is set, and every
 other limit is operator configuration rather than a request field. Renders are
 bounded two at a time with at most 32 callers waiting; past that
 `ExtractionBusyError` refuses rather than promising a turn that will arrive

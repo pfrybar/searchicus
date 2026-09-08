@@ -80,6 +80,17 @@ trusting changes to `browser.ts`, `browser/session.ts`, or
 - Log through `packages/core/src/logger.ts`, never directly with `console` in
   application code. Logs go to stderr so CLI stdout remains pipeable. Query
   text stays at `debug` or below.
+- Read configuration from the tree in `packages/core/src/config.ts`, never
+  from `process.env`. A front door calls `loadConfig()` once and passes slices
+  down; nothing beneath one reads the environment for itself. The logger's own
+  bootstrap level is the single exception, because the loader logs.
+- A new setting is one leaf added to `DEFAULT_CONFIG_INPUT` and the schema,
+  documented in `config.example.yaml` and the README table. Its environment
+  name is derived from its path, so do not write one by hand. Tests fail if
+  the example file omits it.
+- Operator values only. Tuned algorithm constants stay in the module that owns
+  them, and so do caller-facing bounds wired into the request schemas or MCP
+  tool descriptions.
 - When a shared type, schema, or plugin contract changes, update every affected
   adapter, test, and package README in the same change.
 

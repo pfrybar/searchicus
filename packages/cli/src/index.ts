@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 import {
   createDefaultRegistry,
-  defaultDataDir,
-  defaultProfileDir,
-  defaultStorePath,
+  DEFAULT_CONFIG_INPUT,
   ExtractionService,
   ExtractRequestSchema,
   MAX_SEARCH_LIMIT,
   FindRequestSchema,
   OutlineRequestSchema,
+  resolveDataDir,
+  resolveProfileDir,
+  resolveStorePath,
   SearchEngineRegistry,
   SearchRequestSchema,
+  type PathsConfig,
 } from "@searchicus/core";
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
@@ -63,6 +65,7 @@ export function parseMaxChars(value: string): number {
 export function createProgram(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   extraction: ExtractionService = new ExtractionService(),
+  paths: PathsConfig = DEFAULT_CONFIG_INPUT.paths,
 ): Command {
   const program = new Command();
 
@@ -162,20 +165,20 @@ export function createProgram(
     .option("--json", "print raw JSON instead of a formatted list")
     .action((opts: { json?: boolean }) => {
       // Worth a command of its own: these resolve from the application root
-      // and the environment, so "which archive am I looking at" is otherwise
-      // a question you can only answer by guessing.
-      const paths = {
-        dataDir: defaultDataDir(),
-        archive: defaultStorePath(),
-        profile: defaultProfileDir("cli"),
+      // and the configuration, so "which archive am I looking at" is
+      // otherwise a question you can only answer by guessing.
+      const resolved = {
+        dataDir: resolveDataDir(paths),
+        archive: resolveStorePath(paths),
+        profile: resolveProfileDir(paths, "cli"),
       };
 
       if (opts.json) {
-        console.log(JSON.stringify(paths, null, 2));
+        console.log(JSON.stringify(resolved, null, 2));
         return;
       }
 
-      for (const [name, value] of Object.entries(paths)) console.log(`${name}\t${value}`);
+      for (const [name, value] of Object.entries(resolved)) console.log(`${name}\t${value}`);
     });
 
   return program;
@@ -203,16 +206,30 @@ if (entryPoint && import.meta.url === pathToFileURL(entryPoint).href) {
 
   // Imported dynamically so that merely importing createProgram() — as the
   // tests do — never pulls Playwright into the module graph.
-  const { createDefaultSearchArchive } = await import("@searchicus/core");
+  const { ConfigError, createDefaultSearchArchive, loadConfig, setLogLevel } = await import("@searchicus/core");
   const { createBrowserExtraction, createBrowserRegistry } = await import("@searchicus/core/browser");
+
+  // Read once, before anything opens a profile or a database. An invalid
+  // setting stops the command here, naming itself and what is wrong with it —
+  // not as a stack trace, which is not an answer anyone can act on.
+  const config = (() => {
+    try {
+      return loadConfig();
+    } catch (err) {
+      console.error(err instanceof ConfigError ? err.message : err);
+      process.exit(1);
+    }
+  })();
+  setLogLevel(config.log.level);
+
   // One archive for both, and deliberately not one browser: see
   // createBrowserExtraction.
-  const archive = createDefaultSearchArchive();
-  const registry = createBrowserRegistry("cli", { archive });
-  const extraction = createBrowserExtraction({ archive });
+  const archive = createDefaultSearchArchive(config);
+  const registry = createBrowserRegistry("cli", config, { archive });
+  const extraction = createBrowserExtraction(config, { archive });
 
   try {
-    await createProgram(registry, extraction).parseAsync(process.argv);
+    await createProgram(registry, extraction, config.paths).parseAsync(process.argv);
   } catch (err: unknown) {
     console.error(err instanceof Error ? err.message : err);
     process.exitCode = 1;

@@ -31,6 +31,9 @@ import type { ExtractConfig } from "./extract/config.js";
 import { createLogger } from "./logger.js";
 import type { LogLevel } from "./logger.js";
 import { applicationRoot } from "./paths.js";
+import type { PathsConfig } from "./paths.js";
+import type { ArchiveConfig } from "./storage.js";
+import type { DashboardConfig } from "./insights.js";
 
 const log = createLogger("config");
 
@@ -247,11 +250,7 @@ export const DEFAULT_CONFIG_INPUT = {
  * all, which is what lets the extraction stack keep its own shape.
  */
 export interface SearchicusConfig {
-  readonly paths: {
-    readonly dataDir: string;
-    readonly profileDir: string | null;
-    readonly storePath: string | null;
-  };
+  readonly paths: PathsConfig;
   readonly server: {
     readonly host: string;
     readonly port: number;
@@ -261,7 +260,7 @@ export interface SearchicusConfig {
     readonly jsonBodyLimit: string;
   };
   readonly log: { readonly level: LogLevel };
-  readonly archive: { readonly enabled: boolean; readonly busyTimeoutMs: number };
+  readonly archive: ArchiveConfig;
   readonly search: {
     readonly resultsTimeoutMs: number;
     readonly sessionTimeoutMs: number;
@@ -279,18 +278,24 @@ export interface SearchicusConfig {
     readonly profileUnlock: boolean;
   };
   readonly extract: ExtractConfig;
-  readonly dashboard: {
-    readonly metricsWindow: number;
-    readonly searchPageSize: number;
-    readonly maxLimit: number;
-  };
+  readonly dashboard: DashboardConfig;
 }
 
 /** Raised for anything that would leave the process running on a value nobody wrote. */
 export class ConfigError extends Error {
-  constructor(message: string) {
-    super(message);
+  /**
+   * One entry per problem, each already naming its own source.
+   *
+   * Kept apart from the joined message so a front door can report them the
+   * way it reports everything else — the API logs one line each, rather than
+   * pushing a paragraph through a one-line-per-entry log format.
+   */
+  readonly problems: readonly string[];
+
+  constructor(summary: string, problems: readonly string[] = []) {
+    super(problems.length > 0 ? [summary, ...problems.map((problem) => `  - ${problem}`)].join("\n") : summary);
     this.name = "ConfigError";
+    this.problems = problems.length > 0 ? problems : [summary];
   }
 }
 
@@ -439,7 +444,7 @@ export function loadConfig(options: LoadConfigOptions = {}): SearchicusConfig {
   const merged = merge(merge(DEFAULT_CONFIG_INPUT, fromFile), overlay.values);
   const result = SearchicusConfigSchema.safeParse(merged);
   if (!result.success) {
-    throw new ConfigError(describeIssues(result.error, overlay.sources, file));
+    throw new ConfigError("Invalid searchicus configuration:", describeIssues(result.error, overlay.sources, file));
   }
 
   log.debug("configuration loaded", { file: file ?? "defaults", overrides: overlay.sources.size });
@@ -453,19 +458,17 @@ export function loadConfig(options: LoadConfigOptions = {}): SearchicusConfig {
  * the same word in both sources: the file says `extract.maxBytes` and the
  * environment says `SEARCHICUS_EXTRACT_MAX_BYTES`.
  */
-function describeIssues(error: z.ZodError, sources: Map<string, string>, file: string | null): string {
-  const lines = error.issues.flatMap((issue) => {
+function describeIssues(error: z.ZodError, sources: Map<string, string>, file: string | null): string[] {
+  return error.issues.flatMap((issue) => {
     const at = issue.path.map(String);
     // A strict object reports unknown keys against the parent that holds them.
     const keys = issue.code === "unrecognized_keys" ? issue.keys : [undefined];
     return keys.map((key) => {
       const dotted = [...at, ...(key === undefined ? [] : [key])].join(".");
       const source = sources.get(dotted) ?? (file === null ? "default" : file);
-      return `  - ${dotted || "(root)"} (${source}): ${issue.message}`;
+      return `${dotted || "(root)"} (${source}): ${issue.message}`;
     });
   });
-
-  return [`Invalid searchicus configuration:`, ...lines].join("\n");
 }
 
 /**

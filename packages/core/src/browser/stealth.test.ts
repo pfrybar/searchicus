@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   buildStealthOptions,
   buildUserAgent,
@@ -14,12 +14,7 @@ import {
   VIEWPORT,
 } from "./stealth.js";
 
-const savedEnv = { ...process.env };
 const tempDirs: string[] = [];
-
-afterEach(() => {
-  process.env = { ...savedEnv };
-});
 
 afterAll(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
@@ -102,17 +97,12 @@ describe("buildStealthOptions", () => {
     expect(buildStealthOptions({ major: "142" }).userAgent).toContain("Chrome/142.0.0.0");
   });
 
-  it("defaults the time zone and locale, and lets the environment override them", () => {
+  it("defaults the time zone and locale, and takes configured ones", () => {
     expect(buildStealthOptions()).toMatchObject({ timezoneId: DEFAULT_TIMEZONE, locale: DEFAULT_LOCALE });
-
-    process.env.SEARCHICUS_TIMEZONE = "Europe/Berlin";
-    process.env.SEARCHICUS_LOCALE = "de-DE";
-    expect(buildStealthOptions()).toMatchObject({ timezoneId: "Europe/Berlin", locale: "de-DE" });
-  });
-
-  it("prefers an explicit argument over the environment", () => {
-    process.env.SEARCHICUS_TIMEZONE = "Europe/Berlin";
-    expect(buildStealthOptions({ timezoneId: "Asia/Tokyo" }).timezoneId).toBe("Asia/Tokyo");
+    expect(buildStealthOptions({ timezoneId: "Europe/Berlin", locale: "de-DE" })).toMatchObject({
+      timezoneId: "Europe/Berlin",
+      locale: "de-DE",
+    });
   });
 
   it("grants the permissions a used browser would have, but not clipboard-read", () => {

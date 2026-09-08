@@ -4,11 +4,11 @@ import type { DatabaseSync, SQLInputValue, StatementSync } from "node:sqlite";
 import {
   boundedLimit,
   creditMergedResult,
-  DEFAULT_METRICS_WINDOW,
-  DEFAULT_SEARCH_PAGE_SIZE,
+  DEFAULT_DASHBOARD_CONFIG,
   percentile,
   round,
   type ArchivedEngineOutcome,
+  type DashboardConfig,
   type ArchivedExtraction,
   type ArchiveInsights,
   type EngineMetrics,
@@ -23,12 +23,29 @@ import { canonicalizeUrl } from "./ranking.js";
 import { assessRelevance } from "./relevance.js";
 import type { ExtractionArchive, ExtractionArchiveRecord, SearchArchive, SearchArchiveRecord } from "./archive.js";
 import type { EngineFailureKind, EngineSearchOutcome, MergedSearchResponse, SearchResult } from "./types.js";
-import { defaultStorePath, searchArchiveEnabled } from "./paths.js";
+import { resolveStorePath } from "./paths.js";
+import type { PathsConfig } from "./paths.js";
 
 /** Current SQLite schema. Future changes are appended as numbered migrations. */
 export const ARCHIVE_SCHEMA_VERSION = 6;
 /** Wait briefly for another API/CLI process holding the shared database lock. */
 export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
+
+/** Everything the archive takes beyond the file it opens. */
+export interface SqliteSearchArchiveOptions {
+  /** How long to wait for another process holding the database lock. */
+  readonly busyTimeoutMs?: number;
+  /** How much of the archive the dashboard's read endpoints may examine. */
+  readonly dashboard?: DashboardConfig;
+}
+
+/** What the archive needs from the configuration tree. */
+export interface ArchiveConfig {
+  /** Record completed fan-outs and reads. Best-effort either way. */
+  readonly enabled: boolean;
+  /** How long to wait for another process holding the database lock. */
+  readonly busyTimeoutMs: number;
+}
 
 /**
  * A local SQLite archive for completed fan-outs.
@@ -39,12 +56,16 @@ export const ARCHIVE_BUSY_TIMEOUT_MS = 5_000;
  */
 export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, ArchiveInsights {
   readonly #path: string;
+  readonly #busyTimeoutMs: number;
+  readonly #dashboard: DashboardConfig;
   #database: DatabaseSync | undefined;
   #opening: Promise<DatabaseSync> | undefined;
   #closed = false;
 
-  constructor(filePath = defaultStorePath()) {
+  constructor(filePath: string, options: SqliteSearchArchiveOptions = {}) {
     this.#path = filePath;
+    this.#busyTimeoutMs = options.busyTimeoutMs ?? ARCHIVE_BUSY_TIMEOUT_MS;
+    this.#dashboard = options.dashboard ?? DEFAULT_DASHBOARD_CONFIG;
   }
 
   get filePath(): string {
@@ -139,7 +160,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
    * every number in a row describes the same set of searches.
    */
   async engineMetrics(options: { window?: number; overload?: OverloadTotals } = {}): Promise<EngineMetricsReport> {
-    const window = boundedLimit(options.window, DEFAULT_METRICS_WINDOW);
+    const window = boundedLimit(options.window, this.#dashboard.metricsWindow, this.#dashboard.maxLimit);
     const db = await this.#open();
 
     const searchRows = rows<WindowedSearchRow>(
@@ -316,7 +337,7 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
 
   /** Lists recent searches, newest first, for the dashboard's browser. */
   async recentSearches(options: { limit?: number; before?: string } = {}): Promise<SearchSummary[]> {
-    const limit = boundedLimit(options.limit, DEFAULT_SEARCH_PAGE_SIZE);
+    const limit = boundedLimit(options.limit, this.#dashboard.searchPageSize, this.#dashboard.maxLimit);
     const db = await this.#open();
 
     // Keyset pagination on (started_at, search_id): stable while new searches
@@ -540,12 +561,12 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
       const { DatabaseSync } = await import("node:sqlite");
       const db = new DatabaseSync(this.#path, {
         enableForeignKeyConstraints: true,
-        timeout: ARCHIVE_BUSY_TIMEOUT_MS,
+        timeout: this.#busyTimeoutMs,
       });
 
       try {
         // Set the timeout first, so everything after it is patient.
-        db.exec(`PRAGMA busy_timeout = ${ARCHIVE_BUSY_TIMEOUT_MS}`);
+        db.exec(`PRAGMA busy_timeout = ${this.#busyTimeoutMs}`);
         // WAL is a persistent property of the file and only has to be set
         // once. Switching journal mode takes an exclusive lock that SQLite
         // refuses to wait for — it answers "database is locked" immediately
@@ -840,9 +861,17 @@ function rollback(db: DatabaseSync): void {
   }
 }
 
-/** Creates the default archive unless the process explicitly disables it. */
-export function createDefaultSearchArchive(): SqliteSearchArchive | undefined {
-  return searchArchiveEnabled() ? new SqliteSearchArchive() : undefined;
+/** Creates the configured archive unless archiving is switched off. */
+export function createDefaultSearchArchive(config: {
+  readonly archive: ArchiveConfig;
+  readonly paths: PathsConfig;
+  readonly dashboard?: DashboardConfig;
+}): SqliteSearchArchive | undefined {
+  if (!config.archive.enabled) return undefined;
+  return new SqliteSearchArchive(resolveStorePath(config.paths), {
+    busyTimeoutMs: config.archive.busyTimeoutMs,
+    dashboard: config.dashboard,
+  });
 }
 
 /** Engine rows for the most recent N searches, ordered by that same window. */

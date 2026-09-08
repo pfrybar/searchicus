@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { envOptOut } from "./env.js";
 
 /** The persistent state root, relative to the application root. */
 export const DEFAULT_DATA_DIR = ".searchicus";
@@ -65,24 +64,37 @@ function declaresWorkspaces(manifestPath: string): boolean {
 }
 
 /**
- * Resolves the root for all persistent searchicus state. Override this one
- * value to move both Chromium profiles and the SQLite archive together.
+ * Where persistent state lives, as configured. The `paths` slice of the
+ * configuration tree; declared here because this module owns what the values
+ * mean, and read back by config.ts so the two cannot drift.
  */
-export function defaultDataDir(): string {
-  return process.env.SEARCHICUS_DATA_DIR ?? path.join(applicationRoot(), DEFAULT_DATA_DIR);
+export interface PathsConfig {
+  /** Root for all persistent state. Relative values hang off the application root. */
+  readonly dataDir: string;
+  /** Chromium user-data directory. Null derives one per surface below the root. */
+  readonly profileDir: string | null;
+  /** Archive database file. Null derives one beside the profiles. */
+  readonly storePath: string | null;
+}
+
+/**
+ * Resolves the root for all persistent searchicus state. Change this one
+ * value to move both Chromium profiles and the SQLite archive together.
+ *
+ * A relative value resolves against the application root rather than the
+ * working directory, for the reason applicationRoot() exists: `npm run -w`
+ * would otherwise give each package its own state tree.
+ */
+export function resolveDataDir(paths: PathsConfig): string {
+  return path.resolve(applicationRoot(), paths.dataDir);
 }
 
 /** Resolves one surface's Chromium user-data directory. */
-export function defaultProfileDir(surface: string): string {
-  return process.env.SEARCHICUS_PROFILE_DIR ?? path.join(defaultDataDir(), DEFAULT_PROFILE_ROOT, surface);
+export function resolveProfileDir(paths: PathsConfig, surface: string): string {
+  return paths.profileDir ?? path.join(resolveDataDir(paths), DEFAULT_PROFILE_ROOT, surface);
 }
 
 /** Resolves the shared application archive path, separate from Chromium data. */
-export function defaultStorePath(): string {
-  return process.env.SEARCHICUS_STORE_PATH ?? path.join(defaultDataDir(), DEFAULT_STORE_FILENAME);
-}
-
-/** Archiving is on unless explicitly disabled for a process. */
-export function searchArchiveEnabled(): boolean {
-  return envOptOut(process.env.SEARCHICUS_STORE);
+export function resolveStorePath(paths: PathsConfig): string {
+  return paths.storePath ?? path.join(resolveDataDir(paths), DEFAULT_STORE_FILENAME);
 }

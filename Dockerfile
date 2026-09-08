@@ -85,10 +85,10 @@ COPY --from=build --chown=pwuser:pwuser /app /app
 # an empty volume from the image's directory, permissions included. Without
 # this the mount lands root-owned and the non-root process cannot write it.
 RUN mkdir -p /data/profile/api /data/profile/cli && chown -R pwuser:pwuser /data
-ENV SEARCHICUS_DATA_DIR=/data
+ENV SEARCHICUS_PATHS_DATA_DIR=/data
 # The server binds loopback by default, which inside a container means
 # nothing outside it can connect. A published port needs all interfaces.
-ENV HOST=0.0.0.0
+ENV SEARCHICUS_SERVER_HOST=0.0.0.0
 
 # Chromium's sandbox refuses to run as root, and --no-sandbox is a real
 # downgrade for a process that renders untrusted pages.

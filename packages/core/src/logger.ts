@@ -41,7 +41,7 @@ let sink: LogSink = (line) => process.stderr.write(`${line}\n`);
 let level: LogLevel = defaultLevel();
 
 function defaultLevel(): LogLevel {
-  const configured = process.env.SEARCHICUS_LOG?.trim().toLowerCase();
+  const configured = process.env.SEARCHICUS_LOG_LEVEL?.trim().toLowerCase();
   if (configured && configured in RANK) return configured as LogLevel;
   // Vitest sets this. Suites here exercise failure paths on purpose, and a
   // passing run should not be a wall of expected warnings.

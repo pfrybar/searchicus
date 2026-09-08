@@ -7,8 +7,8 @@ engines; see the repo root `README.md` for adding another one.
 The CLI builds its registry with `createBrowserRegistry("cli")`, so it gets
 its own Chromium profile at `.searchicus/profile/cli/` and shares the local
 archive at `.searchicus/searchicus.sqlite` with other surfaces. Set
-`SEARCHICUS_DATA_DIR` to relocate both, or `SEARCHICUS_PROFILE_DIR` /
-`SEARCHICUS_STORE_PATH` to override one component; `SEARCHICUS_STORE=false`
+`paths.dataDir` to relocate both, or `paths.profileDir` /
+`paths.storePath` to override one component; `archive.enabled: false`
 disables archival. Because a search can return results while its browser
 session is still running, the CLI drains sessions and queued archive writes
 before exiting rather than killing them mid-flight — so the process may stay
@@ -45,7 +45,7 @@ shell loop calling the CLI repeatedly gets no spacing between searches.
 ### `extract <url>`
 
 Renders a page and prints its main content as Markdown. Disabled unless
-`SEARCHICUS_EXTRACT_ENABLED=true`; read the root README's "Extraction" section
+`extract.enabled`; read the root README's "Extraction" section
 before enabling it. A completed render that is an HTTP error, empty document,
 or known interstitial prints `Page content unavailable` and its stable reason,
 with exit status 0; `--json` exposes the common `outcome: "unusable"` branch
