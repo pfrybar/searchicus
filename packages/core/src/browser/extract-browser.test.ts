@@ -317,8 +317,8 @@ describe.skipIf(!available)("ExtractionBrowser (live Chromium)", () => {
   });
 
   it("still delivers a document already fetched when its own weight trips the budget", async () => {
-    // A config no operator can write — extractConfigFromEnv clamps the
-    // document cap to the transfer budget — but one a caller building an
+    // A config no operator can write — loadConfig() clamps the document cap
+    // to the transfer budget — but one a caller building an
     // ExtractConfig by hand can, which is what every test in this file does.
     //
     // The document is fetched whole in #resolveChain before either bound can
