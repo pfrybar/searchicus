@@ -515,10 +515,12 @@ bounded enums and counts; withheld HTML and Markdown are never persisted.
 > persistence and it is a different one. `SEARCHICUS_EXTRACT_CACHE=false` turns
 > it off and costs only time, because paging is correct without it — it has to
 > be, since the CLI and the API are separate processes and neither sees the
-> other's memory. Entries are keyed by URL and so shared between callers: on a
-> shared host a cache hit is visible in the response time, which reveals that
-> somebody read that URL. The content is public either way, so what leaks is
-> the access pattern rather than the data.
+> other's memory. Entries use the final URL as their key and remember a
+> requested redirect URL as an alias, so a direct read of a destination just
+> reached through a redirect reuses the same cached page. On a shared host a
+> hit is visible in the response time, which reveals that somebody read that
+> public page. The content is public either way, so what leaks is the access
+> pattern rather than the data.
 
 `maxChars` is the one limit a caller controls, since it only bounds the
 response (default 20,000, maximum 100,000).
