@@ -3,6 +3,12 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_LOCALE, DEFAULT_TIMEZONE } from "./browser/stealth.js";
+import { DEFAULT_EXTRACT_CONFIG } from "./extract/config.js";
+import { DEFAULT_METRICS_WINDOW, DEFAULT_SEARCH_PAGE_SIZE, MAX_INSIGHTS_LIMIT } from "./insights.js";
+import { DEFAULT_RESULTS_TIMEOUT_MS, DEFAULT_SEARCH_RESERVE_MS, DEFAULT_SESSION_TIMEOUT_MS } from "./registry.js";
+import { ARCHIVE_BUSY_TIMEOUT_MS } from "./storage.js";
+import { DEFAULT_JITTER, DEFAULT_MAX_QUEUED, DEFAULT_MIN_INTERVAL_MS } from "./throttle.js";
 import {
   CONFIG_PATH_ENV,
   ConfigError,
@@ -214,9 +220,56 @@ describe("config.example.yaml", () => {
   it("documents every setting an operator can change", () => {
     // The example is the only place the whole tree is written out for a
     // person, so a setting missing from it is a setting nobody finds.
+    //
+    // Counted rather than merely matched: `enabled` is a leaf of three
+    // different sections and `maxQueued` of two, so a present-somewhere check
+    // would pass while the example was missing two of each.
+    const wanted = new Map<string, number>();
     for (const segments of configLeafPaths()) {
       const key = segments[segments.length - 1] as string;
-      expect(example, segments.join(".")).toMatch(new RegExp(`^#\\s+${key}:`, "m"));
+      wanted.set(key, (wanted.get(key) ?? 0) + 1);
     }
+
+    for (const [key, count] of wanted) {
+      const documented = example.match(new RegExp(`^#\\s+${key}:`, "gm"))?.length ?? 0;
+      expect(documented, key).toBe(count);
+    }
+  });
+});
+
+describe("configured defaults", () => {
+  // The tree is written out as plain data so a person can read it, which
+  // means every value in it also exists as the constant its own module falls
+  // back to when nobody configures anything. They are only equal because
+  // nothing has changed one of them alone — a library caller constructing a
+  // Throttle or an archive directly gets the constant, not the tree.
+  it("matches the fallback each module uses when it is given no configuration", () => {
+    expect(DEFAULT_CONFIG_INPUT.search).toMatchObject({
+      resultsTimeoutMs: DEFAULT_RESULTS_TIMEOUT_MS,
+      sessionTimeoutMs: DEFAULT_SESSION_TIMEOUT_MS,
+      reserveMs: DEFAULT_SEARCH_RESERVE_MS,
+      throttle: {
+        minIntervalMs: DEFAULT_MIN_INTERVAL_MS,
+        jitter: DEFAULT_JITTER,
+        maxQueued: DEFAULT_MAX_QUEUED,
+      },
+    });
+    expect(DEFAULT_CONFIG_INPUT.archive.busyTimeoutMs).toBe(ARCHIVE_BUSY_TIMEOUT_MS);
+    expect(DEFAULT_CONFIG_INPUT.dashboard).toEqual({
+      metricsWindow: DEFAULT_METRICS_WINDOW,
+      searchPageSize: DEFAULT_SEARCH_PAGE_SIZE,
+      maxLimit: MAX_INSIGHTS_LIMIT,
+    });
+  });
+
+  it("matches DEFAULT_EXTRACT_CONFIG field for field", () => {
+    expect({
+      ...DEFAULT_CONFIG_INPUT.extract,
+      allowedPorts: new Set(DEFAULT_CONFIG_INPUT.extract.allowedPorts),
+    }).toEqual(DEFAULT_EXTRACT_CONFIG);
+  });
+
+  it("uses the browser identity the stealth layer falls back to", () => {
+    expect(DEFAULT_CONFIG_INPUT.browser).toMatchObject({ locale: DEFAULT_LOCALE, timezone: DEFAULT_TIMEZONE });
   });
 });
