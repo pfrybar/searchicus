@@ -35,15 +35,17 @@ server, UI):
 - `createDefaultRegistry()` — the registry every front door uses by default.
 - `createLogger()` / `setLogLevel()` — leveled logging on stderr, silent under
   test. See the root README's "Logging".
-- `envOptIn()` / `envOptOut()` — the one vocabulary every environment switch
-  is read with.
+- `loadConfig()` — the whole configuration tree, read once from defaults, a
+  YAML file and the environment. An invalid value throws `ConfigError` rather
+  than falling back. See the root README's "Configuration".
 
 Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 
 - `BrowserSession` — the single long-lived Chromium instance.
-- `createDefaultBrowserSession(surface)` — the configured session each surface uses.
-- `createBrowserRegistry(surface)` — a default registry with a real browser
-  and the default local archive attached.
+- `createDefaultBrowserSession(surface, config)` — the configured session each
+  surface uses.
+- `createBrowserRegistry(surface, config)` — a default registry with a real
+  browser and the configured local archive attached.
 
 ## Usage
 
