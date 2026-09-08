@@ -288,6 +288,17 @@ That is deliberate. Falling back to the default and carrying on is how
 `maxBytes: 5MB` silently means five mebibytes and an afternoon disappears
 looking for the limit that never applied.
 
+The server reports what it is running on at startup, and which layer decided
+each value — the question a running service cannot otherwise answer. Only the
+differences, since the defaults are in `config.example.yaml`:
+
+```
+INFO api configuration source=/srv/searchicus/config.yaml changed=3
+INFO api configured setting=server.port value=8099 from=/srv/searchicus/config.yaml
+INFO api configured setting=search.throttle.minIntervalMs value=8000 from=SEARCHICUS_SEARCH_THROTTLE_MIN_INTERVAL_MS
+INFO api configured setting=extract.enabled value=true from=/srv/searchicus/config.yaml
+```
+
 | Setting                         | Default                             | Effect                                                                                                      |
 | ------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `server.port`                   | `3000`                              | Port to listen on.                                                                                          |

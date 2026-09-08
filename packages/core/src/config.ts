@@ -29,11 +29,12 @@ import { z } from "zod";
 
 import type { ExtractConfig } from "./extract/config.js";
 import { createLogger } from "./logger.js";
-import type { LogLevel } from "./logger.js";
+import type { LogConfig } from "./logger.js";
 import { applicationRoot } from "./paths.js";
 import type { PathsConfig } from "./paths.js";
 import type { ArchiveConfig } from "./storage.js";
 import type { DashboardConfig } from "./insights.js";
+import type { SearchConfig } from "./registry.js";
 
 const log = createLogger("config");
 
@@ -251,6 +252,12 @@ export const DEFAULT_CONFIG_INPUT = {
  */
 export interface SearchicusConfig {
   readonly paths: PathsConfig;
+  /**
+   * Declared here rather than by an owning module, unlike every other slice.
+   * The server lives in `packages/api`, which this package cannot import, and
+   * the browser layer is behind `@searchicus/core/browser`, which the
+   * browser-free main entry must not reach.
+   */
   readonly server: {
     readonly host: string;
     readonly port: number;
@@ -259,18 +266,9 @@ export interface SearchicusConfig {
     readonly uiDir: string | null;
     readonly jsonBodyLimit: string;
   };
-  readonly log: { readonly level: LogLevel };
+  readonly log: LogConfig;
   readonly archive: ArchiveConfig;
-  readonly search: {
-    readonly resultsTimeoutMs: number;
-    readonly sessionTimeoutMs: number;
-    readonly reserveMs: number;
-    readonly throttle: {
-      readonly minIntervalMs: number;
-      readonly jitter: number;
-      readonly maxQueued: number;
-    };
-  };
+  readonly search: SearchConfig;
   readonly browser: {
     readonly maxPages: number;
     readonly locale: string;
@@ -407,7 +405,7 @@ function readConfigFile(file: string): PlainObject {
  * silent failure this module exists to avoid. The conventional path is
  * optional, because most deployments have no file at all.
  */
-function discoverConfigFile(env: NodeJS.ProcessEnv): string | null {
+export function discoverConfigFile(env: NodeJS.ProcessEnv = process.env): string | null {
   const named = env[CONFIG_PATH_ENV]?.trim();
   if (named) {
     const resolved = path.resolve(named);
@@ -511,4 +509,59 @@ function documentCap(requested: number, transfer: number): number {
     transferBudget: transfer,
   });
   return transfer;
+}
+
+/** One setting that is not what it would have been left alone. */
+export interface ChangedSetting {
+  /** Dotted path, as written in the file: `extract.cache.ttlMs`. */
+  readonly path: string;
+  /** The value in force, rendered for a log line. */
+  readonly value: string;
+  /** Where it came from: an environment variable name, or the file. */
+  readonly source: string;
+}
+
+/**
+ * Everything this process is running on that it was not born with.
+ *
+ * Only the differences, on purpose. A service that printed all forty settings
+ * at every boot would bury the three an operator actually set, and the
+ * defaults are already written down in `config.example.yaml`. What cannot be
+ * read anywhere else is which layer won, so that is what this reports.
+ */
+export function changedSettings(config: SearchicusConfig, options: LoadConfigOptions = {}): ChangedSetting[] {
+  const env = options.env ?? process.env;
+  const file = options.file ?? null;
+  const changed: ChangedSetting[] = [];
+
+  for (const segments of configLeafPaths()) {
+    const value = renderSetting(valueAt(config, segments));
+    if (value === renderSetting(valueAt(DEFAULT_CONFIG_INPUT, segments))) continue;
+
+    const name = envNameForPath(segments);
+    changed.push({
+      path: segments.join("."),
+      value,
+      // Not from the environment and not the default leaves one possibility.
+      source: env[name] !== undefined ? name : (file ?? "config file"),
+    });
+  }
+
+  return changed;
+}
+
+function valueAt(root: unknown, segments: readonly string[]): unknown {
+  let node: unknown = root;
+  for (const segment of segments) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[segment];
+  }
+  return node;
+}
+
+/** Renders a setting the way a log line and a comparison both want it. */
+function renderSetting(value: unknown): string {
+  if (value instanceof Set) return [...value].join(",");
+  if (Array.isArray(value)) return value.join(",");
+  return String(value);
 }

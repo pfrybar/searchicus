@@ -2,9 +2,10 @@ import { chromium, type BrowserContext, type Page } from "playwright";
 
 import type { BrowserLeaseHandle, BrowserProvider } from "../context.js";
 import { causeOf, createLogger } from "../logger.js";
-import { resolveProfileDir, type PathsConfig } from "../paths.js";
+import type { SearchicusConfig } from "../config.js";
+import { resolveProfileDir } from "../paths.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "../registry.js";
-import { createDefaultSearchArchive, type ArchiveConfig } from "../storage.js";
+import { createDefaultSearchArchive } from "../storage.js";
 import { LazyLaunch } from "./lazy-launch.js";
 import { findStaleProfileLock, removeStaleProfileLock, type StaleProfileLock } from "./profile-lock.js";
 import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
@@ -317,27 +318,15 @@ export class BrowserSession implements BrowserProvider {
   }
 }
 
-/** What the browser layer reads out of the configuration tree. */
-export interface BrowserRuntimeConfig {
-  readonly paths: PathsConfig;
-  readonly archive: ArchiveConfig;
-  readonly browser: {
-    readonly maxPages: number;
-    readonly locale: string;
-    readonly timezone: string;
-    readonly profileUnlock: boolean;
-  };
-  readonly search: {
-    readonly resultsTimeoutMs: number;
-    readonly sessionTimeoutMs: number;
-    readonly reserveMs: number;
-    readonly throttle: {
-      readonly minIntervalMs: number;
-      readonly jitter: number;
-      readonly maxQueued: number;
-    };
-  };
-}
+/**
+ * What the browser layer reads out of the configuration tree.
+ *
+ * A slice of the whole rather than a shape of its own: re-declaring these
+ * fields is how one of them ends up quietly missing, which is what happened
+ * to `dashboard` — the archive built below took its window sizes from the
+ * built-in defaults because this type never carried the configured ones.
+ */
+export type BrowserRuntimeConfig = Pick<SearchicusConfig, "paths" | "archive" | "dashboard" | "browser" | "search">;
 
 /**
  * Builds the BrowserSession a front door uses by default.

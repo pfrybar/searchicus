@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  changedSettings,
   ConfigError,
   createDefaultSearchArchive,
+  discoverConfigFile,
   createLogger,
   loadConfig,
   resolveDataDir,
@@ -22,7 +24,7 @@ const log = createLogger("api");
  * is touched, and the error names both the setting and where it came from.
  * Nothing below this line reads the environment for itself.
  */
-const config = configure();
+const { config, file } = configure();
 setLogLevel(config.log.level);
 
 /**
@@ -32,9 +34,12 @@ setLogLevel(config.log.level);
  * reads like every other thing this process reports instead of a paragraph
  * pushed through a one-line-per-entry format.
  */
-function configure(): SearchicusConfig {
+function configure(): { config: SearchicusConfig; file: string | null } {
   try {
-    return loadConfig();
+    // Discovered here rather than inside the loader so the file this process
+    // reports is the same one it read, and not a second look at the disk.
+    const file = discoverConfigFile();
+    return { config: loadConfig({ file }), file };
   } catch (err) {
     if (!(err instanceof ConfigError)) throw err;
     for (const problem of err.problems) log.error("invalid configuration", { problem });
@@ -78,6 +83,17 @@ const server = createApp(registry, {
   // Reported because the failure this guards against was silent: two data
   // roots, each working perfectly, and nothing to say which was in use.
   log.info("persistent state", { dataDir: resolveDataDir(config.paths) });
+
+  // What this process is running on, and which layer decided it. A service
+  // is read through its logs, and "the setting I wrote is not the one in
+  // force" is otherwise a question nothing here can answer. Differences
+  // only: the defaults are in config.example.yaml, and printing forty lines
+  // every boot would bury the three that were actually set.
+  const changed = changedSettings(config, { file });
+  log.info("configuration", { source: file ?? "built-in defaults", changed: changed.length });
+  for (const setting of changed) {
+    log.info("configured", { setting: setting.path, value: setting.value, from: setting.source });
+  }
 });
 
 shutdownOn(server, {

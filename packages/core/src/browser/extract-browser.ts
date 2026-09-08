@@ -4,8 +4,8 @@ import type { ExtractionArchive } from "../archive.js";
 import { assertPublicHost, parseExtractUrl } from "../extract/address.js";
 import { ExtractionService } from "../extract/service.js";
 import { causeOf, createLogger } from "../logger.js";
-import { createDefaultSearchArchive, type ArchiveConfig } from "../storage.js";
-import type { PathsConfig } from "../paths.js";
+import { createDefaultSearchArchive } from "../storage.js";
+import type { SearchicusConfig } from "../config.js";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "../extract/config.js";
 import { ExtractFailedError } from "../extract/errors.js";
 import type { PageRenderer, RenderDegradation, RenderedPage } from "../extract/types.js";
@@ -612,11 +612,7 @@ export function createDefaultExtractionBrowser(config: ExtractConfig): Extractio
 }
 
 /** What the extraction stack reads out of the configuration tree. */
-export interface ExtractionRuntimeConfig {
-  readonly paths: PathsConfig;
-  readonly archive: ArchiveConfig;
-  readonly extract: ExtractConfig;
-}
+export type ExtractionRuntimeConfig = Pick<SearchicusConfig, "paths" | "archive" | "dashboard" | "extract">;
 
 /**
  * Builds the browser-backed ExtractionService a front door uses.

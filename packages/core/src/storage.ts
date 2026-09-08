@@ -865,7 +865,7 @@ function rollback(db: DatabaseSync): void {
 export function createDefaultSearchArchive(config: {
   readonly archive: ArchiveConfig;
   readonly paths: PathsConfig;
-  readonly dashboard?: DashboardConfig;
+  readonly dashboard: DashboardConfig;
 }): SqliteSearchArchive | undefined {
   if (!config.archive.enabled) return undefined;
   return new SqliteSearchArchive(resolveStorePath(config.paths), {

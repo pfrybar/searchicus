@@ -38,6 +38,9 @@ server, UI):
 - `loadConfig()` — the whole configuration tree, read once from defaults, a
   YAML file and the environment. An invalid value throws `ConfigError` rather
   than falling back. See the root README's "Configuration".
+- `changedSettings()` — the settings that are not their defaults, each with
+  the layer that decided it, for a process that wants to say what it is
+  running on.
 
 Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 
