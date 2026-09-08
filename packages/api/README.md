@@ -63,9 +63,10 @@ build-time API URL baked into the bundle.
   resolves against the application root, like every other path setting.
 - With no build present, `/` simply 404s and the API is unaffected.
 
-There is deliberately **no SPA history fallback**: the UI is a single page
-with no client-side router, and a catch-all would turn genuine API 404s into
-HTML. If routing is added later, scope a fallback to non-API paths.
+There is deliberately **no SPA history fallback**: the UI routes on the hash,
+so deep links survive a reload without the server knowing about them, and a
+catch-all would turn genuine API 404s into HTML. If path routing is ever
+added, scope a fallback to non-API paths.
 
 Static files are matched _after_ the API routes, so a stray file in the UI
 build can never shadow an endpoint.

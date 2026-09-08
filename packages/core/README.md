@@ -70,9 +70,12 @@ That registry has **no browser attached**. Surfaces that need one use the
 browser entry point instead, and must shut it down:
 
 ```ts
+import { loadConfig } from "@searchicus/core";
 import { createBrowserRegistry } from "@searchicus/core/browser";
 
-const registry = createBrowserRegistry("api");
+// One front door, one loadConfig(): the surface name picks the profile, and
+// the configuration decides where it lives and how the fan-out is paced.
+const registry = createBrowserRegistry("api", loadConfig());
 try {
   await registry.search({ query: "typescript" });
 } finally {
@@ -168,12 +171,13 @@ closed on every outcome. `launchPersistentContext` exposes no `Browser`, so
 there is no way to blur that line even by accident.
 
 ```ts
-import { createDefaultSearchArchive } from "@searchicus/core";
+import { createDefaultSearchArchive, loadConfig } from "@searchicus/core";
 import { createBrowserExtraction, createBrowserRegistry } from "@searchicus/core/browser";
 
-const archive = createDefaultSearchArchive();
-const registry = createBrowserRegistry("api", { archive });
-const extraction = createBrowserExtraction({ archive });
+const config = loadConfig();
+const archive = createDefaultSearchArchive(config);
+const registry = createBrowserRegistry("api", config, { archive });
+const extraction = createBrowserExtraction(config, { archive });
 
 const page = await extraction.extract({ url: "https://example.com/" });
 if (page.outcome === "usable") console.log(page.markdown);
@@ -248,7 +252,7 @@ supply, and it is best-effort accordingly.
 dashboard is built on:
 
 ```ts
-const store = createDefaultSearchArchive()!;
+const store = createDefaultSearchArchive(loadConfig())!;
 await store.engineMetrics({ window: 200 }); // per-engine reliability and contribution
 await store.recentSearches({ limit: 25 }); // newest first, keyset-paged
 await store.searchDetail(searchId); // every engine's page plus the merged ranking

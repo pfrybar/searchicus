@@ -54,9 +54,10 @@ export interface CreateAppOptions {
    * library callers don't depend on whether the UI happens to be built —
    * the server entry point turns it on when a build is present.
    *
-   * There is deliberately no SPA history fallback: the UI is a single page
-   * with no client-side router, and a catch-all would turn genuine API 404s
-   * into HTML. Add one (scoped to non-API paths) if routing arrives.
+   * There is deliberately no SPA history fallback: the UI routes on the
+   * hash, so its deep links never reach this server, and a catch-all would
+   * turn genuine API 404s into HTML. Add one (scoped to non-API paths) only
+   * if path routing ever arrives.
    */
   ui?: boolean | string;
   /**
