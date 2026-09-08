@@ -326,8 +326,8 @@ INFO api configured setting=extract.enabled value=true from=/srv/searchicus/conf
 | `search.throttle.jitter`        | `0.3`                               | Spread as a fraction of the interval: `0.3` makes 5s into 3.5–6.5s.                                                         |
 | `search.throttle.maxQueued`     | `60`                                | Callers that may wait for a slot before further ones are refused.                                                           |
 | `browser.maxPages`              | `24`                                | Ceiling on simultaneously open pages. A memory valve, not the rate policy.                                                  |
-| `browser.timezone`              | `America/Chicago`                   | IANA time zone the browser reports. Must suit the egress IP.                                                                |
-| `browser.locale`                | `en-US`                             | Locale the browser reports. Must suit the egress IP.                                                                        |
+| `browser.timezone`              | `America/Chicago`                   | IANA time zone every browser this process starts reports, search and extraction alike. Must suit the egress IP.             |
+| `browser.locale`                | `en-US`                             | Locale every browser this process starts reports, search and extraction alike. Must suit the egress IP.                     |
 | `browser.profileUnlock`         | off                                 | On removes a foreign-host stale `SingletonLock` and retries launch; only for a known single-writer profile.                 |
 | `extract.*`                     | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                                |
 | `dashboard.metricsWindow`       | `500`                               | Recent searches averaged over for engine metrics.                                                                           |

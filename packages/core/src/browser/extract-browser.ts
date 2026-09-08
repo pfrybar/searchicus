@@ -12,6 +12,7 @@ import type { PageRenderer, RenderDegradation, RenderedPage } from "../extract/t
 import { extractDwell } from "./dwell.js";
 import { LazyLaunch } from "./lazy-launch.js";
 import { buildStealthBrowserOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
+import type { BrowserIdentity } from "./stealth.js";
 import { BrowserUnavailableError } from "./session.js";
 
 /**
@@ -39,6 +40,16 @@ const log = createLogger("extract");
 
 export interface ExtractionBrowserOptions {
   config?: ExtractConfig;
+  /**
+   * Locale and time zone, which must be the ones search runs with.
+   *
+   * Defaults to the built-in identity, which is right for tests and for a
+   * caller that configured nothing. A front door passes the `browser` slice:
+   * an operator who moved the search browser to Europe and left this one in
+   * Chicago has two browsers on one host telling different stories about the
+   * machine, which is the contradiction stealth.ts exists to avoid.
+   */
+  identity?: BrowserIdentity;
   /**
    * The address check applied to the initial URL and every request routed
    * afterwards. Defaults to `assertPublicHost`.
@@ -72,6 +83,7 @@ export interface ExtractionBrowserOptions {
  */
 export class ExtractionBrowser implements PageRenderer {
   readonly #config: ExtractConfig;
+  readonly #identity: BrowserIdentity | undefined;
   readonly #assertAddress: (hostname: string) => Promise<void>;
   readonly #chromium: LazyLaunch<Browser>;
   #contextOptions: Awaited<ReturnType<typeof buildStealthBrowserOptions>>["context"] | undefined;
@@ -79,11 +91,22 @@ export class ExtractionBrowser implements PageRenderer {
 
   constructor(options: ExtractionBrowserOptions = {}) {
     this.#config = options.config ?? DEFAULT_EXTRACT_CONFIG;
+    this.#identity = options.identity;
     this.#assertAddress = options.assertAddress ?? ((hostname) => assertPublicHost(hostname));
     this.#chromium = new LazyLaunch(
       () => this.#launchBrowser(),
       (browser) => browser.close(),
     );
+  }
+
+  /**
+   * The identity this browser will report, or undefined for the built-in one.
+   *
+   * Exposed because "do both browsers tell the same story" is a question
+   * about this process that nothing else can answer from outside.
+   */
+  get identity(): BrowserIdentity | undefined {
+    return this.#identity;
   }
 
   /** True once Chromium has actually started. Nothing starts until first use. */
@@ -506,6 +529,8 @@ export class ExtractionBrowser implements PageRenderer {
     try {
       const options = buildStealthBrowserOptions({
         major: await resolveChromiumMajor(chromium.executablePath()),
+        locale: this.#identity?.locale,
+        timezoneId: this.#identity?.timezone,
       });
       const browser = await chromium.launch(options.launch);
 
@@ -606,13 +631,25 @@ function contentTypeValue(headers: Record<string, string> | undefined): string |
   return value ? (value.split(";")[0]?.trim() ?? value) : undefined;
 }
 
-/** Builds the extraction renderer a front door uses, from its configuration. */
-export function createDefaultExtractionBrowser(config: ExtractConfig): ExtractionBrowser {
-  return new ExtractionBrowser({ config });
+/**
+ * Builds the extraction renderer a front door uses, from its configuration.
+ *
+ * The identity is required rather than defaulted: a front door that has a
+ * configured one and does not pass it is the failure this argument exists to
+ * prevent, and a silent fallback is how it went unnoticed the first time.
+ */
+export function createDefaultExtractionBrowser(config: ExtractConfig, identity: BrowserIdentity): ExtractionBrowser {
+  return new ExtractionBrowser({ config, identity });
 }
 
-/** What the extraction stack reads out of the configuration tree. */
-export type ExtractionRuntimeConfig = Pick<SearchicusConfig, "paths" | "archive" | "dashboard" | "extract">;
+/**
+ * What the extraction stack reads out of the configuration tree.
+ *
+ * `browser` is in here for its identity alone: extraction has its own browser
+ * and none of the rest applies to it, but the locale and time zone it reports
+ * have to be the ones search reports.
+ */
+export type ExtractionRuntimeConfig = Pick<SearchicusConfig, "paths" | "archive" | "dashboard" | "browser" | "extract">;
 
 /**
  * Builds the browser-backed ExtractionService a front door uses.
@@ -633,7 +670,7 @@ export function createBrowserExtraction(
 ): ExtractionService {
   return new ExtractionService({
     config: config.extract,
-    renderer: new ExtractionBrowser({ config: config.extract }),
+    renderer: createDefaultExtractionBrowser(config.extract, config.browser),
     archive: options.archive === undefined ? createDefaultSearchArchive(config) : options.archive,
   });
 }
