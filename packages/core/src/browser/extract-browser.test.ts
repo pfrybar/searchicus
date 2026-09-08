@@ -4,7 +4,9 @@ import { chromium } from "playwright";
 import { afterAll, describe, expect, it } from "vitest";
 import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "../extract/config.js";
 import { ExtractFailedError } from "../extract/errors.js";
-import { ExtractionBrowser } from "./extract-browser.js";
+import { createDefaultExtractionBrowser, ExtractionBrowser } from "./extract-browser.js";
+import type { BrowserIdentity } from "./stealth.js";
+import { loadConfig } from "../config.js";
 
 /** See session.test.ts: probe once, then skip where no browser exists. */
 async function chromiumAvailable(): Promise<boolean> {
@@ -63,7 +65,11 @@ async function listen(server: Server): Promise<string> {
  * rather than widening the range keeps that rule real: the port check is
  * still doing its job in every one of these tests.
  */
-function extractionBrowser(origin: string, overrides: Partial<ExtractConfig> = {}): ExtractionBrowser {
+function extractionBrowser(
+  origin: string,
+  overrides: Partial<ExtractConfig> = {},
+  identity?: BrowserIdentity,
+): ExtractionBrowser {
   const browser = new ExtractionBrowser({
     config: {
       ...DEFAULT_EXTRACT_CONFIG,
@@ -73,6 +79,7 @@ function extractionBrowser(origin: string, overrides: Partial<ExtractConfig> = {
       allowedPorts: new Set([80, 443, Number(new URL(origin).port)]),
       ...overrides,
     },
+    identity,
     assertAddress: async () => undefined,
   });
   browsers.push(browser);
@@ -102,6 +109,27 @@ describe.skipIf(!available)("ExtractionBrowser (live Chromium)", () => {
     expect(page.status).toBe(200);
     expect(page.contentType).toBe("text/html");
     expect(page.finalUrl).toBe(`${origin}/`);
+  });
+
+  it("reports the identity search runs with, not the built-in one", async () => {
+    // The regression: extraction launched through buildStealthBrowserOptions()
+    // with no locale or time zone at all, so an operator who moved the search
+    // browser to Europe had two browsers on one host telling different
+    // stories about the machine — the contradiction stealth.ts exists to
+    // avoid, from the process that avoids it everywhere else.
+    const origin = await serve({
+      "/": {
+        body: `<html><body><p id="who"></p>
+          <script>document.getElementById("who").textContent =
+            navigator.language + " " + Intl.DateTimeFormat().resolvedOptions().timeZone;</script>
+        </body></html>`,
+      },
+    });
+
+    const browser = extractionBrowser(origin, {}, { locale: "de-DE", timezone: "Europe/Berlin" });
+    const page = await browser.render(`${origin}/`, never);
+
+    expect(page.html).toContain("de-DE Europe/Berlin");
   });
 
   it("never starts Chromium until something asks it to render", () => {
@@ -424,5 +452,21 @@ describe.skipIf(!available)("ExtractionBrowser (live Chromium)", () => {
     await browser.close();
 
     await expect(browser.render("https://example.com/", never)).rejects.toThrow(/shutting down/);
+  });
+});
+
+describe("createDefaultExtractionBrowser", () => {
+  it("takes its identity from the same configuration search reads", () => {
+    // Nothing launches here, which is the point: the front door's wiring is
+    // what broke, and it is checkable without a browser.
+    const config = loadConfig({
+      env: { SEARCHICUS_BROWSER_LOCALE: "de-DE", SEARCHICUS_BROWSER_TIMEZONE: "Europe/Berlin" },
+      file: null,
+    });
+
+    const browser = createDefaultExtractionBrowser(config.extract, config.browser);
+
+    expect(browser.identity).toMatchObject({ locale: "de-DE", timezone: "Europe/Berlin" });
+    expect(browser.launched).toBe(false);
   });
 });

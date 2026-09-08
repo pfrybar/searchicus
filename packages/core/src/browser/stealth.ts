@@ -68,10 +68,24 @@ export const LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled", "--
 export interface StealthOptions {
   /** Chromium major version, e.g. "151". Must match the actual binary. */
   major?: string;
-  /** IANA time zone. Defaults to DEFAULT_TIMEZONE / SEARCHICUS_TIMEZONE. */
+  /** IANA time zone. From `browser.timezone`; defaults to DEFAULT_TIMEZONE. */
   timezoneId?: string;
-  /** BCP-47 locale. Defaults to DEFAULT_LOCALE / SEARCHICUS_LOCALE. */
+  /** BCP-47 locale. From `browser.locale`; defaults to DEFAULT_LOCALE. */
   locale?: string;
+}
+
+/**
+ * The half of the `browser` configuration slice that is an identity.
+ *
+ * Every browser this process starts is the same machine as far as anything
+ * looking can tell, so the settings that say which machine that is are named
+ * once and passed to both. Structurally the `browser` slice itself.
+ */
+export interface BrowserIdentity {
+  /** BCP-47 locale. Must be plausible for the egress IP's country. */
+  readonly locale: string;
+  /** IANA time zone. Must agree with the geolocation of the egress IP. */
+  readonly timezone: string;
 }
 
 /**
