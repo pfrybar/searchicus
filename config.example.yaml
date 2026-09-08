@@ -1,0 +1,112 @@
+# searchicus configuration.
+#
+# Copy to config.yaml beside this file, or point SEARCHICUS_CONFIG at one
+# anywhere. Every key is optional and every value below is the default, so a
+# file that changes nothing can stay commented out exactly as it is.
+#
+# Each setting can also be given as an environment variable, which wins over
+# the file. The name is the path with SEARCHICUS_ in front:
+# extract.cache.ttlMs is SEARCHICUS_EXTRACT_CACHE_TTL_MS. Booleans accept
+# true/1/yes/on and false/0/no/off, and anything else is an error rather
+# than a silent default.
+
+# paths:
+#   # Root for all persistent state: the archive and one Chromium profile per
+#   # surface. Relative values resolve against the application root, never the
+#   # working directory, so every surface reaches the same state whatever
+#   # `npm run -w` sets the working directory to.
+#   dataDir: .searchicus
+#   # Overrides for the two things below the root. Unset derives them.
+#   profileDir: null          # <dataDir>/profile/<surface>
+#   storePath: null           # <dataDir>/searchicus.sqlite
+
+# server:
+#   # Loopback by default: this server has no authentication and its dashboard
+#   # endpoints serve every query ever made through it. The container image
+#   # sets 0.0.0.0, because a container listening on its own loopback cannot
+#   # be reached at all.
+#   host: 127.0.0.1
+#   port: 3000
+#   # Serve the MCP Streamable HTTP endpoint at /mcp from this same process.
+#   # One process means one registry, and therefore one rate-limit throttle
+#   # and one browser profile; two would query the backends at twice the rate.
+#   mcp: true
+#   # Serve the built web UI, when a build is actually present.
+#   ui: true
+#   uiDir: null               # packages/ui/dist
+#   jsonBodyLimit: 64kb
+
+# log:
+#   # debug, info, warn, error or silent. Everything goes to stderr, so CLI
+#   # stdout stays pipeable. Query text is never logged above debug.
+#   level: info
+
+# archive:
+#   # Record completed fan-outs and reads in SQLite. Best-effort either way:
+#   # a failed write never fails a search.
+#   enabled: true
+#   busyTimeoutMs: 5000
+
+# search:
+#   resultsTimeoutMs: 30000   # deadline for a fan-out to produce results
+#   sessionTimeoutMs: 60000   # cap on browser work that outlives its results
+#   # Budget kept back for the search itself. A caller who cannot be served
+#   # within it is refused at once rather than queued: being told after thirty
+#   # seconds that the backends failed, when they were never asked, is worse.
+#   reserveMs: 12000
+#   throttle:
+#     # One global throttle gates whole fan-outs, not individual engines, so a
+#     # single query still hits every engine in parallel while consecutive
+#     # searches stay spaced apart.
+#     minIntervalMs: 5000
+#     jitter: 0.3             # 0.3 turns 5s into 3.5s-6.5s; 0 disables
+#     maxQueued: 60
+
+# browser:
+#   # Ceiling on simultaneously open pages. A memory valve, not the rate
+#   # policy — tune the throttle above instead.
+#   maxPages: 24
+#   # Both must stay plausible for the country the traffic leaves from: a
+#   # detector comparing them against the egress IP sees a contradiction,
+#   # which is the exact tell the browser layer exists to avoid.
+#   locale: en-US
+#   timezone: America/Chicago
+#   # Remove a Chromium profile lock naming another host, then retry the
+#   # launch. Only for deployments known to be the profile's sole writer.
+#   profileUnlock: false
+
+# extract:
+#   # Renders arbitrary caller-selected URLs. Read the README's Extraction
+#   # section, and restrict this process's outbound network access, before
+#   # turning this on.
+#   enabled: false
+#   maxConcurrent: 2
+#   maxQueued: 32
+#   navigationTimeoutMs: 10000
+#   settleTimeoutMs: 2000
+#   timeoutMs: 30000          # end to end: render, dwell, parse, respond
+#   dwell: true               # also brings lazy-loaded content into the DOM
+#   # Two limits, two jobs. maxBytes is a transfer tripwire across the whole
+#   # render: crossing it stops fetching sub-resources and degrades the page,
+#   # but never loses a document already in hand. maxDocumentBytes is the
+#   # parse bound on the main document alone, and crossing it fails the read.
+#   # A document cap above the transfer budget is unreachable by
+#   # construction, so it is lowered to match and a warning says so.
+#   maxBytes: 5242880
+#   maxDocumentBytes: 2097152
+#   maxRedirects: 5
+#   allowedPorts: [80, 443]
+#   cache:
+#     # One render shared between outline, find and extract.
+#     enabled: true
+#     ttlMs: 300000
+#     maxEntries: 32
+#     maxChars: 8000000
+
+# dashboard:
+#   # How much of the archive the dashboard's read endpoints may examine.
+#   # Recent searches are the useful window: averaging over a selector change
+#   # six months ago answers nothing.
+#   metricsWindow: 500
+#   searchPageSize: 50
+#   maxLimit: 2000            # ceiling on both, so a caller cannot ask for it all

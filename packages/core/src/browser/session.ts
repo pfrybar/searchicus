@@ -1,11 +1,10 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 
 import type { BrowserLeaseHandle, BrowserProvider } from "../context.js";
-import { envOptIn } from "../env.js";
 import { causeOf, createLogger } from "../logger.js";
-import { defaultProfileDir } from "../paths.js";
+import { resolveProfileDir, type PathsConfig } from "../paths.js";
 import { createDefaultRegistry, type SearchEngineRegistry, type SearchEngineRegistryOptions } from "../registry.js";
-import { createDefaultSearchArchive } from "../storage.js";
+import { createDefaultSearchArchive, type ArchiveConfig } from "../storage.js";
 import { LazyLaunch } from "./lazy-launch.js";
 import { findStaleProfileLock, removeStaleProfileLock, type StaleProfileLock } from "./profile-lock.js";
 import { buildStealthOptions, resolveChromiumMajor, STEALTH_INIT } from "./stealth.js";
@@ -30,6 +29,14 @@ export interface BrowserSessionOptions {
   profileDir: string;
   /** Max simultaneously-open pages, a positive integer. See DEFAULT_MAX_PAGES. */
   maxPages?: number;
+  /**
+   * Remove a profile lock that names another host, then retry the launch.
+   *
+   * Off unless an operator has declared this deployment the profile's sole
+   * writer: the lock is the only evidence that another process might be
+   * using it, and deleting it on a hunch corrupts a live profile.
+   */
+  unlockStaleProfile?: boolean;
   /**
    * Passed straight through to launchPersistentContext.
    *
@@ -56,7 +63,7 @@ export class BrowserUnavailableError extends Error {
       ? ` Chromium's profile lock at "${staleLock.path}" names host "${staleLock.ownerHostname}", ` +
         `not this host "${staleLock.currentHostname}", so it appears stale. If no other searchicus ` +
         `process is using this profile, remove that lock; deployments known to be single-writer can set ` +
-        `SEARCHICUS_PROFILE_UNLOCK=true to retry after removing it automatically.`
+        `browser.profileUnlock to retry after removing it automatically.`
       : "";
     super(
       `Could not launch Chromium: ${cause instanceof Error ? cause.message : String(cause)}. ` +
@@ -91,6 +98,7 @@ export class BrowserUnavailableError extends Error {
  */
 export class BrowserSession implements BrowserProvider {
   readonly #profileDir: string;
+  readonly #unlockStaleProfile: boolean;
   readonly #maxPages: number;
   readonly #launchOptions: NonNullable<BrowserSessionOptions["launchOptions"]>;
   readonly #initScript: string | undefined;
@@ -102,6 +110,7 @@ export class BrowserSession implements BrowserProvider {
 
   constructor(options: BrowserSessionOptions) {
     this.#profileDir = options.profileDir;
+    this.#unlockStaleProfile = options.unlockStaleProfile ?? false;
     this.#maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
     // Zero, negative, or NaN makes `#openPages < #maxPages` permanently false,
     // so every acquire would queue forever and the failure would look like a
@@ -205,7 +214,7 @@ export class BrowserSession implements BrowserProvider {
       return await this.#launchOnce();
     } catch (err) {
       const staleLock = findStaleProfileLock(this.#profileDir);
-      if (!staleLock || !envOptIn(process.env.SEARCHICUS_PROFILE_UNLOCK)) {
+      if (!staleLock || !this.#unlockStaleProfile) {
         log.error("chromium failed to launch", {
           profile: this.#profileDir,
           ...(staleLock ? { lock: staleLock.path, lockHost: staleLock.ownerHostname } : {}),
@@ -308,6 +317,28 @@ export class BrowserSession implements BrowserProvider {
   }
 }
 
+/** What the browser layer reads out of the configuration tree. */
+export interface BrowserRuntimeConfig {
+  readonly paths: PathsConfig;
+  readonly archive: ArchiveConfig;
+  readonly browser: {
+    readonly maxPages: number;
+    readonly locale: string;
+    readonly timezone: string;
+    readonly profileUnlock: boolean;
+  };
+  readonly search: {
+    readonly resultsTimeoutMs: number;
+    readonly sessionTimeoutMs: number;
+    readonly reserveMs: number;
+    readonly throttle: {
+      readonly minIntervalMs: number;
+      readonly jitter: number;
+      readonly maxQueued: number;
+    };
+  };
+}
+
 /**
  * Builds the BrowserSession a front door uses by default.
  *
@@ -315,17 +346,27 @@ export class BrowserSession implements BrowserProvider {
  * directory is single-writer: `npm run dev` starts the API and MCP server
  * together, and they would otherwise fight over one profile. The tradeoff is
  * that they don't share cookies with each other — each builds its own
- * history. `SEARCHICUS_DATA_DIR` moves the whole persistent state tree;
- * SEARCHICUS_PROFILE_DIR remains a profile-only override.
+ * history. `paths.dataDir` moves the whole persistent state tree;
+ * `paths.profileDir` remains a profile-only override.
  *
- * The browser identity comes from stealth.ts. `launchOptions` is a factory
- * so the user agent can name the version of the binary that is actually
- * about to launch, without interrogating it until something needs a browser.
+ * The browser identity comes from stealth.ts, given the configured locale
+ * and time zone: both must stay plausible for the egress IP, which is a
+ * deployment fact rather than something derivable here. `launchOptions` is a
+ * factory so the user agent can name the version of the binary that is
+ * actually about to launch, without interrogating it until something needs
+ * a browser.
  */
-export function createDefaultBrowserSession(surface: string): BrowserSession {
+export function createDefaultBrowserSession(surface: string, config: BrowserRuntimeConfig): BrowserSession {
   return new BrowserSession({
-    profileDir: defaultProfileDir(surface),
-    launchOptions: async () => buildStealthOptions({ major: await resolveChromiumMajor(chromium.executablePath()) }),
+    profileDir: resolveProfileDir(config.paths, surface),
+    maxPages: config.browser.maxPages,
+    unlockStaleProfile: config.browser.profileUnlock,
+    launchOptions: async () =>
+      buildStealthOptions({
+        major: await resolveChromiumMajor(chromium.executablePath()),
+        locale: config.browser.locale,
+        timezoneId: config.browser.timezone,
+      }),
     initScript: STEALTH_INIT,
   });
 }
@@ -336,14 +377,22 @@ export function createDefaultBrowserSession(surface: string): BrowserSession {
  * alongside createDefaultRegistry() so that importing "@searchicus/core"
  * never pulls Playwright into the module graph — which keeps it out of the
  * UI's bundle and out of test runs that have no browser installed.
+ *
+ * Everything an operator can set arrives here as configuration: nothing
+ * below a front door reads the environment for itself.
  */
 export function createBrowserRegistry(
   surface: string,
+  config: BrowserRuntimeConfig,
   options: Omit<SearchEngineRegistryOptions, "browser"> = {},
 ): SearchEngineRegistry {
   return createDefaultRegistry({
+    resultsTimeoutMs: config.search.resultsTimeoutMs,
+    sessionTimeoutMs: config.search.sessionTimeoutMs,
+    searchReserveMs: config.search.reserveMs,
+    throttle: { ...config.search.throttle },
     ...options,
-    browser: createDefaultBrowserSession(surface),
-    archive: options.archive === undefined ? createDefaultSearchArchive() : options.archive,
+    browser: createDefaultBrowserSession(surface, config),
+    archive: options.archive === undefined ? createDefaultSearchArchive(config) : options.archive,
   });
 }

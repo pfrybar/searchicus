@@ -4,8 +4,9 @@ import type { ExtractionArchive } from "../archive.js";
 import { assertPublicHost, parseExtractUrl } from "../extract/address.js";
 import { ExtractionService } from "../extract/service.js";
 import { causeOf, createLogger } from "../logger.js";
-import { createDefaultSearchArchive } from "../storage.js";
-import { DEFAULT_EXTRACT_CONFIG, extractConfigFromEnv, type ExtractConfig } from "../extract/config.js";
+import { createDefaultSearchArchive, type ArchiveConfig } from "../storage.js";
+import type { PathsConfig } from "../paths.js";
+import { DEFAULT_EXTRACT_CONFIG, type ExtractConfig } from "../extract/config.js";
 import { ExtractFailedError } from "../extract/errors.js";
 import type { PageRenderer, RenderDegradation, RenderedPage } from "../extract/types.js";
 import { extractDwell } from "./dwell.js";
@@ -300,7 +301,7 @@ export class ExtractionBrowser implements PageRenderer {
     // hand over a body sitting in memory buys nothing and costs the read: the
     // navigation fails, and a page that loaded perfectly is reported as one
     // that could not be loaded. That is reachable whenever the document alone
-    // outweighs the transfer budget — which extractConfigFromEnv now prevents
+    // outweighs the transfer budget — which the configuration loader prevents
     // an operator from configuring, but a caller building an ExtractConfig by
     // hand still can, so the guarantee belongs here as well as there.
     //
@@ -605,9 +606,16 @@ function contentTypeValue(headers: Record<string, string> | undefined): string |
   return value ? (value.split(";")[0]?.trim() ?? value) : undefined;
 }
 
-/** Builds the extraction renderer a front door uses, from the environment. */
-export function createDefaultExtractionBrowser(config: ExtractConfig = extractConfigFromEnv()): ExtractionBrowser {
+/** Builds the extraction renderer a front door uses, from its configuration. */
+export function createDefaultExtractionBrowser(config: ExtractConfig): ExtractionBrowser {
   return new ExtractionBrowser({ config });
+}
+
+/** What the extraction stack reads out of the configuration tree. */
+export interface ExtractionRuntimeConfig {
+  readonly paths: PathsConfig;
+  readonly archive: ArchiveConfig;
+  readonly extract: ExtractConfig;
 }
 
 /**
@@ -624,12 +632,12 @@ export function createDefaultExtractionBrowser(config: ExtractConfig = extractCo
  * browser it will not use.
  */
 export function createBrowserExtraction(
-  options: { archive?: ExtractionArchive | null; config?: ExtractConfig } = {},
+  config: ExtractionRuntimeConfig,
+  options: { archive?: ExtractionArchive | null } = {},
 ): ExtractionService {
-  const config = options.config ?? extractConfigFromEnv();
   return new ExtractionService({
-    config,
-    renderer: new ExtractionBrowser({ config }),
-    archive: options.archive === undefined ? createDefaultSearchArchive() : options.archive,
+    config: config.extract,
+    renderer: new ExtractionBrowser({ config: config.extract }),
+    archive: options.archive === undefined ? createDefaultSearchArchive(config) : options.archive,
   });
 }

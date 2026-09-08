@@ -11,6 +11,9 @@ build/
 .env.*
 !.env.example
 
+# Operator configuration. config.example.yaml is the committed reference.
+/config.yaml
+
 # Logs
 npm-debug.log*
 *.log

@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -198,5 +199,24 @@ describe("environment names", () => {
     expect(dotted).toContain("extract.allowedPorts");
     expect(dotted).toContain("paths.profileDir");
     expect(DEFAULT_CONFIG_INPUT.paths.profileDir).toBeNull();
+  });
+});
+
+describe("config.example.yaml", () => {
+  const example = readFileSync(fileURLToPath(new URL("../../../config.example.yaml", import.meta.url)), "utf8");
+
+  it("documents every section of the tree", () => {
+    for (const section of Object.keys(DEFAULT_CONFIG_INPUT)) {
+      expect(example, section).toContain(`# ${section}:`);
+    }
+  });
+
+  it("documents every setting an operator can change", () => {
+    // The example is the only place the whole tree is written out for a
+    // person, so a setting missing from it is a setting nobody finds.
+    for (const segments of configLeafPaths()) {
+      const key = segments[segments.length - 1] as string;
+      expect(example, segments.join(".")).toMatch(new RegExp(`^#\\s+${key}:`, "m"));
+    }
   });
 });

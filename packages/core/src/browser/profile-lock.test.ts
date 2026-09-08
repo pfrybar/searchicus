@@ -20,7 +20,6 @@ function profileWithLock(target = "foreign-host-4321"): string {
 }
 
 afterEach(async () => {
-  vi.unstubAllEnvs();
   launchPersistentContext.mockReset();
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -49,7 +48,7 @@ describe("BrowserSession stale profile lock recovery", () => {
     const session = new BrowserSession({ profileDir });
 
     await expect(session.acquire()).rejects.toThrow(
-      new RegExp(`${PROFILE_LOCK_FILENAME}.*foreign-host.*SEARCHICUS_PROFILE_UNLOCK=true`),
+      new RegExp(`${PROFILE_LOCK_FILENAME}.*foreign-host.*browser.profileUnlock`),
     );
     expect(launchPersistentContext).toHaveBeenCalledTimes(1);
     expect(lstatSync(path.join(profileDir, PROFILE_LOCK_FILENAME)).isSymbolicLink()).toBe(true);
@@ -65,8 +64,7 @@ describe("BrowserSession stale profile lock recovery", () => {
       on: vi.fn(),
     };
     launchPersistentContext.mockRejectedValueOnce(new Error("profile is in use")).mockResolvedValueOnce(context);
-    vi.stubEnv("SEARCHICUS_PROFILE_UNLOCK", "true");
-    const session = new BrowserSession({ profileDir });
+    const session = new BrowserSession({ profileDir, unlockStaleProfile: true });
 
     const handle = await session.acquire();
 

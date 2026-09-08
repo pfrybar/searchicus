@@ -80,7 +80,7 @@ so a single process serves the UI at `/`, the search API at `/api`, and MCP
 at `/mcp` — same-origin, with no reverse proxy or CORS setup.
 
 The HTTP API and the MCP server share **one process** (`packages/api`), with
-MCP mounted at `POST /mcp` and toggleable via `MCP_ENABLED`. That's not just
+MCP mounted at `POST /mcp` and toggleable via `server.mcp`. That's not just
 packaging convenience: sharing a process means sharing one registry, and
 therefore one rate-limit throttle and one persistent browser profile. Run as
 two processes they would throttle independently and query the backends at
@@ -121,8 +121,8 @@ the shared archive two databases.) Each surface gets its own Chromium profile
 under `profile/<surface>/`, while `searchicus.sqlite` is the shared application
 archive beside it. Profiles remain isolated because a
 user-data directory is single-writer; the archive uses SQLite WAL mode so API
-and CLI processes can share it. `SEARCHICUS_DATA_DIR` moves both together;
-`SEARCHICUS_PROFILE_DIR` and `SEARCHICUS_STORE_PATH` override one component.
+and CLI processes can share it. `paths.dataDir` moves both together;
+`paths.profileDir` and `paths.storePath` override one component.
 
 The browser is also configured to behave like one a person is using, since
 a search engine that concludes otherwise stops returning useful results.
@@ -134,7 +134,7 @@ opt into them rather than reimplementing any of it:
   rule is that contradictions are what get noticed, not unusual values,
   which is why some things are deliberately _not_ patched: the patch would
   stand out more than the tell it hides. Time zone and locale should match
-  where your traffic actually leaves from (`SEARCHICUS_TIMEZONE`).
+  where your traffic actually leaves from (`browser.timezone`).
 - **`human.ts`** — jittered pauses, per-character typing, cursor drift. The
   distributions are heavy-tailed on purpose; a flat one is its own signature.
 - **`dwell.ts`** — the post-load "read the page" phase. It is handed back as
@@ -194,7 +194,7 @@ details:
 
 ```bash
 npm run dev -w @searchicus/api
-MCP_ENABLED=false npm run dev -w @searchicus/api   # search API only
+SEARCHICUS_SERVER_MCP=false npm run dev -w @searchicus/api   # search API only
 npm run dev -w @searchicus/ui
 
 # CLI (no long-running server — build once, then invoke it directly)
@@ -249,28 +249,73 @@ profiles are SQLite databases, and SQLite locking over virtiofs/9p — which is
 what a macOS or Windows bind mount is — is unreliable. A profile written by
 one platform's Chromium also isn't valid for another's. After an ungraceful
 stop Chromium can leave a `SingletonLock` behind: searchicus names a lock from
-a different hostname and explains the manual fix. Set
-`SEARCHICUS_PROFILE_UNLOCK=true` only where one process is known to own the
-profile; it removes that stale lock and retries Chromium once.
+a different hostname and explains the manual fix. Set `browser.profileUnlock`
+only where one process is known to own the profile; it removes that stale lock
+and retries Chromium once.
 
 ### Configuration
 
-| Variable                    | Default                             | Effect                                                                                                              |
-| --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                      | `3000`                              | Port to listen on.                                                                                                  |
-| `HOST`                      | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.                                              |
-| `SEARCHICUS_DATA_DIR`       | `/data` in the image                | Persistent-state root: `searchicus.sqlite` and `profile/<surface>/`.                                                |
-| `SEARCHICUS_PROFILE_DIR`    | `<data-dir>/profile/<surface>`      | Chromium user-data directory override. One per process.                                                             |
-| `SEARCHICUS_PROFILE_UNLOCK` | disabled                            | `true` removes a foreign-host stale `SingletonLock` and retries launch; only set for a known single-writer profile. |
-| `SEARCHICUS_STORE_PATH`     | `<data-dir>/searchicus.sqlite`      | Search archive SQLite file override.                                                                                |
-| `SEARCHICUS_STORE`          | enabled                             | Any of `false`/`0`/`no`/`off` disables best-effort archival.                                                        |
-| `SEARCHICUS_LOG`            | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                            |
-| `SEARCHICUS_TIMEZONE`       | `America/Chicago`                   | IANA time zone the browser reports.                                                                                 |
-| `SEARCHICUS_LOCALE`         | `en-US`                             | Locale the browser reports.                                                                                         |
-| `SEARCHICUS_EXTRACT_*`      | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                        |
-| `MCP_ENABLED`               | on                                  | Off serves the search API alone; `/mcp` then 404s.                                                                  |
-| `SERVE_UI`                  | on when a build exists              | `false` skips the static UI.                                                                                        |
-| `UI_DIST_DIR`               | `packages/ui/dist`                  | Alternate UI build directory.                                                                                       |
+Every setting lives in one tree, read once at startup from three layers:
+built-in defaults, then a YAML file, then the environment. Copy
+`config.example.yaml` — which documents the whole tree with its defaults — to
+`config.yaml` beside the repository, or point `SEARCHICUS_CONFIG` at one
+anywhere.
+
+```yaml
+server:
+  host: 0.0.0.0
+extract:
+  enabled: true
+  maxConcurrent: 4
+```
+
+Any setting can also be given as an environment variable, which wins over the
+file. The name is the path with `SEARCHICUS_` in front, so
+`extract.cache.ttlMs` is `SEARCHICUS_EXTRACT_CACHE_TTL_MS`. Booleans accept
+`true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off`.
+
+**An invalid value stops the process.** Every problem is reported at once,
+each against the place it came from, before a port is bound or a profile is
+opened:
+
+```
+ConfigError: Invalid searchicus configuration:
+  - server.port (SEARCHICUS_SERVER_PORT): Invalid input: expected number, received string
+  - extract.maxByte (/srv/searchicus/config.yaml): Unrecognized key: "maxByte"
+```
+
+That is deliberate. Falling back to the default and carrying on is how
+`maxBytes: 5MB` silently means five mebibytes and an afternoon disappears
+looking for the limit that never applied.
+
+| Setting                         | Default                             | Effect                                                                                                      |
+| ------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `server.port`                   | `3000`                              | Port to listen on.                                                                                          |
+| `server.host`                   | `127.0.0.1`; `0.0.0.0` in the image | Address to listen on. Loopback by default: there is no authentication.                                      |
+| `server.mcp`                    | on                                  | Off serves the search API alone; `/mcp` then 404s.                                                          |
+| `server.ui`                     | on when a build exists              | Off skips the static UI.                                                                                    |
+| `server.uiDir`                  | `packages/ui/dist`                  | Alternate UI build directory.                                                                               |
+| `server.jsonBodyLimit`          | `64kb`                              | Largest request body the API accepts.                                                                       |
+| `paths.dataDir`                 | `.searchicus`; `/data` in the image | Persistent-state root: `searchicus.sqlite` and `profile/<surface>/`.                                        |
+| `paths.profileDir`              | `<dataDir>/profile/<surface>`       | Chromium user-data directory override. One per process.                                                     |
+| `paths.storePath`               | `<dataDir>/searchicus.sqlite`       | Search archive SQLite file override.                                                                        |
+| `archive.enabled`               | on                                  | Off disables best-effort archival.                                                                          |
+| `archive.busyTimeoutMs`         | `5000`                              | Wait for another process holding the database lock.                                                         |
+| `log.level`                     | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                    |
+| `search.resultsTimeoutMs`       | `30000`                             | Deadline for a fan-out to produce results.                                                                  |
+| `search.sessionTimeoutMs`       | `60000`                             | Cap on browser work that outlives the results it produced.                                                  |
+| `search.reserveMs`              | `12000`                             | Budget below which a caller is refused rather than queued.                                                  |
+| `search.throttle.minIntervalMs` | `5000`                              | Spacing between consecutive fan-outs.                                                                       |
+| `search.throttle.jitter`        | `0.3`                               | Spread as a fraction of the interval: `0.3` makes 5s into 3.5–6.5s.                                         |
+| `search.throttle.maxQueued`     | `60`                                | Callers that may wait for a slot before further ones are refused.                                           |
+| `browser.maxPages`              | `24`                                | Ceiling on simultaneously open pages. A memory valve, not the rate policy.                                  |
+| `browser.timezone`              | `America/Chicago`                   | IANA time zone the browser reports. Must suit the egress IP.                                                |
+| `browser.locale`                | `en-US`                             | Locale the browser reports. Must suit the egress IP.                                                        |
+| `browser.profileUnlock`         | off                                 | On removes a foreign-host stale `SingletonLock` and retries launch; only for a known single-writer profile. |
+| `extract.*`                     | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                |
+| `dashboard.metricsWindow`       | `500`                               | Recent searches averaged over for engine metrics.                                                           |
+| `dashboard.searchPageSize`      | `50`                                | Searches listed per page of the browser.                                                                    |
+| `dashboard.maxLimit`            | `2000`                              | Ceiling on both, so a caller cannot ask the process to read everything.                                     |
 
 The base image is pinned to the same Playwright version as
 `packages/core/package.json` — the bundled Chromium has to be the revision the
@@ -280,8 +325,8 @@ together.
 ## Logging
 
 Everything the server reports — the startup banner included — goes to
-**stderr**, at a level set by `SEARCHICUS_LOG` (`debug`, `info`, `warn`,
-`error`, `silent`; default `info`). stderr rather than stdout so the CLI's
+**stderr**, at a level set by `log.level` (`debug`, `info`, `warn`, `error`,
+`silent`; default `info`). stderr rather than stdout so the CLI's
 `--json` output stays pipeable into `jq` with logging turned all the way up.
 
 ```
@@ -330,13 +375,13 @@ without the server needing a history fallback — which it must not have, since 
 catch-all would turn genuine API 404s into HTML.
 
 Both pages need the archive, which is on by default. With
-`SEARCHICUS_STORE=false` the endpoints answer `503` and the UI hides the links
+`archive.enabled` off the endpoints answer `503` and the UI hides the links
 rather than offering pages that can only fail.
 
 > **The archive is a record of everything searched for.** These endpoints serve
 > that history — queries, result titles, URLs — and the API has no
 > authentication. That is fine on a laptop and is not fine on a shared host.
-> Put the server behind something, or set `SEARCHICUS_STORE=false`.
+> Put the server behind something, or switch `archive.enabled` off.
 
 ## Extraction
 
@@ -424,31 +469,29 @@ someone has to remember.
 
 ### Configuration
 
-| Variable                                   |     Default | Effect                                        |
-| ------------------------------------------ | ----------: | --------------------------------------------- |
-| `SEARCHICUS_EXTRACT_ENABLED`               |    disabled | Any of `true`/`1`/`yes`/`on` enables it.      |
-| `SEARCHICUS_EXTRACT_MAX_CONCURRENT`        |         `2` | Extractions running at once, per process.     |
-| `SEARCHICUS_EXTRACT_MAX_QUEUED`            |        `32` | Callers that may wait for one of those.       |
-| `SEARCHICUS_EXTRACT_NAVIGATION_TIMEOUT_MS` |    `10_000` | Deadline through `domcontentloaded`.          |
-| `SEARCHICUS_EXTRACT_SETTLE_TIMEOUT_MS`     |     `2_000` | Fixed pause after the DOM is ready.           |
-| `SEARCHICUS_EXTRACT_TIMEOUT_MS`            |    `30_000` | End-to-end render, dwell, parse, and respond. |
-| `SEARCHICUS_EXTRACT_MAX_BYTES`             | `5_242_880` | Transfer tripwire, whole render; see below.   |
-| `SEARCHICUS_EXTRACT_MAX_DOC_BYTES`         | `2_097_152` | Document cap; fails the read. See below.      |
-| `SEARCHICUS_EXTRACT_MAX_REDIRECTS`         |         `5` | Redirect-chain cap.                           |
-| `SEARCHICUS_EXTRACT_ALLOWED_PORTS`         |    `80,443` | Permitted destination ports.                  |
-| `SEARCHICUS_EXTRACT_DWELL`                 |     enabled | Off skips the post-load dwell.                |
-| `SEARCHICUS_EXTRACT_CACHE`                 |     enabled | Off re-renders for every window.              |
-| `SEARCHICUS_EXTRACT_CACHE_TTL_MS`          |   `300_000` | How long a parsed page may be served.         |
-| `SEARCHICUS_EXTRACT_CACHE_MAX_ENTRIES`     |        `32` | Pages held at once.                           |
-| `SEARCHICUS_EXTRACT_CACHE_MAX_CHARS`       | `8_000_000` | Total Markdown held, across every entry.      |
+| Setting                       |    Default | Effect                                               |
+| ----------------------------- | ---------: | ---------------------------------------------------- |
+| `extract.enabled`             |   disabled | Renders caller-supplied URLs. Off until switched on. |
+| `extract.maxConcurrent`       |        `2` | Extractions running at once, per process.            |
+| `extract.maxQueued`           |       `32` | Callers that may wait for one of those.              |
+| `extract.navigationTimeoutMs` |    `10000` | Deadline through `domcontentloaded`.                 |
+| `extract.settleTimeoutMs`     |     `2000` | Fixed pause after the DOM is ready.                  |
+| `extract.timeoutMs`           |    `30000` | End-to-end render, dwell, parse, and respond.        |
+| `extract.maxBytes`            |  `5242880` | Transfer tripwire, whole render; see below.          |
+| `extract.maxDocumentBytes`    |  `2097152` | Document cap; fails the read. See below.             |
+| `extract.maxRedirects`        |        `5` | Redirect-chain cap.                                  |
+| `extract.allowedPorts`        | `[80,443]` | Permitted destination ports.                         |
+| `extract.dwell`               |    enabled | Off skips the post-load dwell.                       |
+| `extract.cache.enabled`       |    enabled | Off re-renders for every window.                     |
+| `extract.cache.ttlMs`         |   `300000` | How long a parsed page may be served.                |
+| `extract.cache.maxEntries`    |       `32` | Pages held at once.                                  |
+| `extract.cache.maxChars`      |  `8000000` | Total Markdown held, across every entry.             |
 
-Switches read one vocabulary throughout. A switch that is **off** by default
-(`SEARCHICUS_EXTRACT_ENABLED`) turns on for `true`, `1`, `yes` or `on` and
-stays off for anything else; a switch that is **on** by default
-(`SEARCHICUS_STORE`, `SEARCHICUS_EXTRACT_DWELL`, `MCP_ENABLED`, `SERVE_UI`)
-turns off for `false`, `0`, `no` or `off` and stays on for anything else.
-Case and surrounding spaces do not matter, and an unrecognised value leaves
-the switch at its default — which for both directions is the safe one.
+Every switch reads one vocabulary: `true`, `1`, `yes` or `on` for on, and
+`false`, `0`, `no` or `off` for off. Case and surrounding spaces do not
+matter, and anything else is a configuration error that stops the process
+rather than a silent fallback — a switch nobody meant to set either way is
+a question for the operator, not something to guess at.
 
 `searchicus outline <url>` (and `POST /outline`, and the `outline` MCP tool)
 lists a page's sections and the offset to read each, so an agent can see what
@@ -517,7 +560,7 @@ bounded enums and counts; withheld HTML and Markdown are never persisted.
 
 > **This holds page text.** Not on disk and not in the archive, which still has
 > nowhere to put it, but in memory for minutes. That is a smaller claim than
-> persistence and it is a different one. `SEARCHICUS_EXTRACT_CACHE=false` turns
+> persistence and it is a different one. Switching `extract.cache.enabled` off turns
 > it off and costs only time, because paging is correct without it — it has to
 > be, since the CLI and the API are separate processes and neither sees the
 > other's memory. Entries use the final URL as their key and remember a

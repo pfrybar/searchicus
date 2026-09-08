@@ -34,8 +34,8 @@ const SCREEN = { width: 1920, height: 1080 } as const;
  * leaves from: a detector that compares the two sees a contradiction, which
  * is the exact class of tell the rest of this file exists to avoid. There is
  * no way to derive it correctly at build time, so it is configurable and the
- * default matches this project's current egress. Override with
- * SEARCHICUS_TIMEZONE when running from elsewhere.
+ * default matches this project's current egress. Set `browser.timezone` when
+ * running from elsewhere.
  */
 export const DEFAULT_TIMEZONE = "America/Chicago";
 /** Default locale. Should likewise be plausible for the egress IP's country. */
@@ -146,8 +146,8 @@ export function buildStealthOptions(options: StealthOptions = {}): PersistentCon
     userAgent: buildUserAgent(major),
     viewport: { ...VIEWPORT },
     deviceScaleFactor: 1,
-    locale: options.locale ?? process.env.SEARCHICUS_LOCALE ?? DEFAULT_LOCALE,
-    timezoneId: options.timezoneId ?? process.env.SEARCHICUS_TIMEZONE ?? DEFAULT_TIMEZONE,
+    locale: options.locale ?? DEFAULT_LOCALE,
+    timezoneId: options.timezoneId ?? DEFAULT_TIMEZONE,
     colorScheme: "light",
     // A browser that has been used has granted the common permissions;
     // the headless default is a different, detectable state. clipboard-read

@@ -17,7 +17,7 @@ throttle and one persistent browser profile. As two processes they would
 each throttle independently and query the backends at twice the configured
 rate, while building two divergent cookie jars.
 
-Set `MCP_ENABLED=false` to serve the search API alone; `/mcp` then 404s and
+Set `server.mcp: false` to serve the search API alone; `/mcp` then 404s and
 nothing else changes.
 
 ## Running
@@ -28,7 +28,8 @@ npm run dev -w @searchicus/api     # tsx watch, reloads on change
 npm run build -w @searchicus/api && npm run start -w @searchicus/api
 ```
 
-Listens on `PORT` (default `3000`) at `HOST` (default `127.0.0.1`). Loopback
+Listens on `server.port` (default `3000`) at `server.host` (default
+`127.0.0.1`). Loopback
 is the default because this server has no authentication and its dashboard
 endpoints serve every query ever made through it; set `HOST=0.0.0.0` to accept
 connections from elsewhere. The Docker image sets that already, since a
@@ -36,9 +37,9 @@ container listening only on its own loopback cannot be reached at all.
 
 The server builds its registry with `createBrowserRegistry("api")`, giving it
 its own Chromium profile at `.searchicus/profile/api/` and a shared archive at
-`.searchicus/searchicus.sqlite`. Set `SEARCHICUS_DATA_DIR` to relocate both, or
-use `SEARCHICUS_PROFILE_DIR` / `SEARCHICUS_STORE_PATH` for a component
-override. `SEARCHICUS_STORE=false` disables best-effort archival. Chromium
+`.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or
+use `paths.profileDir` / `paths.storePath` for a component
+override. `archive.enabled: false` disables best-effort archival. Chromium
 launches lazily — nothing starts until an engine actually asks for a browser.
 
 On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits
@@ -53,8 +54,8 @@ files. Combined with the search API under `/api`, that makes one process
 serve the whole application same-origin — no reverse proxy, no CORS, and no
 build-time API URL baked into the bundle.
 
-- `SERVE_UI=false` disables it.
-- `UI_DIST_DIR` points at a different build directory.
+- `server.ui: false` disables it.
+- `server.uiDir` points at a different build directory.
 - With no build present, `/` simply 404s and the API is unaffected.
 
 There is deliberately **no SPA history fallback**: the UI is a single page
@@ -67,7 +68,7 @@ build can never shadow an endpoint.
 ## Logging
 
 One line per request on stderr, at a level that follows the status code, plus
-whatever the search and extraction layers report beneath it. `SEARCHICUS_LOG`
+whatever the search and extraction layers report beneath it. `log.level`
 (`debug`|`info`|`warn`|`error`|`silent`, default `info`) controls the lot,
 including the startup banner. See the root README's "Logging" section.
 
@@ -152,7 +153,7 @@ curl -s localhost:3000/api/search -H 'content-type: application/json' \
 
 ### `POST /extract`
 
-Disabled unless `SEARCHICUS_EXTRACT_ENABLED=true`. See the root README's
+Disabled unless `extract.enabled` is set. See the root README's
 "Extraction" section, and read its network warning before enabling this.
 
 Request body:
@@ -472,5 +473,5 @@ npm run typecheck -w @searchicus/api
 Tests cover the search API through `supertest`, connect an SDK `Client` to
 `createMcpServer()` over `InMemoryTransport` for focused tool coverage, and
 connect one over a real ephemeral Streamable HTTP endpoint — covering tool
-logic, the stateless HTTP wiring, and the `MCP_ENABLED=false` path without
+logic, the stateless HTTP wiring, and the `server.mcp: false` path without
 external services.

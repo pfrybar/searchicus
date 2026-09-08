@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchArchiveRecord } from "./archive.js";
-import { defaultDataDir, defaultProfileDir, defaultStorePath, searchArchiveEnabled } from "./paths.js";
+import { DEFAULT_CONFIG_INPUT } from "./config.js";
+import { resolveDataDir, resolveProfileDir, resolveStorePath, type PathsConfig } from "./paths.js";
 import { ARCHIVE_SCHEMA_VERSION, createDefaultSearchArchive, SqliteSearchArchive } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
@@ -76,17 +77,22 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
+/** A paths slice with the defaults for anything the caller does not set. */
+function paths(overrides: Partial<PathsConfig> = {}): PathsConfig {
+  return { ...DEFAULT_CONFIG_INPUT.paths, ...overrides };
+}
+
 describe("persistent data paths", () => {
   it("keeps the archive beside, rather than inside, surface profiles", () => {
-    vi.stubEnv("SEARCHICUS_DATA_DIR", "/var/lib/searchicus");
+    const configured = paths({ dataDir: "/var/lib/searchicus" });
 
-    expect(defaultDataDir()).toBe("/var/lib/searchicus");
-    expect(defaultProfileDir("api")).toBe("/var/lib/searchicus/profile/api");
-    expect(defaultStorePath()).toBe("/var/lib/searchicus/searchicus.sqlite");
+    expect(resolveDataDir(configured)).toBe("/var/lib/searchicus");
+    expect(resolveProfileDir(configured, "api")).toBe("/var/lib/searchicus/profile/api");
+    expect(resolveStorePath(configured)).toBe("/var/lib/searchicus/searchicus.sqlite");
   });
 
   it("resolves the same state root however the process was started", async () => {
-    // The regression: defaultDataDir() used process.cwd(), and `npm run -w
+    // The regression: the data root came from process.cwd(), and `npm run -w
     // <package>` sets that to the package directory. The API resolved
     // packages/api/.searchicus while the CLI resolved the repository root, so
     // the archive they are designed to share was silently two databases — and
@@ -99,11 +105,7 @@ describe("persistent data paths", () => {
     const root = fileURLToPath(new URL("../../..", import.meta.url));
 
     const resolve = async (cwd: string): Promise<{ cwd: string; dataDir: string; store: string }> => {
-      const { stdout } = await execFileAsync(process.execPath, ["--no-warnings=ExperimentalWarning", printer], {
-        cwd,
-        // The ambient value would mask exactly what this is testing.
-        env: { ...process.env, SEARCHICUS_DATA_DIR: undefined, SEARCHICUS_STORE_PATH: undefined },
-      });
+      const { stdout } = await execFileAsync(process.execPath, ["--no-warnings=ExperimentalWarning", printer], { cwd });
       return JSON.parse(stdout) as { cwd: string; dataDir: string; store: string };
     };
 
@@ -121,29 +123,38 @@ describe("persistent data paths", () => {
     expect(fromRoot.dataDir).toBe(path.join(root, ".searchicus"));
   });
 
-  it("allows a component-specific path override and disables storage on any explicit no", () => {
-    vi.stubEnv("SEARCHICUS_DATA_DIR", "/data");
-    vi.stubEnv("SEARCHICUS_PROFILE_DIR", "/browser/api");
-    vi.stubEnv("SEARCHICUS_STORE_PATH", "/archive/searchicus.sqlite");
-    vi.stubEnv("SEARCHICUS_STORE", "false");
+  it("takes a component-specific override over the derived path", () => {
+    const configured = paths({
+      dataDir: "/data",
+      profileDir: "/browser/api",
+      storePath: "/archive/searchicus.sqlite",
+    });
 
-    expect(defaultProfileDir("api")).toBe("/browser/api");
-    expect(defaultStorePath()).toBe("/archive/searchicus.sqlite");
-    expect(searchArchiveEnabled()).toBe(false);
-    expect(createDefaultSearchArchive()).toBeUndefined();
+    expect(resolveProfileDir(configured, "api")).toBe("/browser/api");
+    expect(resolveStorePath(configured)).toBe("/archive/searchicus.sqlite");
+    // The root still moves everything that was not overridden.
+    expect(resolveDataDir(configured)).toBe("/data");
+  });
 
-    // "0" used to leave archiving on, because this switch understood only the
-    // literal string "false" while MCP_ENABLED beside it read "0" as off.
-    // One vocabulary now, so the same word means the same thing everywhere.
-    for (const value of ["0", "no", "off", "FALSE"]) {
-      vi.stubEnv("SEARCHICUS_STORE", value);
-      expect(searchArchiveEnabled(), value).toBe(false);
-    }
+  it("builds no archive at all when archiving is switched off", () => {
+    const configured = paths({ storePath: "/archive/searchicus.sqlite" });
 
-    // Anything that is not a no leaves archiving on, which is the default.
-    vi.stubEnv("SEARCHICUS_STORE", "yes");
-    expect(searchArchiveEnabled()).toBe(true);
-    expect(createDefaultSearchArchive()).toBeInstanceOf(SqliteSearchArchive);
+    expect(
+      createDefaultSearchArchive({ archive: { enabled: false, busyTimeoutMs: 5_000 }, paths: configured }),
+    ).toBeUndefined();
+    expect(
+      createDefaultSearchArchive({ archive: { enabled: true, busyTimeoutMs: 5_000 }, paths: configured }),
+    ).toBeInstanceOf(SqliteSearchArchive);
+  });
+
+  it("opens the archive at the configured path", () => {
+    const file = temporaryDatabase();
+    const archive = createDefaultSearchArchive({
+      archive: { enabled: true, busyTimeoutMs: 5_000 },
+      paths: paths({ storePath: file }),
+    });
+
+    expect(archive?.filePath).toBe(file);
   });
 });
 

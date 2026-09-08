@@ -25,7 +25,7 @@ import { createMcpRouter } from "./mcp/router.js";
 /** Path the MCP Streamable HTTP endpoint is mounted at, when enabled. */
 const MCP_PATH = "/mcp";
 /** Ceiling on a request body, comfortably above any legitimate one. */
-const JSON_BODY_LIMIT = "64kb";
+export const DEFAULT_JSON_BODY_LIMIT = "64kb";
 
 const log = createLogger("api");
 
@@ -79,6 +79,13 @@ export interface CreateAppOptions {
    * the registry and extraction service own the numbers.
    */
   runtime?: () => OverloadTotals;
+  /**
+   * Largest request body to accept, as an express byte string.
+   *
+   * Every body this API accepts is a query, a URL and a handful of ids; the
+   * shared core schemas bound each field, and this bounds the whole.
+   */
+  jsonBodyLimit?: string;
 }
 
 /**
@@ -92,14 +99,21 @@ export function createApp(
   registry: SearchEngineRegistry = createDefaultRegistry(),
   options: CreateAppOptions = {},
 ): Express {
-  const { mcp = true, ui = false, extraction = new ExtractionService(), insights, runtime } = options;
+  const {
+    mcp = true,
+    ui = false,
+    extraction = new ExtractionService(),
+    insights,
+    runtime,
+    jsonBodyLimit = DEFAULT_JSON_BODY_LIMIT,
+  } = options;
   const app = express();
   app.use(accessLog);
   // Explicit rather than inherited. Every body this API accepts is a query,
   // a URL and a handful of ids; the shared core schemas bound each field, and
   // this bounds the whole. body-parser's own default is the same order of
   // magnitude, but a limit worth relying on is a limit worth writing down.
-  app.use(express.json({ limit: JSON_BODY_LIMIT }));
+  app.use(express.json({ limit: jsonBodyLimit }));
 
   // Must be mounted before the catch-all 404 below, which would otherwise
   // swallow every MCP request.
@@ -155,7 +169,7 @@ export function createApp(
     // its own limit was the reason. Left to the branch below it became a 500,
     // which reads as "this server is broken" rather than "send less".
     if (isTooLargeError(err)) {
-      res.status(413).json({ error: `Request body must not exceed ${JSON_BODY_LIMIT}.` });
+      res.status(413).json({ error: `Request body must not exceed ${jsonBodyLimit}.` });
       return;
     }
 
