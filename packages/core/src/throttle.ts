@@ -13,6 +13,16 @@ export const DEFAULT_JITTER = 0.3;
  */
 export const DEFAULT_MAX_QUEUED = 60;
 
+/** The rate policy as an operator sets it. The `search.throttle` slice. */
+export interface ThrottleConfig {
+  /** Minimum spacing between the starts of consecutive searches. */
+  readonly minIntervalMs: number;
+  /** Random spread applied to the interval, as a fraction of it (0 disables). */
+  readonly jitter: number;
+  /** Callers that may wait at once before further ones are refused. */
+  readonly maxQueued: number;
+}
+
 export interface ThrottleOptions {
   /** Minimum spacing between the *starts* of consecutive searches. */
   minIntervalMs?: number;

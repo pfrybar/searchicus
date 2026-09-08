@@ -22,6 +22,11 @@
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
+/** How much to say. The `log` slice of the configuration tree. */
+export interface LogConfig {
+  readonly level: LogLevel;
+}
+
 const RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
 
 /** Structured detail for a line. Rendered as `key=value` after the message. */

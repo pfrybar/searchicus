@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchArchiveRecord } from "./archive.js";
 import { DEFAULT_CONFIG_INPUT } from "./config.js";
+import { DEFAULT_DASHBOARD_CONFIG } from "./insights.js";
 import { resolveDataDir, resolveProfileDir, resolveStorePath, type PathsConfig } from "./paths.js";
 import { ARCHIVE_SCHEMA_VERSION, createDefaultSearchArchive, SqliteSearchArchive } from "./storage.js";
 
@@ -140,10 +141,18 @@ describe("persistent data paths", () => {
     const configured = paths({ storePath: "/archive/searchicus.sqlite" });
 
     expect(
-      createDefaultSearchArchive({ archive: { enabled: false, busyTimeoutMs: 5_000 }, paths: configured }),
+      createDefaultSearchArchive({
+        archive: { enabled: false, busyTimeoutMs: 5_000 },
+        paths: configured,
+        dashboard: DEFAULT_DASHBOARD_CONFIG,
+      }),
     ).toBeUndefined();
     expect(
-      createDefaultSearchArchive({ archive: { enabled: true, busyTimeoutMs: 5_000 }, paths: configured }),
+      createDefaultSearchArchive({
+        archive: { enabled: true, busyTimeoutMs: 5_000 },
+        paths: configured,
+        dashboard: DEFAULT_DASHBOARD_CONFIG,
+      }),
     ).toBeInstanceOf(SqliteSearchArchive);
   });
 
@@ -152,6 +161,7 @@ describe("persistent data paths", () => {
     const archive = createDefaultSearchArchive({
       archive: { enabled: true, busyTimeoutMs: 5_000 },
       paths: paths({ storePath: file }),
+      dashboard: DEFAULT_DASHBOARD_CONFIG,
     });
 
     expect(archive?.filePath).toBe(file);

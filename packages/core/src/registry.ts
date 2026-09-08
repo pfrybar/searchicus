@@ -8,7 +8,13 @@ import { DuckDuckGoSearchEngine } from "./engines/duckduckgo.js";
 import { NoResultsError, OffTargetResultsError, SearchBoxUnavailableError } from "./engines/errors.js";
 import { StartpageSearchEngine } from "./engines/startpage.js";
 import { rankResults } from "./ranking.js";
-import { Throttle, ThrottleAbortError, ThrottleOverloadedError, type ThrottleOptions } from "./throttle.js";
+import {
+  Throttle,
+  ThrottleAbortError,
+  ThrottleOverloadedError,
+  type ThrottleConfig,
+  type ThrottleOptions,
+} from "./throttle.js";
 import type {
   EngineFailureKind,
   EngineSearchOutcome,
@@ -101,6 +107,18 @@ export class AllEnginesFailedError extends Error {
     super("All selected search engines failed");
     this.name = "AllEnginesFailedError";
   }
+}
+
+/** What a fan-out is bounded by, as an operator sets it. The `search` slice. */
+export interface SearchConfig {
+  /** Deadline for a fan-out to produce results. */
+  readonly resultsTimeoutMs: number;
+  /** Hard cap on browser work that outlives the results it produced. */
+  readonly sessionTimeoutMs: number;
+  /** Budget kept back for the search itself. See DEFAULT_SEARCH_RESERVE_MS. */
+  readonly reserveMs: number;
+  /** Spacing between whole fan-outs, which is where rate limiting lives. */
+  readonly throttle: ThrottleConfig;
 }
 
 export interface SearchEngineRegistryOptions {

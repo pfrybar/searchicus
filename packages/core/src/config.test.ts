@@ -10,6 +10,7 @@ import { DEFAULT_RESULTS_TIMEOUT_MS, DEFAULT_SEARCH_RESERVE_MS, DEFAULT_SESSION_
 import { ARCHIVE_BUSY_TIMEOUT_MS } from "./storage.js";
 import { DEFAULT_JITTER, DEFAULT_MAX_QUEUED, DEFAULT_MIN_INTERVAL_MS } from "./throttle.js";
 import {
+  changedSettings,
   CONFIG_PATH_ENV,
   ConfigError,
   configLeafPaths,
@@ -271,5 +272,58 @@ describe("configured defaults", () => {
 
   it("uses the browser identity the stealth layer falls back to", () => {
     expect(DEFAULT_CONFIG_INPUT.browser).toMatchObject({ locale: DEFAULT_LOCALE, timezone: DEFAULT_TIMEZONE });
+  });
+});
+
+describe("changedSettings", () => {
+  it("reports nothing when nothing was configured", () => {
+    expect(changedSettings(loadConfig({ env: {}, file: null }), { env: {}, file: null })).toEqual([]);
+  });
+
+  it("names the environment variable that decided a value", () => {
+    const env = { SEARCHICUS_SERVER_PORT: "8080" };
+
+    expect(changedSettings(loadConfig({ env, file: null }), { env, file: null })).toEqual([
+      { path: "server.port", value: "8080", source: "SEARCHICUS_SERVER_PORT" },
+    ]);
+  });
+
+  it("names the file when the environment did not set it", () => {
+    const file = configFile("extract:\n  enabled: true\n");
+
+    expect(changedSettings(loadConfig({ env: {}, file }), { env: {}, file })).toEqual([
+      { path: "extract.enabled", value: "true", source: file },
+    ]);
+  });
+
+  it("says nothing about a value that was set to what it already was", () => {
+    // Otherwise every boot reports settings an operator pinned deliberately
+    // and changed nothing by pinning, which is noise in the one place the
+    // real differences have to stand out.
+    const env = { SEARCHICUS_SERVER_PORT: "3000" };
+
+    expect(changedSettings(loadConfig({ env, file: null }), { env, file: null })).toEqual([]);
+  });
+
+  it("renders a list setting as its values", () => {
+    const env = { SEARCHICUS_EXTRACT_ALLOWED_PORTS: "80,8443" };
+    const [changed] = changedSettings(loadConfig({ env, file: null }), { env, file: null });
+
+    expect(changed).toEqual({
+      path: "extract.allowedPorts",
+      value: "80,8443",
+      source: "SEARCHICUS_EXTRACT_ALLOWED_PORTS",
+    });
+  });
+
+  it("reports a clamped document cap as the value actually in force", () => {
+    const env = { SEARCHICUS_EXTRACT_MAX_BYTES: "1000000", SEARCHICUS_EXTRACT_MAX_DOCUMENT_BYTES: "4000000" };
+    const changed = changedSettings(loadConfig({ env, file: null }), { env, file: null });
+
+    expect(changed).toContainEqual({
+      path: "extract.maxDocumentBytes",
+      value: "1000000",
+      source: "SEARCHICUS_EXTRACT_MAX_DOCUMENT_BYTES",
+    });
   });
 });
