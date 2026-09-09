@@ -41,7 +41,9 @@ describe("loadConfig", () => {
     expect(config.server.host).toBe("127.0.0.1");
     expect(config.server.port).toBe(3000);
     expect(config.log.level).toBe("info");
-    expect(config.archive.enabled).toBe(true);
+    // Nothing is recorded unless an operator says to: the archive holds every
+    // query ever run through this server.
+    expect(config.archive.enabled).toBe(false);
     expect(config.search.throttle.minIntervalMs).toBe(5_000);
     expect(config.extract.enabled).toBe(false);
     expect(config.dashboard.metricsWindow).toBe(500);
@@ -84,7 +86,7 @@ describe("loadConfig", () => {
       expect(loadConfig({ env: { SEARCHICUS_EXTRACT_ENABLED: value }, file: null }).extract.enabled, value).toBe(true);
     }
     for (const value of ["false", "0", "no", "off"]) {
-      expect(loadConfig({ env: { SEARCHICUS_ARCHIVE_ENABLED: value }, file: null }).archive.enabled, value).toBe(false);
+      expect(loadConfig({ env: { SEARCHICUS_SERVER_MCP: value }, file: null }).server.mcp, value).toBe(false);
     }
     expect(loadConfig({ env: {}, file: configFile("extract:\n  enabled: true\n") }).extract.enabled).toBe(true);
   });

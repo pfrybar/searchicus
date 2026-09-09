@@ -43,9 +43,9 @@ Google's, which nothing else here reaches. See "Adding a new search engine
 backend" to add your own.
 
 Rendered extraction ships too, disabled by default. `POST /extract`, the
-`extract` MCP tool, `searchicus extract`, and an Extract action on every UI
-result render a page in an isolated browser and return its main content as
-Markdown. See "Extraction" below before enabling it.
+`extract` MCP tool and `searchicus extract` render a page in an isolated
+browser and return its main content as Markdown. See "Extraction" below
+before enabling it.
 
 ## Architecture
 
@@ -316,7 +316,7 @@ INFO api configured setting=extract.enabled value=true from=/srv/searchicus/conf
 | `paths.dataDir`                 | `.searchicus`; `/data` in the image | Persistent-state root: `searchicus.sqlite` and `profile/<surface>/`.                                                             |
 | `paths.profileDir`              | `<dataDir>/profile/<surface>`       | Chromium user-data directory override. One per process.                                                                          |
 | `paths.storePath`               | `<dataDir>/searchicus.sqlite`       | Search archive SQLite file override.                                                                                             |
-| `archive.enabled`               | on                                  | Off disables best-effort archival.                                                                                               |
+| `archive.enabled`               | off                                 | On records completed fan-outs and reads in SQLite. Everything searched for ends up here.                                         |
 | `archive.busyTimeoutMs`         | `5000`                              | Wait for another process holding the database lock.                                                                              |
 | `log.level`                     | `info`                              | `debug`, `info`, `warn`, `error` or `silent`. Everything goes to stderr.                                                         |
 | `search.resultsTimeoutMs`       | `30000`                             | Deadline for a fan-out to produce results.                                                                                       |
@@ -392,22 +392,22 @@ Routing is hash-based (`#/metrics`, `#/searches/<id>`), so deep links work
 without the server needing a history fallback — which it must not have, since a
 catch-all would turn genuine API 404s into HTML.
 
-**Both pages are off by default.** Set `dashboard.enabled` to serve them.
-They need the archive too, which is on by default. With either switched off
-the endpoints answer `503` and the UI hides the links
-rather than offering pages that can only fail.
+**Both pages need two switches, and both are off by default.**
+`archive.enabled` records the history; `dashboard.enabled` serves it. With
+either off the endpoints answer `503` and the UI hides the links rather than
+offering pages that can only fail.
 
 > **The archive is a record of everything searched for.** These endpoints serve
 > that history — queries, result titles, URLs — and the API has no
 > authentication. That is fine on a laptop and is not fine on a shared host.
-> Put the server behind something, or switch `archive.enabled` off.
+> If you turn both on, put the server behind something.
 
 ## Extraction
 
 Extraction renders a URL and returns its main content as Markdown. It is
-available from every front door — `POST /extract`, the `extract` MCP tool,
-`searchicus extract <url>`, and an Extract action beside each UI result — and
-it is **off until an operator turns it on**.
+available from `POST /extract`, the `extract` MCP tool and
+`searchicus extract <url>` — not from the web UI, which lists results and
+links out — and it is **off until an operator turns it on**.
 
 There are three ways to read a page, and they differ by what the caller
 already knows:

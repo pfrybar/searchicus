@@ -43,7 +43,8 @@ starting on a setting nobody wrote. It builds its registry with
 `.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or use
 `paths.profileDir` / `paths.storePath` for a component override; relative
 values resolve against the application root, never the working directory.
-`archive.enabled: false` disables best-effort archival. Chromium launches
+`archive.enabled: true` switches on best-effort archival, which is off by
+default. Chromium launches
 lazily — nothing starts until an engine actually asks for a browser.
 
 On `SIGINT`/`SIGTERM` the server stops accepting connections and then waits

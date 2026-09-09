@@ -145,7 +145,8 @@ must `drain()` (or `close()`) before exiting**, or it kills live browser work.
 ## Search archive
 
 `createBrowserRegistry()` also queues each completed fan-out for best-effort
-archival. The SQLite database retains the detailed internal ranking and raw
+archival, when it was given an archive to write to — off by default, so a
+process that configures nothing keeps no history at all. The SQLite database retains the detailed internal ranking and raw
 successful and failed engine outcomes keyed by the same `search_id`; ordinary
 callers receive only a generic projection of that ranking. Total engine
 failures are archived too, even though they have no client response.
@@ -155,7 +156,8 @@ it must never delay or alter the search response. `drain()` waits for queued
 archive writes as well as browser sessions, and `close()` closes the database
 after draining. The archive contains queries, result text and URLs, and engine
 failure messages, so treat the local database as sensitive data. Set
-`archive.enabled: false` to disable it.
+`archive.enabled: true` to switch it on; it is off by default, because it
+becomes a record of every query the process has ever run.
 
 ## Extraction
 

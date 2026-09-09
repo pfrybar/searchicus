@@ -169,7 +169,7 @@ export const SearchicusConfigSchema = z.strictObject({
     level: z.enum(["debug", "info", "warn", "error", "silent"]),
   }),
   archive: z.strictObject({
-    /** Record completed fan-outs and reads. Best-effort either way. */
+    /** Record completed fan-outs and reads. Off by default; best-effort either way. */
     enabled: boolean(),
     /** How long to wait for another process holding the database lock. */
     busyTimeoutMs: positiveInt(),
@@ -259,7 +259,7 @@ export const DEFAULT_CONFIG_INPUT = {
   paths: { dataDir: ".searchicus", profileDir: null, storePath: null },
   server: { host: "127.0.0.1", port: 3000, mcp: true, ui: true, uiDir: null, jsonBodyLimit: "64kb" },
   log: { level: "info" },
-  archive: { enabled: true, busyTimeoutMs: 5_000 },
+  archive: { enabled: false, busyTimeoutMs: 5_000 },
   search: {
     resultsTimeoutMs: 30_000,
     sessionTimeoutMs: 60_000,
