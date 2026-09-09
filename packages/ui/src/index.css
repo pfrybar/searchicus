@@ -1,11 +1,86 @@
+/*
+ * Tokens first, components second.
+ *
+ * Every colour in the app resolves to one of these names, so the dark theme
+ * is one block of redefinitions rather than a second copy of the stylesheet.
+ * The palette is taken from the logo: the deep navy of the wordmark, the blue
+ * of its last four letters, and the teal at the top of the mark.
+ */
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
+
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --text: #16202e;
+  --text-strong: #0c1520;
+  --muted: #5b6675;
+  --faint: #8a94a3;
+  --border: #e0e5ec;
+  --border-strong: #cdd5e0;
+
+  --brand: #0b7fb4;
+  --brand-hover: #0a6d9b;
+  --brand-ink: #075a80;
+  --brand-soft: #e7f2f9;
+  --brand-contrast: #ffffff;
+  --accent: #12a4a4;
+
+  --ok: #1a7f37;
+  --ok-soft: #eff9f2;
+  --ok-border: #b7e0c1;
+  --warn: #8a5a00;
+  --bad: #b3261e;
+  --bad-soft: #fdf3f2;
+  --bad-border: #f0c2be;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgb(16 32 56 / 6%);
+  --shadow: 0 6px 20px -8px rgb(16 32 56 / 22%);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent);
+
   font-family:
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --surface: #151f33;
+    --surface-2: #1b2740;
+    --text: #e3ebf6;
+    --text-strong: #f4f8fd;
+    --muted: #9aa8bd;
+    --faint: #74839a;
+    --border: #253147;
+    --border-strong: #35455f;
+
+    --brand: #45b6e8;
+    --brand-hover: #6cc8f2;
+    --brand-ink: #9bd9f7;
+    --brand-soft: #12283c;
+    --brand-contrast: #08121f;
+    --accent: #2fc7c0;
+
+    --ok: #58c98a;
+    --ok-soft: #10241a;
+    --ok-border: #245b3a;
+    --warn: #e0a53c;
+    --bad: #f08a80;
+    --bad-soft: #2a1614;
+    --bad-border: #6b2f2a;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 35%);
+    --shadow: 0 8px 24px -10px rgb(0 0 0 / 65%);
+  }
 }
 
 * {
@@ -14,6 +89,28 @@
 
 body {
   margin: 0;
-  background: #fafafa;
-  color: #1a1a1a;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* One ring, everywhere, and only for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+a {
+  color: var(--brand);
+}
+
+/* Motion is decoration here; anyone who has asked for less gets none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

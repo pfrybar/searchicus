@@ -107,13 +107,21 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search…"
+          placeholder="Search the web…"
           aria-label="Search query"
+          // The page exists to be typed into, and it is the landing route.
+          autoFocus
         />
         <button type="submit" disabled={status === "loading"}>
           {status === "loading" ? "Searching…" : "Search"}
         </button>
       </form>
+
+      {/* A fan-out takes tens of seconds. Polite rather than assertive: it
+          reports progress, and the failure below is what interrupts. */}
+      <p className="result-summary" role="status">
+        {status === "loading" ? "Searching every engine — this takes a few seconds…" : summarize(result)}
+      </p>
 
       {status === "error" && error && (
         <p className="error" role="alert">
@@ -121,9 +129,15 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
         </p>
       )}
 
+      {status === "idle" && !result && (
+        <p className="hint">
+          Every query fans out to Bing, Brave, DuckDuckGo and Startpage, then merges what they agree on.
+        </p>
+      )}
+
       {result && (
         <div className="results">
-          {result.degraded && <p className="error">Partial results: one or more sources were unavailable.</p>}
+          {result.degraded && <p className="notice">Partial results: one or more sources were unavailable.</p>}
           {result.results.length > 0 ? (
             <ul>
               {result.results.map((item) => (
@@ -131,6 +145,7 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
                   <a href={item.url} target="_blank" rel="noreferrer">
                     {item.title}
                   </a>
+                  <p className="result-host">{hostOf(item.url)}</p>
                   {item.snippet && <p>{item.snippet}</p>}
                   {canRead && (
                     <div className="read-actions" aria-label={`Read ${item.title}`}>
@@ -166,7 +181,9 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
                       </button>
                     </div>
                   )}
-                  {read?.url === item.url && <ReadPanel read={read} onExtract={handleExtract} />}
+                  {read?.url === item.url && (
+                    <ReadPanel read={read} onExtract={handleExtract} onClose={() => setRead(null)} />
+                  )}
                 </li>
               ))}
             </ul>
@@ -182,9 +199,11 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
 function ReadPanel({
   read,
   onExtract,
+  onClose,
 }: {
   read: PageRead;
   onExtract: (url: string, offset?: number) => Promise<void>;
+  onClose: () => void;
 }) {
   if (read.status === "loading") return <p className="meta">Reading page…</p>;
   if (read.status === "error")
@@ -194,9 +213,18 @@ function ReadPanel({
       </p>
     );
 
+  // Opening a read on another result already replaces this one; this is for
+  // putting the page back the way it was without doing that.
+  const close = (
+    <button type="button" className="read-close" onClick={onClose} aria-label="Close page read">
+      ×
+    </button>
+  );
+
   if (read.content.outcome === "unusable") {
     return (
       <div className="extraction error" role="alert">
+        {close}
         <strong>Page content unavailable</strong>
         <p>
           {read.content.reason}
@@ -210,6 +238,7 @@ function ReadPanel({
   if (read.kind === "outline") {
     return (
       <div className="extraction">
+        {close}
         <p className="untrusted">Untrusted page title and headings</p>
         <p className="meta">
           {read.content.title} · {read.content.totalChars} characters
@@ -232,6 +261,7 @@ function ReadPanel({
   if (read.kind === "find") {
     return (
       <div className="extraction">
+        {close}
         <p className="untrusted">
           Untrusted page content — {read.content.matches.length} matching sections
           {read.content.cached ? " · served from cache" : ""}
@@ -255,6 +285,7 @@ function ReadPanel({
   const page = read.content;
   return (
     <div className="extraction">
+      {close}
       <p className="untrusted">
         Untrusted page content — {page.chars} characters
         {page.truncated ? ` of ${page.totalChars}, truncated` : ""}
@@ -268,6 +299,28 @@ function ReadPanel({
       )}
     </div>
   );
+}
+
+/**
+ * What came back, in one line.
+ *
+ * Count and elapsed time only: the public response is a deliberate
+ * projection of the ranking, so per-engine attribution is not the UI's to
+ * show here. The history pages are where a fan-out is taken apart.
+ */
+function summarize(result: SearchResponseBody | null): string {
+  if (!result) return "";
+  const plural = result.results.length === 1 ? "result" : "results";
+  return `${result.results.length} ${plural} · ${(result.tookMs / 1000).toFixed(1)}s`;
+}
+
+/** The host alone, so a result can be placed before its title is read. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 function isLoading(read: PageRead | null, url: string): boolean {
