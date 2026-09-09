@@ -241,9 +241,27 @@ One image serves everything. The default command starts the server — web UI at
 `/`, search API at `/api`, MCP at `/mcp` — so there's no reverse proxy and no
 CORS to configure.
 
+Published to the GitHub Container Registry for `linux/amd64` and
+`linux/arm64`, so Chromium runs natively on an Apple Silicon machine rather
+than under emulation:
+
+```bash
+docker run --rm --init --shm-size=1g -p 3000:3000 \
+  -v searchicus-data:/data \
+  ghcr.io/pfrybar/searchicus
+```
+
+| Tag            | What it is                                                             |
+| -------------- | ---------------------------------------------------------------------- |
+| `latest`       | The newest release. What you get by naming no tag.                     |
+| `0.1.0`, `0.1` | A specific release, and the newest patch of that minor.                |
+| `main`         | The tip of `main`. Newer than `latest`, and not a release.             |
+| `sha-<commit>` | One commit. The only tag that never moves, so the one to roll back to. |
+
+Building it yourself is the same image:
+
 ```bash
 docker build -t searchicus .
-
 docker run --rm --init --shm-size=1g -p 3000:3000 \
   -v searchicus-data:/data \
   searchicus
