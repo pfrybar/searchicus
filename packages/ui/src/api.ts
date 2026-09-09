@@ -37,31 +37,23 @@ export async function search(request: SearchRequest, signal?: AbortSignal): Prom
   return res.json() as Promise<SearchResponseBody>;
 }
 
-/**
- * What this deployment can actually do, so the UI can hide what it cannot.
- *
- * `extract` mirrors what `/health` reports and nothing here reads it: page
- * reading is an API and MCP capability, not something this UI offers.
- */
+/** What this deployment can actually serve from the dashboard. */
 export interface Capabilities {
-  extract: boolean;
   insights: boolean;
 }
 
 /**
  * Read once, by the shell, and passed down.
  *
- * Both answers come from the same endpoint, so asking per-feature meant two
- * identical requests on every load. Anything unreadable is treated as "off":
- * hiding a control that would have worked is a smaller mistake than offering
- * one that cannot.
+ * Anything unreadable is treated as "off": hiding a dashboard link that
+ * would have worked is a smaller mistake than offering one that cannot.
  */
 export async function fetchCapabilities(): Promise<Capabilities> {
   const res = await fetch(`${API_BASE}/health`);
-  if (!res.ok) return { extract: false, insights: false };
+  if (!res.ok) return { insights: false };
 
   const body = (await res.json().catch(() => null)) as Partial<Capabilities> | null;
-  return { extract: body?.extract === true, insights: body?.insights === true };
+  return { insights: body?.insights === true };
 }
 
 export type EngineMetricsBody = EngineMetricsReport;

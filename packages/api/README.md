@@ -39,9 +39,9 @@ The server reads the whole configuration once at startup with `loadConfig()`,
 reports what it is running on, and exits if any value is invalid rather than
 starting on a setting nobody wrote. It builds its registry with
 `createBrowserRegistry("api", config)`, giving it its own Chromium profile at
-`.searchicus/profile/api/` and a shared archive at
-`.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or use
-`paths.profileDir` / `paths.storePath` for a component override; relative
+`.searchicus/profile/api/` and, when `archive.enabled` is on, a shared archive
+at `.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or
+use `paths.profileDir` / `paths.storePath` for a component override; relative
 values resolve against the application root, never the working directory.
 `archive.enabled: true` switches on best-effort archival, which is off by
 default. Chromium launches
@@ -92,9 +92,10 @@ keep the original contract.
 ```
 
 `extract` reports whether this deployment will actually render pages, and
-`insights` whether an archive is configured. The UI reads both once on load
-and hides the actions it cannot offer, so an operator's toggles are visible
-without making a request that renders anything.
+`insights` whether the dashboard read endpoints are served — which requires
+both `archive.enabled` and `dashboard.enabled`. The UI reads the capability
+once on load and hides dashboard links it cannot use, so an operator's toggle
+is visible without making a request that reads history.
 
 ### `POST /search`
 

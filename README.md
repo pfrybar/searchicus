@@ -137,14 +137,15 @@ Two consequences shape the API:
 Persistent state is rooted at `.searchicus/` **beside this repository**, not
 beside whatever directory you happen to be standing in: the root is resolved
 from the installed files, so `npm run dev -w @searchicus/api` and a CLI run
-from anywhere reach the same archive. (They did not always — resolving from
+from anywhere reach the same state tree. (They did not always — resolving from
 the working directory gave the API `packages/api/.searchicus` and quietly made
 the shared archive two databases.) Each surface gets its own Chromium profile
-under `profile/<surface>/`, while `searchicus.sqlite` is the shared application
-archive beside it. Profiles remain isolated because a
-user-data directory is single-writer; the archive uses SQLite WAL mode so API
-and CLI processes can share it. `paths.dataDir` moves both together;
-`paths.profileDir` and `paths.storePath` override one component.
+under `profile/<surface>/`, and when `archive.enabled` is on the shared
+application archive is `searchicus.sqlite` beside them. Profiles remain
+isolated because a user-data directory is single-writer; the archive uses
+SQLite WAL mode so API and CLI processes can share it. `paths.dataDir` moves
+both together; `paths.profileDir` and `paths.storePath` override one
+component.
 
 The browser is also configured to behave like one a person is using, since
 a search engine that concludes otherwise stops returning useful results.
@@ -471,14 +472,15 @@ matched back to the search that offered it **by URL, when the dashboard
 asks** — which is the operator's question, so it is not one a caller should
 have had to remember to answer.
 
-That correlation is the point. An agent reaching for result 7 is evidence
-about results 1 through 6, and the returned list is stored alongside it, so a
-ranking can later be judged against what was actually shown. Matching after
-the fact makes it best-effort: a URL read for unrelated reasons is still
-credited to a search that happened to surface it, and where several did, the
-most recent one wins. Fine for a signal that already means "someone read
-this", not "this read was caused by that ranking". Only metadata is kept —
-status, timings, title, domain, sizes, a digest — never page text.
+That correlation is the point of archiving, when it is switched on. An agent
+reaching for result 7 is evidence about results 1 through 6, and the returned
+list is stored alongside it, so a ranking can later be judged against what was
+actually shown. Matching after the fact makes it best-effort: a URL read for
+unrelated reasons is still credited to a search that happened to surface it,
+and where several did, the most recent one wins. Fine for a signal that
+already means "someone read this", not "this read was caused by that
+ranking". Only metadata is kept — status, timings, title, domain, sizes, a
+digest — never page text.
 
 ### Read the content as data
 

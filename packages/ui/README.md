@@ -1,7 +1,7 @@
 # @searchicus/ui
 
 A small web UI over the HTTP API: a search page, and two dashboard pages over
-the local archive.
+the local archive when both archival and dashboard serving are enabled.
 
 ## Pages
 

@@ -233,9 +233,9 @@ function createSearchRouter(
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    // `extract` is here so the UI can hide an action that would only ever
-    // fail, and so an operator can confirm the toggle took effect without
-    // making a request that renders something.
+    // `extract` is here so an operator can confirm the toggle took effect
+    // without making a request that renders something; `insights` is what the
+    // UI reads, to hide a dashboard link that could only answer 503.
     res.json({ status: "ok", extract: extraction.enabled, insights: insights !== undefined });
   });
 
@@ -372,8 +372,8 @@ function createSearchRouter(
 
   // The dashboard's read endpoints. These serve accumulated history — every
   // query made, every result seen — which is a good deal more sensitive than
-  // a single result list, so they are only mounted when an archive is
-  // actually configured and they are read-only.
+  // a single result list, so the server entry point injects insights only when
+  // both archiving and dashboard serving are enabled. They are read-only.
   router.get("/metrics/engines", async (req, res, next) => {
     if (!insights) {
       res.status(503).json({ error: NO_DASHBOARD });

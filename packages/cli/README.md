@@ -6,10 +6,11 @@ engines; see the repo root `README.md` for adding another one.
 
 The CLI builds its registry with `createBrowserRegistry("cli", config)`, so it
 gets its own Chromium profile at `.searchicus/profile/cli/` and shares the
-local archive at `.searchicus/searchicus.sqlite` with other surfaces. Set
-`paths.dataDir` to relocate both, or `paths.profileDir` / `paths.storePath` to
-override one component; relative values resolve against the application root,
-never the working directory. Archival is off by default; `archive.enabled: true` switches it on.
+local archive at `.searchicus/searchicus.sqlite` with other surfaces when
+`archive.enabled` is on. Set `paths.dataDir` to relocate both, or
+`paths.profileDir` / `paths.storePath` to override one component; relative
+values resolve against the application root, never the working directory.
+Archival is off by default; `archive.enabled: true` switches it on.
 Because a search can return results while its browser session is still
 running, the CLI drains sessions and queued archive writes before exiting
 rather than killing them mid-flight — so the process may stay alive briefly

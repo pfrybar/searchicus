@@ -11,15 +11,14 @@ import { href, useHashRoute, type Route } from "./router";
 
 export function App() {
   const route = useHashRoute();
-  const [capabilities, setCapabilities] = useState<Capabilities>({ extract: false, insights: false });
+  const [capabilities, setCapabilities] = useState<Capabilities>({ insights: false });
 
   useEffect(() => {
-    // One read for both questions, here rather than in each page: a nav link
-    // to a page that can only answer 503, like an Extract button that can
-    // only answer the same, is worse than no link at all.
+    // One read for the dashboard question, here rather than in each page: a
+    // nav link to a page that can only answer 503 is worse than no link.
     fetchCapabilities()
       .then(setCapabilities)
-      .catch(() => setCapabilities({ extract: false, insights: false }));
+      .catch(() => setCapabilities({ insights: false }));
   }, []);
 
   const wide = route.name !== "search";
