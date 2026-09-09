@@ -215,6 +215,35 @@ feature.
   Chromium, and launches a browser before the suite so a broken install fails
   the job rather than skipping 78 of core's tests. It also builds the image.
 
+## Releasing
+
+The image is published to `ghcr.io/pfrybar/searchicus` by
+`.github/workflows/ci.yml`, for `linux/amd64` and `linux/arm64`, after the
+checks and tests pass. A push to `main` publishes `main` and `sha-<commit>`;
+a `v*.*.*` tag publishes the version, its `major.minor`, and `latest`.
+Pull requests build the image and publish nothing.
+
+To release, bump every version, then tag:
+
+```bash
+npm version 0.2.0 --workspaces --include-workspace-root --no-git-tag-version
+# Then update the exact `@searchicus/core` pins in packages/api and
+# packages/cli by hand: npm version does not move them, and npm install
+# would go to the public registry for a private package and 404.
+npm install                     # refresh package-lock.json
+npm run build && npm test       # the bump is a change like any other
+git commit -am "Release 0.2.0"
+git tag v0.2.0
+git push --follow-tags
+```
+
+CI refuses a tag whose name does not match the root `package.json` version,
+and refuses any commit whose workspace pins disagree with core's version, so
+neither mistake reaches the registry.
+
+The GHCR package starts private. Making it public is a one-time change in the
+package settings on GitHub, not something the workflow can do.
+
 ## Commit instructions
 
 - Keep commits small, focused, and working. Do not include unrelated local or
