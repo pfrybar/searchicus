@@ -46,9 +46,12 @@
 #   level: info
 
 # archive:
-#   # Record completed fan-outs and reads in SQLite. Best-effort either way:
-#   # a failed write never fails a search.
-#   enabled: true
+#   # Record completed fan-outs and reads in SQLite. Off by default: the
+#   # archive becomes a record of every query ever run through this server,
+#   # which is a thing to opt into rather than to discover. Best-effort when
+#   # on: a failed write never fails a search. The dashboard reads what this
+#   # writes, and has its own switch below.
+#   enabled: false
 #   busyTimeoutMs: 5000
 
 # search:
