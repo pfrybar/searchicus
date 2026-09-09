@@ -93,6 +93,43 @@ describe("Streamable HTTP endpoint", () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null });
   });
+
+  it("keeps parser errors in JSON-RPC shape on a trailing slash", async () => {
+    const res = await request(createApp(testRegistry()))
+      .post("/mcp/")
+      .set("Content-Type", "application/json")
+      .send("{not json");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null });
+  });
+
+  it("keeps parser errors in JSON-RPC shape on a differently cased path", async () => {
+    // Express routes case-insensitively, so /MCP reaches the router. An error
+    // shape that did not follow it there would be the API's, which is the one
+    // shape a client speaking to this endpoint cannot read.
+    const res = await request(createApp(testRegistry()))
+      .post("/MCP")
+      .set("Content-Type", "application/json")
+      .send("{not json");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null });
+  });
+
+  it("answers an oversized body as a JSON-RPC client error", async () => {
+    const res = await request(createApp(testRegistry(), { jsonBodyLimit: "200" }))
+      .post("/mcp")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ query: "x".repeat(4_000) }));
+
+    expect(res.status).toBe(413);
+    expect(res.body).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32600, message: "Request body must not exceed 200 bytes." },
+      id: null,
+    });
+  });
 });
 
 describe("with MCP disabled", () => {
