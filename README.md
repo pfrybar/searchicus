@@ -16,6 +16,27 @@ one small interface and is registered with the core registry. Engines run
 against a real headless browser — core keeps a single long-lived Chromium
 instance with a persistent profile and hands each search a page from it.
 
+> **Built for one person's searches.** searchicus drives a real browser
+> against each search engine, so it behaves like a person and is paced like
+> one: fan-outs are rate limited by default and there is no batch mode. It
+> works best from a residential connection — the same traffic from a
+> datacenter or VPS address gets challenged and blocked far sooner, and the
+> browser's locale and time zone have to stay plausible for wherever it
+> actually leaves from. Nothing here authenticates, so keep it on your own
+> machine or behind something that does. Whether automated querying suits a
+> given engine's terms of service is yours to decide.
+>
+> **It is also slow, and some of that is deliberate.** A search takes about
+> ten seconds, and sometimes twenty. A browser loads each engine's
+> homepage, types the query, submits it and reads the results page — all
+> the work an API call would have saved. The four engines run in parallel,
+> so a fan-out costs roughly what the slowest one costs rather than the sum
+> of them; what is left is the pacing between searches and the typing
+> itself, which are slow on purpose, because going faster is what gets an
+> address challenged. Results come back as soon as they are parsed, while
+> the browser carries on for a few seconds more — which is why a command
+> can linger briefly after printing.
+
 ## Status
 
 `core`, `cli`, `api` (which serves both the HTTP API and MCP), and `ui` all
@@ -26,8 +47,9 @@ real Streamable HTTP request.
 The browser layer — persistent Chromium session, page-per-search leases,
 two-phase search sessions, and rate limiting — is in place in `core`, along
 with the browser-realism layer that makes automated sessions look like
-ordinary ones (`stealth`, `human`, `dwell`). Completed fan-outs are also
-archived best-effort in a local SQLite database for later analysis.
+ordinary ones (`stealth`, `human`, `dwell`). Completed fan-outs can also be
+archived best-effort in a local SQLite database for later analysis, which is
+off unless an operator switches it on.
 
 Four engines ship and are all registered by default: `bing`, `brave`,
 `duckduckgo` and `startpage`. Each drives a real browser through its search
