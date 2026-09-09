@@ -39,7 +39,11 @@
 # =============================================================================
 # Build stage
 # =============================================================================
-FROM node:22-bookworm-slim AS build
+# Same major as the runtime image below. They are different bases for good
+# reasons, but a project that declares a Node floor has to be built on a Node
+# that meets it: `.npmrc` sets engine-strict, so a lower major here fails at
+# `npm ci` rather than producing something subtly different.
+FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -96,7 +100,7 @@ USER pwuser
 
 EXPOSE 3000
 
-# Node 22 ships a global fetch, so this needs no curl in the image.
+# The image's Node ships a global fetch, so this needs no curl in it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 

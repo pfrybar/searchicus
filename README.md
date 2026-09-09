@@ -195,8 +195,9 @@ searchicus/
 
 ## Getting started
 
-Node 22.5 or newer, which is where `node:sqlite` — the search archive's
-storage engine — landed.
+Node 24 or newer. The search archive is built on `node:sqlite`, which needs
+`--experimental-sqlite` before Node 22.13; 24 is the floor because it is what
+the container image ships and the only line this is tested on.
 
 ```bash
 npm install

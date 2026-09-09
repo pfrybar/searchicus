@@ -27,7 +27,7 @@ per read and must never reach the search profile.
 
 ## Setup and common commands
 
-Requires Node 22.5 or newer and npm. Run commands from the repository root.
+Requires Node 24 or newer and npm. Run commands from the repository root.
 
 ```bash
 npm install
