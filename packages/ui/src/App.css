@@ -179,13 +179,6 @@ a.nav.active {
   font-size: 0.9rem;
 }
 
-.hint {
-  margin-top: 2.5rem;
-  color: var(--faint);
-  font-size: 0.9rem;
-  text-align: center;
-}
-
 .results {
   margin-top: 1rem;
   display: flex;
