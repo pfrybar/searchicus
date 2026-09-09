@@ -330,6 +330,7 @@ INFO api configured setting=extract.enabled value=true from=/srv/searchicus/conf
 | `browser.locale`                | `en-US`                             | Locale every browser this process starts reports, search and extraction alike. Must suit the egress IP.                          |
 | `browser.profileUnlock`         | off                                 | On removes a foreign-host stale `SingletonLock` and retries launch; only for a known single-writer profile.                      |
 | `extract.*`                     | extraction disabled                 | Rendered extraction; see "Extraction" below.                                                                                     |
+| `dashboard.enabled`             | off                                 | Serve the Metrics and History endpoints. Off by default: they expose every archived query, and nothing here authenticates.       |
 | `dashboard.metricsWindow`       | `500`                               | Recent searches averaged over for engine metrics.                                                                                |
 | `dashboard.searchPageSize`      | `50`                                | Searches listed per page of the browser.                                                                                         |
 | `dashboard.maxLimit`            | `2000`                              | Ceiling on both, so a caller cannot ask the process to read everything. Lowering it lowers the two windows above with it.        |
@@ -391,8 +392,9 @@ Routing is hash-based (`#/metrics`, `#/searches/<id>`), so deep links work
 without the server needing a history fallback — which it must not have, since a
 catch-all would turn genuine API 404s into HTML.
 
-Both pages need the archive, which is on by default. With
-`archive.enabled` off the endpoints answer `503` and the UI hides the links
+**Both pages are off by default.** Set `dashboard.enabled` to serve them.
+They need the archive too, which is on by default. With either switched off
+the endpoints answer `503` and the UI hides the links
 rather than offering pages that can only fail.
 
 > **The archive is a record of everything searched for.** These endpoints serve

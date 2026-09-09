@@ -382,12 +382,15 @@ not stored.
 ### Dashboard endpoints
 
 Read-only views over the local archive, serving the UI's Metrics and History
-pages. They answer `503` when archiving is disabled, since an empty response
-would read as "nothing has ever been searched for" rather than "this is
-switched off".
+pages. **They are off by default**: set `dashboard.enabled` to serve them.
+They answer `503` both when they are switched off and when archiving is
+disabled, since an empty response would read as "nothing has ever been
+searched for" rather than "this is switched off".
 
-These return accumulated search history and the API has no authentication —
-see the root README's warning before exposing this beyond localhost.
+They return accumulated search history and the API has no authentication,
+which is why serving them is a deliberate act — see the root README's warning
+before exposing this beyond localhost. Turning them off does not stop
+archiving; the history still accrues, it is simply not readable over HTTP.
 
 `GET /metrics/engines` also carries totals for the window — how the fan-outs
 ended (completed, degraded, failed) and what was extracted over the same

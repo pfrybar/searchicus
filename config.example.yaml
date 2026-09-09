@@ -108,9 +108,15 @@
 #     maxChars: 8000000
 
 # dashboard:
-#   # How much of the archive the dashboard's read endpoints may examine.
-#   # Recent searches are the useful window: averaging over a selector change
-#   # six months ago answers nothing.
+#   # Serve the read endpoints behind the Metrics and History pages. Off by
+#   # default, and deliberately: they hand every query ever made through this
+#   # server to anyone who can reach it, and there is no authentication in
+#   # front of them. Archiving is a separate switch — with this off the
+#   # history still accrues, it just is not readable over HTTP.
+#   enabled: false
+#   # How much of the archive those endpoints may examine. Recent searches are
+#   # the useful window: averaging over a selector change six months ago
+#   # answers nothing.
 #   metricsWindow: 500
 #   searchPageSize: 50
 #   # The ceiling on both, so a caller cannot ask for it all. It covers the

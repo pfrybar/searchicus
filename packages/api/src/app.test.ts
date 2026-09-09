@@ -486,15 +486,19 @@ describe("dashboard endpoints", () => {
     expect(missing.body).toEqual({ error: "No such search" });
   });
 
-  it("answers 503 when no archive is configured, rather than an empty dashboard", async () => {
+  it("answers 503 when the dashboard is not served, rather than an empty dashboard", async () => {
+    // No insights is the default deployment: the server entry point passes an
+    // archive here only when dashboard.enabled says to.
     const app = createApp(testRegistry());
 
     for (const path of ["/metrics/engines", "/searches", "/searches/abc123"]) {
       const res = await request(app).get(path);
       // An empty response would read as "you have never searched", which is a
-      // different and much more confusing statement than "archiving is off".
+      // different and much more confusing statement than "this is switched
+      // off". The message names the switch rather than guessing which of the
+      // two switches it was: this layer was handed no insights either way.
       expect(res.status, path).toBe(503);
-      expect(res.body.error).toMatch(/no search archive/i);
+      expect(res.body.error).toMatch(/dashboard is not enabled/i);
     }
   });
 
