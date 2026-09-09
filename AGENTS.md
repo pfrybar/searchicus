@@ -241,8 +241,10 @@ CI refuses a tag whose name does not match the root `package.json` version,
 and refuses any commit whose workspace pins disagree with core's version, so
 neither mistake reaches the registry.
 
-The GHCR package starts private. Making it public is a one-time change in the
-package settings on GitHub, not something the workflow can do.
+The GHCR package inherits the repository's visibility. This repository is
+public, so the package was public from its first push and `docker pull` needs
+no login; nothing has to be switched on after a release. Changing that later
+is a package setting on GitHub, not something the workflow can do.
 
 ## Commit instructions
 
