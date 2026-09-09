@@ -207,9 +207,13 @@ feature.
   with Chromium before treating browser lifecycle or request-policy work as
   fully validated.
 - The Dockerfile Playwright image version must match the `playwright` version in
-  `packages/core/package.json`. Update both together.
+  `packages/core/package.json`. Update both together; `.github/workflows/ci.yml`
+  fails the build when they drift.
 - Keep `.dockerignore` excluding `node_modules`; host-mounted dependencies may
   contain binaries for the wrong platform.
+- CI runs the same five scripts on every push and pull request, installs real
+  Chromium, and launches a browser before the suite so a broken install fails
+  the job rather than skipping 78 of core's tests. It also builds the image.
 
 ## Commit instructions
 

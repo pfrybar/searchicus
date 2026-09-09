@@ -1,0 +1,111 @@
+# What a green tick here is meant to mean: the same thing a local run means.
+#
+# The one way that quietly stops being true is Chromium. Eight test files and
+# 78 of core's tests gate themselves on a real browser and skip when there
+# isn't one, so a broken install leaves the suite passing and proving a sixth
+# less. The `test` job launches a browser before running anything, so that
+# failure is loud instead.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A superseded run proves nothing about the commit that replaced it.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nothing here reads or writes anything else. Publishing, when it lands, asks
+# for `packages: write` in its own job rather than widening this.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run build
+
+      # AGENTS.md requires these two to move together. Nothing else enforces
+      # it, and a mismatch surfaces only as a browser that will not launch
+      # inside the image, which is a long way from the line that caused it.
+      - name: Dockerfile Playwright pin matches packages/core
+        run: |
+          dep=$(node -p "require('./packages/core/package.json').dependencies.playwright")
+          img=$(sed -n 's|.*mcr\.microsoft\.com/playwright:v\([0-9.]*\)-.*|\1|p' Dockerfile)
+          echo "Dockerfile image: v${img:-<none found>} | packages/core dependency: $dep"
+          if [ -z "$img" ]; then
+            echo "::error file=Dockerfile::no mcr.microsoft.com/playwright:v<version> tag found"
+            exit 1
+          fi
+          if [ "$img" != "$dep" ]; then
+            echo "::error file=Dockerfile::Playwright image v$img does not match packages/core playwright $dep; update both together"
+            exit 1
+          fi
+
+  test:
+    name: Tests (real Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      # Keyed on the Playwright version rather than the lockfile: the browser
+      # build is what the version selects, and nothing else in the lockfile
+      # changes it.
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./packages/core/package.json').dependencies.playwright")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - run: npx playwright install --with-deps chromium
+
+      # The gate the suite itself uses, run once where it can fail the job:
+      # a persistent context on the `chromium` channel, which is what
+      # browser/stealth.ts asks for and the only thing worth proving here.
+      - name: Preflight — a browser really launches
+        run: |
+          node --input-type=module -e '
+          import { chromium } from "playwright";
+          import { mkdtempSync, rmSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import path from "node:path";
+          const dir = mkdtempSync(path.join(tmpdir(), "ci-preflight-"));
+          try {
+            const context = await chromium.launchPersistentContext(dir, { channel: "chromium", headless: true });
+            await context.close();
+            console.log("chromium launches: browser-backed tests will run, not skip");
+          } finally {
+            rmSync(dir, { recursive: true, force: true });
+          }'
+
+      - run: npm test
+
+  image:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Built, never pushed. This is the only thing that exercises the
+      # Dockerfile at all; publishing is a separate workflow and a separate
+      # decision.
+      - run: docker build -t searchicus:${{ github.sha }} .
