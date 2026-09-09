@@ -46,6 +46,23 @@ describe("App", () => {
     expect(screen.queryByText(/Found by:/)).not.toBeInTheDocument();
   });
 
+  it("says what came back, and where each result is from", async () => {
+    mockFetchSequence([
+      { url: "/api/health", body: { status: "ok", extract: false } },
+      { url: "/api/search", body: { ...searchResponse(), tookMs: 8432 } },
+    ]);
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
+    fireEvent.click(screen.getByRole("button", { name: /search/i }));
+    await screen.findByText("Cats 101");
+
+    // Count and elapsed time only: the public response is a projection of the
+    // ranking, so per-engine attribution is not this page's to show.
+    expect(screen.getByRole("status")).toHaveTextContent("1 result · 8.4s");
+    expect(screen.getByText("example.com")).toBeInTheDocument();
+  });
+
   it("clears stale results when a subsequent search fails", async () => {
     mockFetchSequence([
       { url: "/api/health", body: { status: "ok", extract: false } },
@@ -138,6 +155,12 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^find$/i }));
     expect(await screen.findByText("Cats need care.", { exact: false })).toBeInTheDocument();
     expect(screen.getByText(/untrusted page content/i)).toBeInTheDocument();
+
+    // Closing puts the result back the way it was, without having to open a
+    // read on something else to get rid of this one.
+    fireEvent.click(screen.getByRole("button", { name: /close page read/i }));
+    expect(screen.queryByText(/untrusted page content/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Cats 101")).toBeInTheDocument();
   });
 
   it("extracts a result and shows its content as text, not as markup", async () => {

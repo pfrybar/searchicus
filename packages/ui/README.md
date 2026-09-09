@@ -33,6 +33,32 @@ cache entry rather than rendering the URL again.
 The dashboard reports unusable observations separately from completed reads
 and infrastructure failures.
 
+## Look and theme
+
+Every colour resolves to a custom property declared in `index.css`, so the
+dark theme is one block of redefinitions rather than a second stylesheet. The
+theme follows the operating system through `prefers-color-scheme`; there is no
+in-app switch, because a local dashboard that disagrees with the desktop it
+sits on is a setting to maintain rather than a feature.
+
+The palette is taken from the logo: the wordmark's navy, the blue of its last
+four letters, and the teal at the top of the mark.
+
+## Brand assets
+
+`src/assets/` holds the masthead lockup, derived from the full-resolution
+master by cropping to the ink, scaling to 600px wide, and lifting the white
+background into an alpha channel so it sits on either theme. The dark variant
+differs in one respect: the wordmark's navy is remapped to a light slate,
+because navy on a dark background is invisible. Everything else — the mark's
+blues and teals, the blue of "icus" — is the same in both.
+
+`public/` holds the icons, which keep their exact paths in the build the API
+serves (`/favicon.ico`, `/apple-touch-icon.png`, `/site.webmanifest`). The
+generated `favicon.svg` is deliberately not shipped: it is a 550px raster
+wrapped in an `<svg>`, so it is six times the weight of the 96px PNG and no
+sharper anywhere.
+
 ## Running
 
 ```bash

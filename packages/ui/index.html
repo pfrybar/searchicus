@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>searchicus</title>
+    <meta name="description" content="One query, every backend search engine." />
+
+    <!--
+      Icons live in public/ so they keep these exact paths in the build the
+      API serves. The generated favicon.svg is deliberately not linked: it is
+      a 550px raster wrapped in an <svg>, so it is six times the weight of the
+      96px PNG and no sharper anywhere.
+    -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
   </head>
   <body>
     <div id="root"></div>

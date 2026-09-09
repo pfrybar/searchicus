@@ -245,7 +245,8 @@ function EngineRow({ engine, mostReturned }: { engine: EngineMetrics; mostReturn
       </td>
       <td>{ms(engine.medianTookMs)}</td>
       <td>{ms(engine.p95TookMs)}</td>
-      <td>{engine.meanResultCount ?? "—"}</td>
+      {/* One decimal: the mean of a handful of integers, not a measurement. */}
+      <td>{engine.meanResultCount === null ? "—" : engine.meanResultCount.toFixed(1)}</td>
       <td>{engine.meanCoverage === null ? "—" : engine.meanCoverage.toFixed(2)}</td>
       <td>
         <span className="bar" style={{ width: `${(engine.returned / mostReturned) * 100}%` }} aria-hidden="true" />

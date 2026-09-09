@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import logoDark from "./assets/searchicus-logo-dark.png";
+import logo from "./assets/searchicus-logo.png";
 import { fetchCapabilities, type Capabilities } from "./api";
 import { MetricsPage } from "./pages/MetricsPage";
 import { SearchDetailPage } from "./pages/SearchDetailPage";
@@ -25,8 +27,18 @@ export function App() {
   return (
     <main className={wide ? "page wide" : "page"}>
       <header className="masthead">
-        <div>
-          <h1>searchicus</h1>
+        <div className="masthead-brand">
+          <a className="brand" href={href({ name: "search" })}>
+            {/* The wordmark is the image, so the heading it stands in for is
+                read rather than seen, and the image itself is decorative. The
+                dark variant differs only in the wordmark: its navy would sit
+                almost invisibly on a dark background. */}
+            <h1 className="visually-hidden">searchicus</h1>
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcSet={logoDark} />
+              <img className="brand-logo" src={logo} alt="" width={600} height={117} />
+            </picture>
+          </a>
           <p className="tagline">One query, every backend search engine.</p>
         </div>
         <nav aria-label="Sections">
