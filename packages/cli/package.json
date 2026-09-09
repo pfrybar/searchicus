@@ -4,6 +4,12 @@
   "private": true,
   "description": "searchicus command-line interface.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pfrybar/searchicus.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "searchicus": "./dist/index.js"
   },

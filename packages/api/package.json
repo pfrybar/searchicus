@@ -4,6 +4,12 @@
   "private": true,
   "description": "searchicus HTTP API and MCP server — a JSON API and MCP Streamable HTTP endpoint over the search registry.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pfrybar/searchicus.git",
+    "directory": "packages/api"
+  },
   "main": "./dist/index.js",
   "scripts": {
     "prebuild": "npm run build -w @searchicus/core",

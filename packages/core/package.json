@@ -4,6 +4,12 @@
   "private": true,
   "description": "Shared types, the SearchEngine plugin interface, the engine registry, and browser-backed engines for searchicus.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pfrybar/searchicus.git",
+    "directory": "packages/core"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

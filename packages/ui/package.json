@@ -4,6 +4,12 @@
   "private": true,
   "description": "searchicus web UI — a simple search page over the HTTP API.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pfrybar/searchicus.git",
+    "directory": "packages/ui"
+  },
   "scripts": {
     "dev": "vite",
     "prebuild": "npm run build -w @searchicus/core",

@@ -6,6 +6,14 @@
   "type": "module",
   "license": "MIT",
   "author": "Paul Frybarger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pfrybar/searchicus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pfrybar/searchicus/issues"
+  },
+  "homepage": "https://github.com/pfrybar/searchicus#readme",
   "workspaces": [
     "packages/*"
   ],
