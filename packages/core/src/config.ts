@@ -28,7 +28,7 @@ import { parse as parseYaml, YAMLParseError } from "yaml";
 import { z } from "zod";
 
 import type { ExtractConfig } from "./extract/config.js";
-import { createLogger } from "./logger.js";
+import { createLogger, levelAllows } from "./logger.js";
 import type { LogConfig } from "./logger.js";
 import { applicationRoot } from "./paths.js";
 import type { PathsConfig } from "./paths.js";
@@ -101,6 +101,39 @@ const fraction = () => z.preprocess(coerceNumber, z.number().min(0).max(1));
 const nonEmptyString = () => z.string().trim().min(1);
 
 /**
+ * A syntactically valid BCP-47 locale, which is what Chromium's locale
+ * override needs to be given. Whether the tag names a locale ICU has data
+ * for is a different question and not one worth refusing a launch over.
+ */
+const locale = () =>
+  nonEmptyString().refine(
+    (value) => {
+      try {
+        Intl.getCanonicalLocales(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { error: "expected a BCP-47 locale such as en-US" },
+  );
+
+/** An IANA time zone Chromium's emulation API will accept. */
+const timezone = () =>
+  nonEmptyString().refine(
+    (value) => {
+      try {
+        // The constructor is the check: an unknown zone throws here.
+        new Intl.DateTimeFormat("en-US", { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { error: "expected an IANA time zone such as America/Chicago" },
+  );
+
+/**
  * A byte size as express reads it: "64kb", "1.5mb", or a plain byte count.
  *
  * Checked here rather than left to `express.json()`, which would otherwise
@@ -114,7 +147,18 @@ const nonEmptyString = () => z.string().trim().min(1);
  * though — 1.5 bytes rounds to one — so `1.5` is an error that asks for the
  * unit the writer plainly had in mind.
  */
-const BYTE_SIZE = /^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb|pb)?$/i;
+// Spaces only between the amount and the unit, because that is what express
+// accepts: a tab here would read as "2.5mb" and arrive there as two bytes.
+const BYTE_SIZE = /^(\d+(?:\.\d+)?) *(b|kb|mb|gb|tb|pb)?$/i;
+const BYTE_MULTIPLIER = {
+  b: 1,
+  kb: 2 ** 10,
+  mb: 2 ** 20,
+  gb: 2 ** 30,
+  tb: 2 ** 40,
+  pb: 2 ** 50,
+} as const;
+type ByteUnit = keyof typeof BYTE_MULTIPLIER;
 
 function coerceByteSize(value: unknown): unknown {
   return typeof value === "number" ? String(value) : value;
@@ -130,9 +174,20 @@ const byteSize = () =>
         (value) => {
           const match = BYTE_SIZE.exec(value);
           if (match === null) return false;
-          const size = Number(match[1]);
-          // Zero is a valid size and a useless limit: it refuses every body.
-          return match[2] === undefined ? Number.isInteger(size) && size >= 1 : size > 0;
+
+          const amount = Number(match[1]);
+          // The regex admits only the units the table holds, and a missing
+          // one means bytes, which is how express reads it too.
+          const unit = (match[2]?.toLowerCase() ?? "b") as ByteUnit;
+          const bytes = amount * BYTE_MULTIPLIER[unit];
+          // Express floors fractional bytes. Reject a value that would become
+          // zero, or overflow into an unbounded body-parser limit.
+          if (!Number.isFinite(bytes) || Math.floor(bytes) < 1) return false;
+
+          // A bare fraction is not a byte count; it is almost certainly a
+          // missing unit. Fractions with a unit are meaningful when they still
+          // produce at least one byte after express floors them.
+          return match[2] === undefined ? Number.isInteger(amount) : true;
         },
         { error: 'expected a byte size such as "64kb", "1.5mb" or "65536"' },
       ),
@@ -194,9 +249,9 @@ export const SearchicusConfigSchema = z.strictObject({
     /** Ceiling on simultaneously open pages. A memory valve, not the rate policy. */
     maxPages: positiveInt(),
     /** Must stay plausible for the country the traffic leaves from. */
-    locale: nonEmptyString(),
+    locale: locale(),
     /** Must agree with the geolocation of the egress IP. */
-    timezone: nonEmptyString(),
+    timezone: timezone(),
     /** Remove a stale foreign-host Chromium SingletonLock and retry once. */
     profileUnlock: boolean(),
   }),
@@ -523,10 +578,10 @@ function finalize(parsed: ParsedConfig): SearchicusConfig {
     ...parsed,
     extract: {
       ...parsed.extract,
-      maxDocumentBytes: documentCap(parsed.extract.maxDocumentBytes, parsed.extract.maxBytes),
+      maxDocumentBytes: documentCap(parsed.extract.maxDocumentBytes, parsed.extract.maxBytes, parsed.log.level),
       allowedPorts: new Set(parsed.extract.allowedPorts),
     },
-    dashboard: dashboardWindows(parsed.dashboard),
+    dashboard: dashboardWindows(parsed.dashboard, parsed.log.level),
   };
 }
 
@@ -539,20 +594,20 @@ function finalize(parsed: ParsedConfig): SearchicusConfig {
  * dashboard's own — so an operator who lowered `maxLimit` to protect the
  * archive would still have every unqualified query read past it.
  */
-function dashboardWindows(dashboard: ParsedConfig["dashboard"]): DashboardConfig {
+function dashboardWindows(dashboard: ParsedConfig["dashboard"], logLevel: LogConfig["level"]): DashboardConfig {
   return {
     enabled: dashboard.enabled,
     maxLimit: dashboard.maxLimit,
-    metricsWindow: underCeiling("dashboard.metricsWindow", dashboard.metricsWindow, dashboard.maxLimit),
-    searchPageSize: underCeiling("dashboard.searchPageSize", dashboard.searchPageSize, dashboard.maxLimit),
+    metricsWindow: underCeiling("dashboard.metricsWindow", dashboard.metricsWindow, dashboard.maxLimit, logLevel),
+    searchPageSize: underCeiling("dashboard.searchPageSize", dashboard.searchPageSize, dashboard.maxLimit, logLevel),
   };
 }
 
 /** Clamps one window to the ceiling, saying so rather than silently differing. */
-function underCeiling(setting: string, requested: number, ceiling: number): number {
+function underCeiling(setting: string, requested: number, ceiling: number, logLevel: LogConfig["level"]): number {
   if (requested <= ceiling) return requested;
 
-  log.warn("dashboard window lowered to the configured ceiling", {
+  configWarn(logLevel, "dashboard window lowered to the configured ceiling", {
     setting,
     requested,
     applied: ceiling,
@@ -573,15 +628,26 @@ function underCeiling(setting: string, requested: number, ceiling: number): numb
  * working configuration, just not the one it appears to be, and a limit that
  * silently means something else is how an afternoon disappears.
  */
-function documentCap(requested: number, transfer: number): number {
+function documentCap(requested: number, transfer: number, logLevel: LogConfig["level"]): number {
   if (requested <= transfer) return requested;
 
-  log.warn("extraction document cap lowered to the transfer budget", {
+  configWarn(logLevel, "extraction document cap lowered to the transfer budget", {
     requested,
     applied: transfer,
     transferBudget: transfer,
   });
   return transfer;
+}
+
+/**
+ * Warns at the level the configuration just chose, not the bootstrap one.
+ *
+ * These warnings are written while finalizing, which is before any front door
+ * has had the chance to call `setLogLevel()`. A file that asks for silence
+ * should get it on the first line it can affect, not the second.
+ */
+function configWarn(logLevel: LogConfig["level"], message: string, fields: Record<string, unknown>): void {
+  if (levelAllows(logLevel, "warn")) log.warn(message, fields);
 }
 
 /** One setting that is not what it would have been left alone. */

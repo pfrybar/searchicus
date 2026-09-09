@@ -66,9 +66,21 @@ export function setLogSink(next: LogSink): void {
   sink = next;
 }
 
+/**
+ * True when a level of `threshold` would write a line at `at`.
+ *
+ * Split out for the one caller that holds a level it has read but not yet
+ * applied: `loadConfig()` warns while finalizing, before any front door has
+ * called `setLogLevel()`, and the ordering of levels should be written down
+ * once.
+ */
+export function levelAllows(threshold: LogLevel, at: LogLevel): boolean {
+  return RANK[at] >= RANK[threshold] && threshold !== "silent";
+}
+
 /** True when a line at this level would actually be written. */
 export function logEnabled(at: LogLevel): boolean {
-  return RANK[at] >= RANK[level] && level !== "silent";
+  return levelAllows(level, at);
 }
 
 /**
