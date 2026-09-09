@@ -1,4 +1,9 @@
-# searchicus
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="packages/ui/src/assets/searchicus-logo-dark.png">
+  <img src="packages/ui/src/assets/searchicus-logo.png" alt="searchicus" width="420" height="82">
+</picture>
+
+[![CI](https://github.com/pfrybar/searchicus/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pfrybar/searchicus/actions/workflows/ci.yml)
 
 A search proxy: send one query out to multiple backend search engines and get
 back a unified set of results. Searchicus is built as a small TypeScript
