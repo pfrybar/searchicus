@@ -136,14 +136,14 @@ describe("Throttle", () => {
   });
 
   it("still serves a caller immediately when there is no wait to be too long", async () => {
-    // maxWaitMs bounds a queue, not the work. An idle throttle owes nobody a
-    // refusal, however small the caller's remaining budget.
+    // maxWaitMs bounds a queue, not the work. An idle throttle has no reason
+    // to refuse anyone, however small the caller's remaining budget.
     const throttle = new Throttle({ minIntervalMs: 5_000, jitter: 0 });
     await expect(throttle.acquire(undefined, { maxWaitMs: 0 })).resolves.toBeUndefined();
   });
 
   it("refuses a caller outright once the queue is full", async () => {
-    // Waiting behind sixty callers is a promise nobody can keep, so the
+    // Waiting behind sixty callers is a promise that cannot be kept, so the
     // honest answer is an immediate refusal the caller can act on.
     const throttle = new Throttle({ minIntervalMs: 5_000, jitter: 0, maxQueued: 2 });
     await throttle.acquire();

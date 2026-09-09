@@ -1,13 +1,12 @@
 /**
  * Logging for the server surfaces.
  *
- * This package was entirely silent before, which read as tidy and was not:
- * every handled failure — an engine giving up, an archive write failing, a
- * page refused by the address policy, a parse worker's own diagnostics — was
- * swallowed with nothing written anywhere. The reasoning behind each swallow
- * was sound ("never let this affect the response") but it was implemented as
- * "never tell anyone", and those are different requirements. The archive is a
- * record of what was searched, not of what went wrong.
+ * Every handled failure — an engine giving up, an archive write failing, a
+ * page refused by the address policy, a parse worker's own diagnostics — is
+ * swallowed so that it cannot affect the response, and written here so that
+ * it is not also lost. Those are two requirements, and only the first of
+ * them is served by saying nothing. The archive is a record of what was
+ * searched, not of what went wrong.
  *
  * Three rules shape this:
  *

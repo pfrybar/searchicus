@@ -37,7 +37,7 @@ since a container listening only on its own loopback cannot be reached at all.
 
 The server reads the whole configuration once at startup with `loadConfig()`,
 reports what it is running on, and exits if any value is invalid rather than
-starting on a setting nobody wrote. It builds its registry with
+starting on half a configuration. It builds its registry with
 `createBrowserRegistry("api", config)`, giving it its own Chromium profile at
 `.searchicus/profile/api/` and, when `archive.enabled` is on, a shared archive
 at `.searchicus/searchicus.sqlite`. Set `paths.dataDir` to relocate both, or
@@ -308,9 +308,9 @@ section holds.
 When a section is too large to return whole, it is **not** cut from the top.
 It was chosen because the query terms are in it, so cutting from the start
 would return a window picked without reference to where they are — asking
-`sqlite.org/pragma.html` for `busy_timeout` used to score a 93,820-character
-section on a term 90,000 characters in and hand back the 2,570 characters
-about `analysis_limit`. Instead the section is split at its blank lines and
+`sqlite.org/pragma.html` for `busy_timeout` scores a 93,820-character section
+on a term 90,000 characters in, whose first 2,570 characters are about
+`analysis_limit`. Instead the section is split at its blank lines and
 the same scoring runs over those blocks, so what comes back is the matching
 part. Blocks that turn out to be adjacent are merged into one excerpt, since
 two halves of a passage should not arrive as two unrelated quotations.

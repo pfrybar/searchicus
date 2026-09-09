@@ -547,9 +547,9 @@ export class SqliteSearchArchive implements SearchArchive, ExtractionArchive, Ar
 
   async #open(): Promise<DatabaseSync> {
     // Checked here rather than at each entry point, so a read cannot quietly
-    // reopen the file a moment after close() shut it. Writes always refused;
-    // reads used to open a second connection and go on working, which made
-    // "closed" mean two different things depending on the method called.
+    // reopen the file a moment after close() shut it. One check covering both
+    // is what keeps "closed" from meaning two different things depending on
+    // which method was called.
     if (this.#closed) throw new Error("Search archive is closed");
     if (this.#database) return this.#database;
     if (this.#opening) return this.#opening;
@@ -883,19 +883,19 @@ const WINDOWED_ENGINE_RESULTS = `
     ON w.search_id = e.search_id
 `;
 
-/**
- * URLs read at least once over the window's period.
- *
- * Bounded by time rather than joined to the window's searches, because an
- * extraction no longer records which search it came from — it is matched back
- * by URL, in JS, where the merged responses are already being walked.
- */
 /** Every extraction from a period, for matching back to searches by URL. */
 const EXTRACTIONS_SINCE = `
   SELECT created_at, requested_url, final_url, status, error_kind, unusable_kind, http_status, title, chars, took_ms, cached
   FROM extractions WHERE created_at >= ? ORDER BY extraction_id
 `;
 
+/**
+ * URLs read at least once over the window's period.
+ *
+ * Bounded by time rather than joined to the window's searches: an extraction
+ * records no search id, so a read is matched back by URL, in JS, where the
+ * merged responses are already being walked.
+ */
 const WINDOWED_EXTRACTED_URLS = `
   SELECT DISTINCT requested_url, final_url FROM extractions
   WHERE status = 'completed' AND created_at >= ?

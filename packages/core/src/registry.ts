@@ -433,8 +433,8 @@ export class SearchEngineRegistry {
 
   #failedOutcome(engineId: string, tookMs: number, err: unknown): EngineSearchOutcome {
     const kind = classifyFailure(err);
-    // Archived too, but nobody should need SQL to notice an engine has
-    // started failing.
+    // Archived too, but noticing that an engine has started failing should
+    // not require SQL.
     log.warn("engine failed", { engine: engineId, kind, tookMs, cause: causeOf(err) });
     return {
       engineId,

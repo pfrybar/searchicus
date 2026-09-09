@@ -137,9 +137,9 @@ Two consequences shape the API:
 Persistent state is rooted at `.searchicus/` **beside this repository**, not
 beside whatever directory you happen to be standing in: the root is resolved
 from the installed files, so `npm run dev -w @searchicus/api` and a CLI run
-from anywhere reach the same state tree. (They did not always — resolving from
-the working directory gave the API `packages/api/.searchicus` and quietly made
-the shared archive two databases.) Each surface gets its own Chromium profile
+from anywhere reach the same state tree. Resolving from the working directory
+instead would hand the API `packages/api/.searchicus` and quietly make the
+shared archive two databases. Each surface gets its own Chromium profile
 under `profile/<surface>/`, and when `archive.enabled` is on the shared
 application archive is `searchicus.sqlite` beside them. Profiles remain
 isolated because a user-data directory is single-writer; the archive uses
@@ -379,12 +379,12 @@ Everything the server reports — the startup banner included — goes to
 ```
 
 One line per request at a level that follows the status, so `warn` leaves a
-healthy server quiet and still shows every 4xx and 5xx. Beneath that, the
-things that used to fail silently now say so: an engine giving up, a browser
-failing to launch, an archive write vanishing, a page the address policy
-refused, an extraction failing — the last of these logs the **real** cause,
-which the caller deliberately never sees, since a specific enough error
-would let someone map internal network space by probing.
+healthy server quiet and still shows every 4xx and 5xx. Beneath that, every
+failure that a response never carries says so here: an engine giving up, a
+browser failing to launch, an archive write vanishing, a page the address
+policy refused, an extraction failing — the last of these logs the **real**
+cause, which the caller deliberately never sees, since a specific enough
+error would let someone map internal network space by probing.
 
 **Query text is never logged above `debug`.** It lives in a request body, it
 is the sensitive part of this system, and logs get copied and shipped far

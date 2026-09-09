@@ -109,7 +109,7 @@ describe("isPublicAddress", () => {
 
   it("unwraps every other encoding that fronts an IPv4 address", () => {
     // 6to4 and Teredo are refused wholesale, public embedded address or not:
-    // both are deprecated, so the cost is a page nobody is serving.
+    // both are deprecated, so the cost is a page no live host is serving.
     expect(isPublicAddress("2002:7f00:1::")).toBe(false); // 6to4 for 127.0.0.1
     expect(isPublicAddress("2002:a9fe:a9fe::")).toBe(false); // 6to4 for the metadata address
     expect(isPublicAddress("2002:808:808::")).toBe(false); // 6to4 at all

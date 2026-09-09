@@ -48,11 +48,11 @@ export const ENV_PREFIX = "SEARCHICUS";
 /**
  * The vocabulary for boolean values, shared by the file and the environment.
  *
- * Reading the same word two ways in one program is its own bug. Before this
- * tree existed each switch parsed its own variable, and the one behind
- * `archive.enabled` understood only the literal string "false" — so a `0`
- * that switched off the one beside it left archiving on. One list now, and
- * anything outside it is an error rather than a silent no.
+ * One list, read identically by every switch. A program that understands the
+ * same word two ways is one where `0` turns off the setting it is written
+ * beside and leaves the next one on, which is a bug an operator finds by
+ * discovering months of archived queries. Anything outside the list is an
+ * error rather than a silent no.
  */
 const AFFIRMATIVE = new Set(["true", "1", "yes", "on"]);
 const NEGATIVE = new Set(["false", "0", "no", "off"]);
@@ -590,7 +590,7 @@ function finalize(parsed: ParsedConfig): SearchicusConfig {
  *
  * `maxLimit` bounds what a caller may ask the process to read, and the two
  * window sizes are what it reads when a caller asks for nothing. A default
- * above the ceiling would be the one request nobody could make — the
+ * above the ceiling would be the one request that could never be made — the
  * dashboard's own — so an operator who lowered `maxLimit` to protect the
  * archive would still have every unqualified query read past it.
  */
@@ -625,8 +625,7 @@ function underCeiling(setting: string, requested: number, ceiling: number, logLe
  * one that could not be loaded instead.
  *
  * Clamped and said out loud rather than rejected: the pair is still a
- * working configuration, just not the one it appears to be, and a limit that
- * silently means something else is how an afternoon disappears.
+ * working configuration, just not the one it appears to be.
  */
 function documentCap(requested: number, transfer: number, logLevel: LogConfig["level"]): number {
   if (requested <= transfer) return requested;

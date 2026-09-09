@@ -122,8 +122,8 @@ export const DEFAULT_EXTRACT_CONFIG: ExtractConfig = {
   allowedPorts: new Set([80, 443]),
   cache: {
     enabled: true,
-    // Long enough to read a document through, short enough that nobody is
-    // served a page that has since changed. Paging happens in seconds.
+    // Long enough to read a document through, short enough that a page which
+    // has since changed is not served from it. Paging happens in seconds.
     ttlMs: 300_000,
     maxEntries: 32,
     // About 8MB of Markdown at worst, which is a bound worth stating: a page
