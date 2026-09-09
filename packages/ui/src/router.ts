@@ -37,7 +37,8 @@ export function parseHash(hash: string): Route {
 }
 
 /**
- * Decodes one path segment, surviving a hash nobody meant to type.
+ * Decodes one path segment, surviving a hash that was never meant to be
+ * typed.
  *
  * `decodeURIComponent` throws on a stray percent or a truncated escape, and
  * this runs during the first render and on every hashchange — so a URL like

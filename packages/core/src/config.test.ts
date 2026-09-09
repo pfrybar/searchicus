@@ -324,7 +324,8 @@ describe("config.example.yaml", () => {
 
   it("documents every setting an operator can change", () => {
     // The example is the only place the whole tree is written out for a
-    // person, so a setting missing from it is a setting nobody finds.
+    // person, so a setting missing from it is a setting that exists only in
+    // the schema.
     //
     // Counted rather than merely matched: `enabled` is a leaf of three
     // different sections and `maxQueued` of two, so a present-somewhere check
@@ -345,7 +346,7 @@ describe("config.example.yaml", () => {
 describe("configured defaults", () => {
   // The tree is written out as plain data so a person can read it, which
   // means every value in it also exists as the constant its own module falls
-  // back to when nobody configures anything. They are only equal because
+  // back to when no configuration is supplied. They are only equal because
   // nothing has changed one of them alone — a library caller constructing a
   // Throttle or an archive directly gets the constant, not the tree.
   it("matches the fallback each module uses when it is given no configuration", () => {

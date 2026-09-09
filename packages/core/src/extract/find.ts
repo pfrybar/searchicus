@@ -231,14 +231,14 @@ function sectionTokens(section: Section): { body: string[]; nearest: string[]; a
  * reference pages, one section in 134 exceeds a 6,000-character budget, so
  * this is the ordinary path.
  *
- * When a section will not fit, the answer is not its opening. That is the
- * mistake this used to make: a section is chosen *because* the query terms
- * are in it, and cutting from the start returns a window picked without any
- * reference to where they are. Asking sqlite.org/pragma.html for
- * `busy_timeout` scored a 93,820-character section on a term 90,000
- * characters in, and returned the 2,570 characters about `analysis_limit`.
- * So an oversized section is split at its blank lines and the same scoring
- * runs over those blocks — cut to the match rather than to the beginning.
+ * When a section will not fit, the answer is not its opening. A section is
+ * chosen *because* the query terms are in it, so cutting from the start
+ * returns a window picked without any reference to where they are: asking
+ * sqlite.org/pragma.html for `busy_timeout` scores a 93,820-character
+ * section on a term 90,000 characters in, and its first 2,570 characters are
+ * about `analysis_limit`. So an oversized section is split at its blank lines
+ * and the same scoring runs over those blocks — cut to the match rather than
+ * to the beginning.
  */
 function select(markdown: string, ranked: ScoredSection[], terms: string[], maxChars: number): FindMatch[] {
   const matches: FindMatch[] = [];
@@ -266,7 +266,7 @@ function select(markdown: string, ranked: ScoredSection[], terms: string[], maxC
   };
 
   for (const { section } of ranked) {
-    // A sliver of budget buys a fragment nobody can read.
+    // A sliver of budget buys an unreadable fragment.
     if (remaining < MIN_MATCH_CHARS) break;
 
     if (section.text.length <= remaining) {

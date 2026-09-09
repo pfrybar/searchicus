@@ -22,10 +22,10 @@ export const MAX_URL_LENGTH = 2_048;
  *
  * Measured rather than chosen: every engine returns one page, and merging
  * four of those and deduplicating by URL yields somewhere around twenty
- * unique results. Asking for more used to be accepted and then quietly
- * unmet — `limit=100` returned 23 with nothing to say whether the list had
- * been cut to the limit or the pool had simply run out. A ceiling near what
- * the pool actually holds keeps the number honest.
+ * unique results. Without a ceiling `limit=100` is accepted and then quietly
+ * unmet: 23 results come back, with nothing to say whether the list was cut
+ * to the limit or the pool ran out. A ceiling near what the pool actually
+ * holds keeps the number honest.
  */
 export const MAX_SEARCH_LIMIT = 20;
 

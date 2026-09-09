@@ -132,7 +132,7 @@ export function MetricsPage() {
       .finally(() => current && setLoading(false));
 
     // A window change while a request is in flight must not let the older
-    // response win the race and show numbers for a window nobody asked for.
+    // response win the race and show numbers for a window already left.
     return () => {
       current = false;
     };

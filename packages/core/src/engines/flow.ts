@@ -42,12 +42,12 @@ const RESULTS_TIMEOUT_MS = 10_000;
 /**
  * How long to wait for the search box before giving up on it.
  *
- * There is a real failure behind this number. `pressSequentially` auto-waits
- * with Playwright's 30s default, so a renamed search box used to mean the
- * engine sat typing into nothing for the whole of the registry's 30s results
- * budget and then failed with a raw Playwright timeout naming a locator. The
- * box is confirmed present here first, and typing is bounded separately, so
- * the failure is both fast and says which engine's box has moved.
+ * `pressSequentially` auto-waits with Playwright's 30s default, so an
+ * unbounded wait on a renamed search box spends the registry's entire 30s
+ * results budget typing into nothing, then fails with a raw Playwright
+ * timeout naming a locator. The box is confirmed present here first, and
+ * typing is bounded separately, so the failure is both fast and says which
+ * engine's box has moved.
  */
 const SEARCH_BOX_TIMEOUT_MS = 5_000;
 /** Per-keystroke budget once the box is known to be there. */
