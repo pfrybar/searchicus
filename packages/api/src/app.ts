@@ -152,12 +152,15 @@ export function createApp(
     // JSON-RPC error objects, not this API's `{ error }` shape.
     if (isMcpRequest(req)) {
       const malformed = isMalformedJsonError(err);
-      if (!malformed) log.error("unhandled MCP error", { cause: causeOf(err) });
-      res.status(malformed ? 400 : 500).json({
+      const tooLarge = isTooLargeError(err);
+      if (!malformed && !tooLarge) log.error("unhandled MCP error", { cause: causeOf(err) });
+      res.status(malformed ? 400 : tooLarge ? 413 : 500).json({
         jsonrpc: "2.0",
         error: malformed
           ? { code: -32700, message: "Parse error" }
-          : { code: -32603, message: "Internal server error" },
+          : tooLarge
+            ? { code: -32600, message: `Request body must not exceed ${describeLimit(jsonBodyLimit)}.` }
+            : { code: -32603, message: "Internal server error" },
         id: null,
       });
       return;
@@ -478,7 +481,15 @@ function isTooLargeError(err: unknown): boolean {
   return (err as { type?: unknown } | null)?.type === "entity.too.large";
 }
 
-/** True for requests aimed at the MCP endpoint, path-only (query string stripped). */
+/**
+ * True for requests aimed at the MCP endpoint, path-only.
+ *
+ * Normalized the way express routes: it strips the query string, ignores a
+ * trailing slash, and matches case-insensitively. A request that the router
+ * would serve but this test missed got the API's `{ error }` shape from the
+ * handler above, which is the one shape an MCP client cannot read.
+ */
 function isMcpRequest(req: Request): boolean {
-  return (req.originalUrl.split("?")[0] ?? "") === MCP_PATH;
+  const path = (req.originalUrl.split("?")[0] ?? "").replace(/\/+$/, "");
+  return path.toLowerCase() === MCP_PATH;
 }
