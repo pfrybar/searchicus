@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_LOCALE, DEFAULT_TIMEZONE } from "./browser/stealth.js";
 import { DEFAULT_EXTRACT_CONFIG } from "./extract/config.js";
-import { DEFAULT_METRICS_WINDOW, DEFAULT_SEARCH_PAGE_SIZE, MAX_INSIGHTS_LIMIT } from "./insights.js";
+import { DEFAULT_DASHBOARD_CONFIG } from "./insights.js";
 import { DEFAULT_RESULTS_TIMEOUT_MS, DEFAULT_SEARCH_RESERVE_MS, DEFAULT_SESSION_TIMEOUT_MS } from "./registry.js";
 import { ARCHIVE_BUSY_TIMEOUT_MS } from "./storage.js";
 import { DEFAULT_JITTER, DEFAULT_MAX_QUEUED, DEFAULT_MIN_INTERVAL_MS } from "./throttle.js";
@@ -45,6 +45,9 @@ describe("loadConfig", () => {
     expect(config.search.throttle.minIntervalMs).toBe(5_000);
     expect(config.extract.enabled).toBe(false);
     expect(config.dashboard.metricsWindow).toBe(500);
+    // Off unless an operator says otherwise: these endpoints serve every
+    // archived query and nothing in front of them authenticates.
+    expect(config.dashboard.enabled).toBe(false);
   });
 
   it("keeps the extraction slice in the shape the extraction stack expects", () => {
@@ -127,14 +130,14 @@ describe("loadConfig", () => {
     const file = configFile("dashboard:\n  metricsWindow: 5000\n  searchPageSize: 5000\n  maxLimit: 1000\n");
     const config = loadConfig({ env: {}, file });
 
-    expect(config.dashboard).toEqual({ metricsWindow: 1_000, searchPageSize: 1_000, maxLimit: 1_000 });
+    expect(config.dashboard).toEqual({ enabled: false, metricsWindow: 1_000, searchPageSize: 1_000, maxLimit: 1_000 });
   });
 
   it("leaves dashboard windows below the ceiling alone", () => {
     const file = configFile("dashboard:\n  metricsWindow: 800\n  maxLimit: 1000\n");
     const config = loadConfig({ env: {}, file });
 
-    expect(config.dashboard).toEqual({ metricsWindow: 800, searchPageSize: 50, maxLimit: 1_000 });
+    expect(config.dashboard).toEqual({ enabled: false, metricsWindow: 800, searchPageSize: 50, maxLimit: 1_000 });
   });
 
   it("reads an unquoted YAML byte count as the size it plainly is", () => {
@@ -310,11 +313,7 @@ describe("configured defaults", () => {
       },
     });
     expect(DEFAULT_CONFIG_INPUT.archive.busyTimeoutMs).toBe(ARCHIVE_BUSY_TIMEOUT_MS);
-    expect(DEFAULT_CONFIG_INPUT.dashboard).toEqual({
-      metricsWindow: DEFAULT_METRICS_WINDOW,
-      searchPageSize: DEFAULT_SEARCH_PAGE_SIZE,
-      maxLimit: MAX_INSIGHTS_LIMIT,
-    });
+    expect(DEFAULT_CONFIG_INPUT.dashboard).toEqual(DEFAULT_DASHBOARD_CONFIG);
   });
 
   it("matches DEFAULT_EXTRACT_CONFIG field for field", () => {

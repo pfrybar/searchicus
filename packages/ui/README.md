@@ -19,9 +19,9 @@ it turns genuine API 404s into HTML. A hash keeps deep links working with no
 server change, which for a local dashboard is all routing has to do.
 
 The shell reads `GET /api/health` once on load and hides what the deployment
-cannot do — the page-reading actions without `extract.enabled`,
-the dashboard links without an archive. A control that can only fail is worse
-than no control.
+cannot do — the page-reading actions without `extract.enabled`, the dashboard
+links without `dashboard.enabled` (or without an archive to read). Both are
+off by default. A control that can only fail is worse than no control.
 
 Extracted page content is rendered as preformatted text, never as HTML: it is
 Markdown a stranger's website wrote. Every read checks the shared

@@ -71,7 +71,7 @@ function totals(overrides: Record<string, unknown> = {}) {
 }
 
 describe("dashboard navigation", () => {
-  it("hides the dashboard links when no archive is configured", async () => {
+  it("hides the dashboard links when the dashboard is not enabled", async () => {
     mockApi({ "/health": { body: { status: "ok", extract: false, insights: false } }, "/engines": { body: [] } });
 
     render(<App />);

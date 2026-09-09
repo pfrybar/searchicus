@@ -68,9 +68,11 @@ export interface CreateAppOptions {
    */
   extraction?: ExtractionService;
   /**
-   * Serves the dashboard's read endpoints. Omit to leave them answering 503:
-   * a deployment with archiving switched off has no history to show, and the
-   * dashboard is better told that than left guessing at empty responses.
+   * Serves the dashboard's read endpoints. Omit to leave them answering 503,
+   * which is the default deployment: the server entry point passes an archive
+   * here only when `dashboard.enabled` says to, and a deployment with
+   * archiving switched off has no history to show either way. Both are better
+   * told than left guessing at empty responses.
    */
   insights?: ArchiveInsights;
   /**
@@ -371,7 +373,7 @@ function createSearchRouter(
   // actually configured and they are read-only.
   router.get("/metrics/engines", async (req, res, next) => {
     if (!insights) {
-      res.status(503).json({ error: NO_ARCHIVE });
+      res.status(503).json({ error: NO_DASHBOARD });
       return;
     }
 
@@ -392,7 +394,7 @@ function createSearchRouter(
 
   router.get("/searches", async (req, res, next) => {
     if (!insights) {
-      res.status(503).json({ error: NO_ARCHIVE });
+      res.status(503).json({ error: NO_DASHBOARD });
       return;
     }
 
@@ -408,7 +410,7 @@ function createSearchRouter(
 
   router.get("/searches/:searchId", async (req, res, next) => {
     if (!insights) {
-      res.status(503).json({ error: NO_ARCHIVE });
+      res.status(503).json({ error: NO_DASHBOARD });
       return;
     }
 
@@ -427,7 +429,16 @@ function createSearchRouter(
   return router;
 }
 
-const NO_ARCHIVE = "No search archive is configured, so there is no history to show.";
+/**
+ * Why the dashboard endpoints are not answering.
+ *
+ * Deliberately not "no archive": the endpoints are off both when archiving is
+ * disabled and when the operator has not switched the dashboard on, and this
+ * layer cannot tell those apart — it was simply handed no insights. Naming
+ * the switch is true in both cases. The startup banner is where the two are
+ * distinguished, which is the operator's side of the question anyway.
+ */
+const NO_DASHBOARD = "The dashboard is not enabled on this server, so there is no history to show.";
 
 /**
  * A signal that fires when the client gives up on this request.

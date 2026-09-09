@@ -64,11 +64,15 @@ const ui = config.server.ui && existsSync(path.join(uiDir, "index.html"));
 const archive = createDefaultSearchArchive(config);
 const registry = createBrowserRegistry("api", config, { archive });
 const extraction = createBrowserExtraction(config, { archive });
+// The dashboard reads the archive, but having one is not consent to serve it:
+// these endpoints hand every query ever made through this server to anyone who
+// can reach it, and there is no authentication in front of them.
+const dashboard = config.dashboard.enabled ? archive : undefined;
 const server = createApp(registry, {
   mcp: config.server.mcp,
   ui: ui && uiDir,
   extraction,
-  insights: archive,
+  ...(dashboard ? { insights: dashboard } : {}),
   jsonBodyLimit: config.server.jsonBodyLimit,
   runtime: () => ({ search: registry.overload, extract: extraction.overload }),
 }).listen(config.server.port, config.server.host, () => {
@@ -83,7 +87,7 @@ const server = createApp(registry, {
   });
   log.info("features", {
     extract: extraction.enabled ? "enabled" : "disabled (extract.enabled)",
-    dashboard: archive ? "enabled" : "disabled (no archive)",
+    dashboard: dashboard ? "enabled" : archive ? "disabled (dashboard.enabled)" : "disabled (no archive)",
   });
   // Reported because the failure this guards against was silent: two data
   // roots, each working perfectly, and nothing to say which was in use.

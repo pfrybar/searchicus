@@ -196,8 +196,18 @@ export interface ArchiveInsights {
   searchDetail(searchId: string): Promise<SearchDetail | undefined>;
 }
 
-/** How much of the archive the dashboard may read at a time. */
+/** Whether the dashboard is served, and how much it may read at a time. */
 export interface DashboardConfig {
+  /**
+   * Serve the read endpoints the Metrics and History pages are built on.
+   *
+   * Off by default. They expose every query ever made through this server to
+   * anyone who can reach it, and the API has no authentication, so this is a
+   * deliberate act rather than something that arrives switched on. Archiving
+   * is separate: with this off the history still accrues, it is simply not
+   * readable over HTTP.
+   */
+  readonly enabled: boolean;
   /** Recent searches averaged over for engine metrics. */
   readonly metricsWindow: number;
   /** Searches listed per page of the browser. */
@@ -206,8 +216,9 @@ export interface DashboardConfig {
   readonly maxLimit: number;
 }
 
-/** The built-in dashboard window sizes, for callers that configure nothing. */
+/** The built-in dashboard defaults, for callers that configure nothing. */
 export const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
+  enabled: false,
   metricsWindow: DEFAULT_METRICS_WINDOW,
   searchPageSize: DEFAULT_SEARCH_PAGE_SIZE,
   maxLimit: MAX_INSIGHTS_LIMIT,

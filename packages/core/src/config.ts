@@ -232,6 +232,8 @@ export const SearchicusConfigSchema = z.strictObject({
     }),
   }),
   dashboard: z.strictObject({
+    /** Serve the dashboard's read endpoints. Off until an operator turns it on. */
+    enabled: boolean(),
     /** Recent searches averaged over for engine metrics. */
     metricsWindow: positiveInt(),
     /** Searches listed per page of the browser. */
@@ -279,7 +281,7 @@ export const DEFAULT_CONFIG_INPUT = {
     allowedPorts: [80, 443],
     cache: { enabled: true, ttlMs: 300_000, maxEntries: 32, maxChars: 8_000_000 },
   },
-  dashboard: { metricsWindow: 500, searchPageSize: 50, maxLimit: 2_000 },
+  dashboard: { enabled: false, metricsWindow: 500, searchPageSize: 50, maxLimit: 2_000 },
 } satisfies ConfigInput;
 
 /**
@@ -539,6 +541,7 @@ function finalize(parsed: ParsedConfig): SearchicusConfig {
  */
 function dashboardWindows(dashboard: ParsedConfig["dashboard"]): DashboardConfig {
   return {
+    enabled: dashboard.enabled,
     maxLimit: dashboard.maxLimit,
     metricsWindow: underCeiling("dashboard.metricsWindow", dashboard.metricsWindow, dashboard.maxLimit),
     searchPageSize: underCeiling("dashboard.searchPageSize", dashboard.searchPageSize, dashboard.maxLimit),
