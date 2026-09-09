@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_LOCALE, DEFAULT_TIMEZONE } from "./browser/stealth.js";
 import { DEFAULT_EXTRACT_CONFIG } from "./extract/config.js";
 import { DEFAULT_DASHBOARD_CONFIG } from "./insights.js";
+import { getLogLevel, setLogLevel, setLogSink } from "./logger.js";
 import { DEFAULT_RESULTS_TIMEOUT_MS, DEFAULT_SEARCH_RESERVE_MS, DEFAULT_SESSION_TIMEOUT_MS } from "./registry.js";
 import { ARCHIVE_BUSY_TIMEOUT_MS } from "./storage.js";
 import { DEFAULT_JITTER, DEFAULT_MAX_QUEUED, DEFAULT_MIN_INTERVAL_MS } from "./throttle.js";
@@ -86,6 +87,7 @@ describe("loadConfig", () => {
       expect(loadConfig({ env: { SEARCHICUS_EXTRACT_ENABLED: value }, file: null }).extract.enabled, value).toBe(true);
     }
     for (const value of ["false", "0", "no", "off"]) {
+      expect(loadConfig({ env: { SEARCHICUS_ARCHIVE_ENABLED: value }, file: null }).archive.enabled, value).toBe(false);
       expect(loadConfig({ env: { SEARCHICUS_SERVER_MCP: value }, file: null }).server.mcp, value).toBe(false);
     }
     expect(loadConfig({ env: {}, file: configFile("extract:\n  enabled: true\n") }).extract.enabled).toBe(true);
@@ -161,6 +163,24 @@ describe("loadConfig", () => {
       expect(config.server.jsonBodyLimit).toBe(expected);
     }
   });
+
+  it("does not emit finalization warnings above the configured log level", () => {
+    const lines: string[] = [];
+    const previous = getLogLevel();
+    setLogSink((line) => lines.push(line));
+    setLogLevel("info");
+
+    try {
+      loadConfig({
+        env: {},
+        file: configFile("log:\n  level: silent\nextract:\n  maxBytes: 1000\n  maxDocumentBytes: 2000\n"),
+      });
+      expect(lines).toEqual([]);
+    } finally {
+      setLogLevel(previous);
+      setLogSink((line) => process.stderr.write(`${line}\n`));
+    }
+  });
 });
 
 describe("loadConfig failures", () => {
@@ -203,6 +223,17 @@ describe("loadConfig failures", () => {
     expect(error?.message).toMatch(/SEARCHICUS_BROWSER_MAX_PAGES/);
   });
 
+  it("rejects browser identities Chromium would reject later", () => {
+    for (const [name, value] of [
+      ["SEARCHICUS_BROWSER_LOCALE", "en_US"],
+      ["SEARCHICUS_BROWSER_TIMEZONE", "Mars/Olympus"],
+    ] as const) {
+      expect(() => loadConfig({ env: { [name]: value }, file: null }), name).toThrow(
+        new RegExp(`browser\\.(locale|timezone) .*expected`),
+      );
+    }
+  });
+
   it("rejects a request body limit express would reject later", () => {
     // express.json() would otherwise throw `option limit "not-a-size" is
     // invalid` from inside the app factory: after this configuration had been
@@ -211,8 +242,22 @@ describe("loadConfig failures", () => {
     // every body — rather than being accepted as a size and quietly meaning
     // "no requests".
     // A bare fraction is refused with them: 1.5 bytes rounds to one, so it is
-    // never what was meant — the writer wanted a unit.
-    for (const value of ["not-a-size", "64kbs", "64 kilobytes", "0", "0kb", "-1mb", "1.5"]) {
+    // never what was meant — the writer wanted a unit. So is a tab before the
+    // unit: express accepts only spaces there, so "2.5\tmb" would reach it as
+    // two bytes.
+    for (const value of [
+      "not-a-size",
+      "64kbs",
+      "64 kilobytes",
+      "0",
+      "0kb",
+      "-1mb",
+      "1.5",
+      "2.5\tmb",
+      "0.5b",
+      "0.0001kb",
+      `${"9".repeat(400)}pb`,
+    ]) {
       expect(() => loadConfig({ env: { SEARCHICUS_SERVER_JSON_BODY_LIMIT: value }, file: null }), value).toThrow(
         /server\.jsonBodyLimit .*expected a byte size/s,
       );
