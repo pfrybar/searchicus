@@ -11,17 +11,29 @@ import { useEffect, useState } from "react";
  * for a local dashboard is the whole of what routing needs to do.
  */
 export type Route =
-  { name: "search" } | { name: "metrics" } | { name: "searches" } | { name: "search-detail"; searchId: string };
+  /** `query` is the `q` of `#/?q=…`: a search anyone can paste or reload into. */
+  | { name: "search"; query?: string }
+  | { name: "metrics" }
+  | { name: "searches" }
+  | { name: "search-detail"; searchId: string };
 
 export function parseHash(hash: string): Route {
-  const path = hash.replace(/^#\/?/, "").replace(/\/+$/, "");
+  // Split on the first `?` by index rather than String.split, which with a
+  // limit would silently drop everything after a second one.
+  const mark = hash.indexOf("?");
+  const path = (mark === -1 ? hash : hash.slice(0, mark)).replace(/^#\/?/, "").replace(/\/+$/, "");
   if (path === "metrics") return { name: "metrics" };
   if (path === "searches") return { name: "searches" };
 
   const detail = /^searches\/(.+)$/.exec(path);
   if (detail?.[1]) return { name: "search-detail", searchId: decodeSegment(detail[1]) };
 
-  return { name: "search" };
+  // URLSearchParams decodes leniently — a stray percent comes back as itself
+  // rather than throwing, which is what decodeSegment below had to be taught.
+  const query = mark === -1 ? null : new URLSearchParams(hash.slice(mark + 1)).get("q")?.trim();
+  // Omitted rather than undefined when absent, so a bare `#/` is the same
+  // route object it has always been.
+  return query ? { name: "search", query } : { name: "search" };
 }
 
 /**
@@ -64,6 +76,8 @@ export function href(route: Route): string {
     case "search-detail":
       return `#/searches/${encodeURIComponent(route.searchId)}`;
     default:
-      return "#/";
+      // `q=my+query`, as a form-encoded parameter rather than a path segment:
+      // a query is free text, and the path is where ids live.
+      return route.query ? `#/?${new URLSearchParams({ q: route.query }).toString()}` : "#/";
   }
 }
