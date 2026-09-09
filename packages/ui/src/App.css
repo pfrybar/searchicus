@@ -195,8 +195,7 @@ a.nav.active {
   gap: 0.5rem;
 }
 
-/* A card per result: the read panel opens inside its own result rather than
-   floating between two of them. */
+/* A card per result keeps the list scannable without crowding the links. */
 .results > ul > li {
   padding: 0.9rem 1rem;
   border: 1px solid transparent;

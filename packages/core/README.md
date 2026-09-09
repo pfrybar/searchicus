@@ -48,7 +48,7 @@ Playwright lives behind a separate entry point, `@searchicus/core/browser`:
 - `createDefaultBrowserSession(surface, config)` — the configured session each
   surface uses.
 - `createBrowserRegistry(surface, config)` — a default registry with a real
-  browser and the configured local archive attached.
+  browser and the configured local archive attached when archival is enabled.
 
 ## Usage
 
@@ -104,12 +104,13 @@ profile directory on disk, across process restarts too.
 
 Persistent state defaults to `.searchicus/` at the application root — found
 from the installed files, not from the working directory, so every surface
-resolves the same archive however its process was started. Each surface gets
-its own profile under `profile/<surface>/`, and the application archive is the
-sibling `searchicus.sqlite`. Chromium profiles are single-writer, so surfaces do not
-share cookies; the archive uses WAL mode and is safe for API and CLI to share.
-Set `paths.dataDir` to move both together, or use
-`paths.profileDir` / `paths.storePath` for a component override.
+resolves the same state tree however its process was started. Each surface
+gets its own profile under `profile/<surface>/`, and, when archival is
+enabled, the application archive is the sibling `searchicus.sqlite`. Chromium
+profiles are single-writer, so surfaces do not share cookies; the archive uses
+WAL mode and is safe for API and CLI to share. Set `paths.dataDir` to move
+both together, or use `paths.profileDir` / `paths.storePath` for a component
+override.
 
 An ungraceful host or container stop can leave Chromium's `SingletonLock`
 behind. If it names a different hostname, launch failure explains the exact
@@ -146,10 +147,11 @@ must `drain()` (or `close()`) before exiting**, or it kills live browser work.
 
 `createBrowserRegistry()` also queues each completed fan-out for best-effort
 archival, when it was given an archive to write to — off by default, so a
-process that configures nothing keeps no history at all. The SQLite database retains the detailed internal ranking and raw
-successful and failed engine outcomes keyed by the same `search_id`; ordinary
-callers receive only a generic projection of that ranking. Total engine
-failures are archived too, even though they have no client response.
+process that configures nothing keeps no history at all. The SQLite database
+retains the detailed internal ranking and raw successful and failed engine
+outcomes keyed by the same `search_id`; ordinary callers receive only a
+generic projection of that ranking. Total engine failures are archived too,
+even though they have no client response.
 
 Archival happens after `search()` resolves and a write failure is swallowed;
 it must never delay or alter the search response. `drain()` waits for queued
@@ -254,7 +256,11 @@ supply, and it is best-effort accordingly.
 dashboard is built on:
 
 ```ts
-const store = createDefaultSearchArchive(loadConfig())!;
+import { createDefaultSearchArchive, loadConfig } from "@searchicus/core";
+
+const config = loadConfig();
+const store = createDefaultSearchArchive(config);
+if (!store) throw new Error("Set archive.enabled to read the archive");
 await store.engineMetrics({ window: 200 }); // per-engine reliability and contribution
 await store.recentSearches({ limit: 25 }); // newest first, keyset-paged
 await store.searchDetail(searchId); // every engine's page plus the merged ranking
