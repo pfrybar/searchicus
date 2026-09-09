@@ -59,6 +59,30 @@ jobs:
             exit 1
           fi
 
+      # AGENTS.md keeps internal consumers on an exact version of core, and
+      # `npm version --workspaces` does not move those pins with it — it
+      # rewrites the five version fields and leaves the dependencies alone. The
+      # next `npm install` then asks the public registry for a private package
+      # and gets a 404, which is a confusing way to find out about a release.
+      - name: Workspace pins agree with core's version
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const core = require("./packages/core/package.json").version;
+          let bad = 0;
+          for (const dir of fs.readdirSync("packages")) {
+            const pin = (require(`./packages/${dir}/package.json`).dependencies ?? {})["@searchicus/core"];
+            if (pin === undefined) continue;
+            const ok = pin === core;
+            console.log(`${dir} pins @searchicus/core ${pin}; core is ${core}${ok ? "" : "   <-- mismatch"}`);
+            if (!ok) bad += 1;
+          }
+          if (bad > 0) {
+            console.log(`::error::${bad} workspace(s) pin a version of @searchicus/core other than ${core}`);
+            process.exit(1);
+          }
+          '
+
       # Otherwise an image tagged 0.2.0 can be built from a tree that says
       # 0.1.0, and nothing downstream would ever say so.
       - name: Release tag matches the version in package.json
