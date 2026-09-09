@@ -129,12 +129,6 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
         </p>
       )}
 
-      {status === "idle" && !result && (
-        <p className="hint">
-          Every query fans out to Bing, Brave, DuckDuckGo and Startpage, then merges what they agree on.
-        </p>
-      )}
-
       {result && (
         <div className="results">
           {result.degraded && <p className="notice">Partial results: one or more sources were unavailable.</p>}
