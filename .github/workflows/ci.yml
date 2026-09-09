@@ -10,6 +10,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # A release is a push of a tag, and it runs everything below before it
+    # publishes anything: `image` waits on `check` and `test`.
+    tags: ["v*.*.*"]
   pull_request:
   workflow_dispatch:
 
@@ -53,6 +56,19 @@ jobs:
           fi
           if [ "$img" != "$dep" ]; then
             echo "::error file=Dockerfile::Playwright image v$img does not match packages/core playwright $dep; update both together"
+            exit 1
+          fi
+
+      # Otherwise an image tagged 0.2.0 can be built from a tree that says
+      # 0.1.0, and nothing downstream would ever say so.
+      - name: Release tag matches the version in package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          echo "tag: $tag | package.json: $pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
             exit 1
           fi
 
@@ -100,12 +116,128 @@ jobs:
 
       - run: npm test
 
+  # One build per architecture, on a runner of that architecture. They run at
+  # the same time on separate machines, so arm64 costs a second runner rather
+  # than a second build's worth of waiting — and emulating it through QEMU on
+  # one runner would cost roughly triple. Each build pushes an untagged blob
+  # named only by its digest; `manifest` is what gives them names.
   image:
-    name: Docker image builds
-    runs-on: ubuntu-latest
+    name: Image (${{ matrix.platform }})
+    needs: [check, test]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      # Built, never pushed. This is the only thing that exercises the
-      # Dockerfile at all; publishing is a separate workflow and a separate
-      # decision.
-      - run: docker build -t searchicus:${{ github.sha }} .
+      - uses: docker/setup-buildx-action@v3
+
+      # `linux/amd64` cannot name an artifact; `linux-amd64` can.
+      - name: Name this leg
+        run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Labels only here; the tags are decided once, in `manifest`. These are
+      # what let a running container say which commit it came from, and what
+      # links the GHCR package back to this repository.
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+
+      - name: Build
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # A pull request proves the Dockerfile still builds and publishes
+          # nothing: there is no digest to push and no tag to move.
+          outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || format('type=image,name=ghcr.io/{0},push-by-digest=true,name-canonical=true,push=true', github.repository) }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Hand the digest to the manifest job
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # The tags live here, applied once to a manifest list covering both builds,
+  # so `latest` can never mean amd64 today and arm64 tomorrow.
+  #
+  #   push to main   main, sha-<commit>
+  #   tag v0.1.0     0.1.0, 0.1, latest, sha-<commit>
+  #
+  # `latest` is the newest release, never the tip of main: `docker run
+  # ghcr.io/pfrybar/searchicus` with no tag should be the version that was
+  # meant to be shipped. `sha-<commit>` is the only tag that never moves, so
+  # it is the one to roll back to.
+  manifest:
+    name: Tag and publish
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          flavor: |
+            latest=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Create the manifest list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+
+      - name: Show what was published
+        run: docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
