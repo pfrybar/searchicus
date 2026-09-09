@@ -5,33 +5,33 @@ the local archive.
 
 ## Pages
 
-| Route             | Shows                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `#/`              | Search, with Outline, Find, and Extract actions on each result when page reading is on. |
-| `#/metrics`       | Per-engine reliability, latency, and what each engine contributed.                      |
-| `#/searches`      | Archived searches, newest first.                                                        |
-| `#/searches/<id>` | One search: every engine's own results side by side, plus the ranking.                  |
+| Route             | Shows                                                                      |
+| ----------------- | -------------------------------------------------------------------------- |
+| `#/?q=…`          | Search. The query lives in the URL, so a result can be pasted or reloaded. |
+| `#/metrics`       | Per-engine reliability, latency, and what each engine contributed.         |
+| `#/searches`      | Archived searches, newest first.                                           |
+| `#/searches/<id>` | One search: every engine's own results side by side, plus the ranking.     |
 
 Routing is hash-based and hand-rolled in `router.ts` — no router dependency.
+Submitting a search writes `#/?q=my+query`, and opening a URL that carries one
+runs it: a search link that does not search is a broken link. Submitting the
+same query twice re-runs it, since the hash has not changed and nothing else
+would tell the two apart.
 The API and this UI share one origin and one Express app, so real paths would
 need a history fallback there, and `app.ts` explains why a catch-all is a trap:
 it turns genuine API 404s into HTML. A hash keeps deep links working with no
 server change, which for a local dashboard is all routing has to do.
 
-The shell reads `GET /api/health` once on load and hides what the deployment
-cannot do — the page-reading actions without `extract.enabled`, the dashboard
-links without `dashboard.enabled` (or without an archive to read). Both are
-off by default. A control that can only fail is worse than no control.
+The shell reads `GET /api/health` once on load and hides the dashboard links
+when `dashboard.enabled` is off, or when there is no archive to read — both
+of which are the default. The section nav goes with them, since one section
+is not a nav. A control that can only fail is worse than no control.
 
-Extracted page content is rendered as preformatted text, never as HTML: it is
-Markdown a stranger's website wrote. Every read checks the shared
-`usable | unusable` outcome first; usable reads mark page-derived content as
-untrusted, including outline titles and headings. Unusable pages show a warning
-with a stable reason and remote status instead of rendering an access wall or
-error body. Read panels also identify when the server reused an in-memory page
-cache entry rather than rendering the URL again.
-The dashboard reports unusable observations separately from completed reads
-and infrastructure failures.
+**This UI does not read pages.** Outline, find and extract are API and MCP
+capabilities; the search page lists results and links out to them. The
+dashboard still reports what was read through those other front doors,
+keeping unusable observations separate from completed reads and from
+infrastructure failures.
 
 ## Look and theme
 

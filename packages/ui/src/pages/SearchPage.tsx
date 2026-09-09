@@ -1,103 +1,67 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import {
-  extract,
-  find,
-  outline,
-  search,
-  type ExtractResponseBody,
-  type FindResponseBody,
-  type OutlineResponseBody,
-  type SearchResponseBody,
-} from "../api";
+import { search, type SearchResponseBody } from "../api";
+import { href } from "../router";
 
 type Status = "idle" | "loading" | "error";
-type ReadKind = "outline" | "find" | "extract";
 
-type PageRead =
-  | { url: string; kind: ReadKind; status: "loading" }
-  | { url: string; kind: "outline"; status: "ready"; content: OutlineResponseBody }
-  | { url: string; kind: "find"; status: "ready"; content: FindResponseBody }
-  | { url: string; kind: "extract"; status: "ready"; content: ExtractResponseBody }
-  | { url: string; kind: ReadKind; status: "error"; error: string };
-
-export function SearchPage({ canRead }: { canRead: boolean }) {
-  const [query, setQuery] = useState("");
+export function SearchPage({ urlQuery }: { urlQuery: string }) {
+  const [query, setQuery] = useState(urlQuery);
   const [result, setResult] = useState<SearchResponseBody | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [read, setRead] = useState<PageRead | null>(null);
   /** Cancels whatever request this page currently has open. */
   const inFlight = useRef<AbortController | null>(null);
+  /**
+   * The query this page has actually run.
+   *
+   * Both directions need it: a URL arriving with a query it has not run has
+   * to run it, and submitting the same query twice must not run it twice —
+   * the second submit changes no hash, so nothing else tells them apart.
+   */
+  const executed = useRef<string | null>(null);
 
   useEffect(() => () => inFlight.current?.abort(), []);
 
-  /** Replaces the open request with a fresh one, cancelling the old. */
-  function startRequest(): AbortSignal {
+  // A search URL is a thing to paste and to reload, so opening one runs it.
+  // An empty `q` leaves what is on screen alone: the URL has stopped naming a
+  // search, which is not the same as asking for no results.
+  useEffect(() => {
+    const wanted = urlQuery.trim();
+    if (!wanted || wanted === executed.current) return;
+    setQuery(urlQuery);
+    void runSearch(wanted);
+  }, [urlQuery]);
+
+  async function runSearch(text: string) {
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
-    return controller.signal;
-  }
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!query.trim()) return;
-
-    const signal = startRequest();
+    executed.current = text;
     setStatus("loading");
     setError(null);
     setResult(null);
-    setRead(null);
     try {
-      const response = await search({ query }, signal);
-      setResult(response);
+      setResult(await search({ query: text }, controller.signal));
       setStatus("idle");
     } catch (err) {
-      if (signal.aborted) return;
+      if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Search failed");
       setStatus("error");
     }
   }
 
-  async function handleOutline(url: string) {
-    const signal = startRequest();
-    setRead({ url, kind: "outline", status: "loading" });
-    try {
-      setRead({ url, kind: "outline", status: "ready", content: await outline({ url }, signal) });
-    } catch (err) {
-      if (!signal.aborted) setRead({ url, kind: "outline", status: "error", error: messageFor(err) });
-    }
-  }
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const text = query.trim();
+    if (!text) return;
 
-  async function handleFind(url: string) {
-    if (!result) return;
-    const signal = startRequest();
-    setRead({ url, kind: "find", status: "loading" });
-    try {
-      setRead({
-        url,
-        kind: "find",
-        status: "ready",
-        content: await find({ url, query: result.query.query }, signal),
-      });
-    } catch (err) {
-      if (!signal.aborted) setRead({ url, kind: "find", status: "error", error: messageFor(err) });
-    }
-  }
-
-  async function handleExtract(url: string, offset?: number) {
-    const signal = startRequest();
-    setRead({ url, kind: "extract", status: "loading" });
-    try {
-      setRead({
-        url,
-        kind: "extract",
-        status: "ready",
-        content: await extract({ url, ...(offset === undefined ? {} : { offset }) }, signal),
-      });
-    } catch (err) {
-      if (!signal.aborted) setRead({ url, kind: "extract", status: "error", error: messageFor(err) });
-    }
+    // The address bar carries the query, so a result can be shared and
+    // survives a reload. The search runs from here rather than waiting on the
+    // hash to change, because submitting the same query again changes nothing
+    // about the hash and would otherwise do nothing at all.
+    window.location.hash = href({ name: "search", query: text });
+    void runSearch(text);
   }
 
   return (
@@ -141,43 +105,6 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
                   </a>
                   <p className="result-host">{hostOf(item.url)}</p>
                   {item.snippet && <p>{item.snippet}</p>}
-                  {canRead && (
-                    <div className="read-actions" aria-label={`Read ${item.title}`}>
-                      <button
-                        type="button"
-                        className="extract"
-                        onClick={() => void handleOutline(item.url)}
-                        disabled={isLoading(read, item.url)}
-                      >
-                        {read?.url === item.url && read.kind === "outline" && read.status === "loading"
-                          ? "Outlining…"
-                          : "Outline"}
-                      </button>
-                      <button
-                        type="button"
-                        className="extract"
-                        onClick={() => void handleFind(item.url)}
-                        disabled={isLoading(read, item.url)}
-                      >
-                        {read?.url === item.url && read.kind === "find" && read.status === "loading"
-                          ? "Finding…"
-                          : "Find"}
-                      </button>
-                      <button
-                        type="button"
-                        className="extract"
-                        onClick={() => void handleExtract(item.url)}
-                        disabled={isLoading(read, item.url)}
-                      >
-                        {read?.url === item.url && read.kind === "extract" && read.status === "loading"
-                          ? "Extracting…"
-                          : "Extract"}
-                      </button>
-                    </div>
-                  )}
-                  {read?.url === item.url && (
-                    <ReadPanel read={read} onExtract={handleExtract} onClose={() => setRead(null)} />
-                  )}
                 </li>
               ))}
             </ul>
@@ -190,117 +117,12 @@ export function SearchPage({ canRead }: { canRead: boolean }) {
   );
 }
 
-function ReadPanel({
-  read,
-  onExtract,
-  onClose,
-}: {
-  read: PageRead;
-  onExtract: (url: string, offset?: number) => Promise<void>;
-  onClose: () => void;
-}) {
-  if (read.status === "loading") return <p className="meta">Reading page…</p>;
-  if (read.status === "error")
-    return (
-      <p className="error" role="alert">
-        {read.error}
-      </p>
-    );
-
-  // Opening a read on another result already replaces this one; this is for
-  // putting the page back the way it was without doing that.
-  const close = (
-    <button type="button" className="read-close" onClick={onClose} aria-label="Close page read">
-      ×
-    </button>
-  );
-
-  if (read.content.outcome === "unusable") {
-    return (
-      <div className="extraction error" role="alert">
-        {close}
-        <strong>Page content unavailable</strong>
-        <p>
-          {read.content.reason}
-          {read.content.httpStatus === undefined ? "" : ` · remote HTTP ${read.content.httpStatus}`}
-          {read.content.cached ? " · served from cache" : ""}
-        </p>
-      </div>
-    );
-  }
-
-  if (read.kind === "outline") {
-    return (
-      <div className="extraction">
-        {close}
-        <p className="untrusted">Untrusted page title and headings</p>
-        <p className="meta">
-          {read.content.title} · {read.content.totalChars} characters
-          {read.content.cached ? " · served from cache" : ""}
-        </p>
-        <ol className="outline-list">
-          {read.content.sections.map((section) => (
-            <li key={section.offset} style={{ marginLeft: `${section.depth * 1.25}rem` }}>
-              {section.heading ?? "(untitled)"} <span className="meta">· {section.chars} chars</span>
-              <button type="button" className="extract" onClick={() => void onExtract(read.url, section.offset)}>
-                Read section
-              </button>
-            </li>
-          ))}
-        </ol>
-      </div>
-    );
-  }
-
-  if (read.kind === "find") {
-    return (
-      <div className="extraction">
-        {close}
-        <p className="untrusted">
-          Untrusted page content — {read.content.matches.length} matching sections
-          {read.content.cached ? " · served from cache" : ""}
-        </p>
-        {read.content.matches.length === 0 ? (
-          <p className="meta">No matching sections found.</p>
-        ) : (
-          read.content.matches.map((match, index) => (
-            <article key={`${match.offset}-${index}`}>
-              <p className="meta">
-                {match.path.join(" › ") || "(untitled)"} · {Math.round(match.coverage * 100)}% coverage
-              </p>
-              <pre>{match.markdown}</pre>
-            </article>
-          ))
-        )}
-      </div>
-    );
-  }
-
-  const page = read.content;
-  return (
-    <div className="extraction">
-      {close}
-      <p className="untrusted">
-        Untrusted page content — {page.chars} characters
-        {page.truncated ? ` of ${page.totalChars}, truncated` : ""}
-        {page.cached ? " · served from cache" : ""}
-      </p>
-      <pre>{page.markdown}</pre>
-      {page.nextOffset !== undefined && (
-        <button type="button" className="extract" onClick={() => void onExtract(read.url, page.nextOffset)}>
-          Read on
-        </button>
-      )}
-    </div>
-  );
-}
-
 /**
  * What came back, in one line.
  *
- * Count and elapsed time only: the public response is a deliberate
- * projection of the ranking, so per-engine attribution is not the UI's to
- * show here. The history pages are where a fan-out is taken apart.
+ * Count and elapsed time only: the public response is a deliberate projection
+ * of the ranking, so per-engine attribution is not this page's to show. The
+ * history pages are where a fan-out is taken apart.
  */
 function summarize(result: SearchResponseBody | null): string {
   if (!result) return "";
@@ -315,12 +137,4 @@ function hostOf(url: string): string {
   } catch {
     return url;
   }
-}
-
-function isLoading(read: PageRead | null, url: string): boolean {
-  return read?.url === url && read.status === "loading";
-}
-
-function messageFor(err: unknown): string {
-  return err instanceof Error ? err.message : "Page read failed";
 }

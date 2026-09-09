@@ -28,6 +28,7 @@ function searchResponse() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.location.hash = "";
 });
 
 describe("App", () => {
@@ -82,166 +83,36 @@ describe("App", () => {
     expect(screen.queryByText("Cats 101")).not.toBeInTheDocument();
   });
 
-  it("offers no Extract action when the server will not extract", async () => {
+  it("puts the query in the address bar, so a result can be pasted or reloaded", async () => {
     mockFetchSequence([
       { url: "/api/health", body: { status: "ok", extract: false } },
       { url: "/api/search", body: searchResponse() },
     ]);
 
     render(<App />);
-    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
+    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats and dogs" } });
     fireEvent.click(screen.getByRole("button", { name: /search/i }));
     await screen.findByText("Cats 101");
-    expect(screen.queryByRole("button", { name: /extract/i })).not.toBeInTheDocument();
+
+    expect(window.location.hash).toBe("#/?q=cats+and+dogs");
+    // One search, not two: the hash change must not re-run what the submit
+    // already ran, and the mocked sequence has nothing left to answer with.
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/api/search"))).toHaveLength(1);
   });
 
-  it("outlines and finds within a result without exposing provider details", async () => {
+  it("runs the query a pasted URL arrives with", async () => {
+    window.location.hash = "#/?q=cats";
     mockFetchSequence([
-      { url: "/api/health", body: { status: "ok", extract: true } },
+      { url: "/api/health", body: { status: "ok", extract: false } },
       { url: "/api/search", body: searchResponse() },
-      {
-        url: "/api/outline",
-        body: {
-          outcome: "usable",
-          url: "https://example.com/cats",
-          finalUrl: "https://example.com/cats",
-          title: "Cats 101",
-          totalChars: 200,
-          navigable: true,
-          sections: [{ heading: "Care", depth: 0, offset: 0, chars: 180 }],
-          tookMs: 20,
-          cached: true,
-          untrusted: true,
-        },
-      },
-      {
-        url: "/api/find",
-        body: {
-          outcome: "usable",
-          url: "https://example.com/cats",
-          finalUrl: "https://example.com/cats",
-          title: "Cats 101",
-          query: "cats",
-          totalChars: 200,
-          navigable: true,
-          tookMs: 10,
-          cached: true,
-          untrusted: true,
-          matches: [
-            {
-              path: ["Care"],
-              offset: 0,
-              coverage: 1,
-              markdown: "## Care\n\nCats need care.",
-              chars: 24,
-              sectionChars: 24,
-              truncated: false,
-            },
-          ],
-        },
-      },
     ]);
 
     render(<App />);
-    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
-    fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
-    await screen.findByText("Cats 101");
 
-    fireEvent.click(screen.getByRole("button", { name: /^outline$/i }));
-    expect(await screen.findByText("Care", { exact: false })).toBeInTheDocument();
-    expect(screen.getByText(/untrusted page title and headings/i)).toBeInTheDocument();
-    expect(screen.getByText(/served from cache/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /^find$/i }));
-    expect(await screen.findByText("Cats need care.", { exact: false })).toBeInTheDocument();
-    expect(screen.getByText(/untrusted page content/i)).toBeInTheDocument();
-
-    // Closing puts the result back the way it was, without having to open a
-    // read on something else to get rid of this one.
-    fireEvent.click(screen.getByRole("button", { name: /close page read/i }));
-    expect(screen.queryByText(/untrusted page content/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Cats 101")).toBeInTheDocument();
-  });
-
-  it("extracts a result and shows its content as text, not as markup", async () => {
-    mockFetchSequence([
-      { url: "/api/health", body: { status: "ok", extract: true } },
-      { url: "/api/search", body: searchResponse() },
-      {
-        url: "/api/extract",
-        body: {
-          outcome: "usable",
-          url: "https://example.com/cats",
-          finalUrl: "https://example.com/cats",
-          title: "Cats 101",
-          markdown: "# Cats\n\n<script>alert(1)</script> and some prose.",
-          truncated: false,
-          chars: 47,
-          totalChars: 47,
-          offset: 0,
-          tookMs: 800,
-          cached: true,
-          untrusted: true,
-        },
-      },
-    ]);
-
-    render(<App />);
-    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
-    fireEvent.click(screen.getByRole("button", { name: /search/i }));
-    await screen.findByText("Cats 101");
-    fireEvent.click(await screen.findByRole("button", { name: /extract/i }));
-
-    const panel = await screen.findByText(/and some prose/);
-    expect(panel.textContent).toContain("<script>alert(1)</script>");
-    expect(panel.querySelector("script")).toBeNull();
-    expect(screen.getByText(/untrusted page content/i)).toBeInTheDocument();
-  });
-
-  it("shows an unusable-page warning and never renders withheld content", async () => {
-    mockFetchSequence([
-      { url: "/api/health", body: { status: "ok", extract: true } },
-      { url: "/api/search", body: searchResponse() },
-      {
-        url: "/api/extract",
-        body: {
-          outcome: "unusable",
-          reason: "access_denied",
-          url: "https://example.com/cats",
-          finalUrl: "https://example.com/cats",
-          httpStatus: 403,
-          tookMs: 20,
-          cached: true,
-        },
-      },
-    ]);
-
-    render(<App />);
-    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
-    fireEvent.click(screen.getByRole("button", { name: /search/i }));
-    await screen.findByText("Cats 101");
-    fireEvent.click(await screen.findByRole("button", { name: /extract/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Page content unavailable");
-    expect(screen.getByRole("alert")).toHaveTextContent("access_denied · remote HTTP 403 · served from cache");
-    expect(screen.queryByText(/untrusted page content/i)).not.toBeInTheDocument();
-  });
-
-  it("shows why an extraction failed without losing the result list", async () => {
-    mockFetchSequence([
-      { url: "/api/health", body: { status: "ok", extract: true } },
-      { url: "/api/search", body: searchResponse() },
-      { url: "/api/extract", status: 502, body: { error: "That page could not be loaded." } },
-    ]);
-
-    render(<App />);
-    fireEvent.change(screen.getByLabelText(/search query/i), { target: { value: "cats" } });
-    fireEvent.click(screen.getByRole("button", { name: /search/i }));
-    await screen.findByText("Cats 101");
-    fireEvent.click(await screen.findByRole("button", { name: /extract/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("That page could not be loaded.");
-    expect(screen.getByText("Cats 101")).toBeInTheDocument();
+    // Nothing was typed and nothing was clicked: the URL named a search, and
+    // a search URL that does not search is a broken link.
+    expect(await screen.findByText("Cats 101")).toBeInTheDocument();
+    expect(screen.getByLabelText(/search query/i)).toHaveValue("cats");
   });
 
   it("shows an error message when the search request fails", async () => {

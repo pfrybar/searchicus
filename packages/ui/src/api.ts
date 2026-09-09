@@ -1,11 +1,5 @@
 import type {
   EngineMetricsReport,
-  ExtractRequest,
-  ExtractResponse,
-  FindRequest,
-  FindResponse,
-  OutlineRequest,
-  OutlineResponse,
   PublicSearchResponse,
   SearchDetail,
   SearchRequest,
@@ -43,46 +37,12 @@ export async function search(request: SearchRequest, signal?: AbortSignal): Prom
   return res.json() as Promise<SearchResponseBody>;
 }
 
-export type ExtractResponseBody = ExtractResponse;
-
-export async function extract(request: ExtractRequest, signal?: AbortSignal): Promise<ExtractResponseBody> {
-  const res = await fetch(`${API_BASE}/extract`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
-    ...(signal ? { signal } : {}),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return res.json() as Promise<ExtractResponseBody>;
-}
-
-export type FindResponseBody = FindResponse;
-
-export async function find(request: FindRequest, signal?: AbortSignal): Promise<FindResponseBody> {
-  const res = await fetch(`${API_BASE}/find`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
-    ...(signal ? { signal } : {}),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return res.json() as Promise<FindResponseBody>;
-}
-
-export type OutlineResponseBody = OutlineResponse;
-
-export async function outline(request: OutlineRequest, signal?: AbortSignal): Promise<OutlineResponseBody> {
-  const res = await fetch(`${API_BASE}/outline`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
-    ...(signal ? { signal } : {}),
-  });
-  if (!res.ok) throw new Error(await readError(res));
-  return res.json() as Promise<OutlineResponseBody>;
-}
-
-/** What this deployment can actually do, so the UI can hide what it cannot. */
+/**
+ * What this deployment can actually do, so the UI can hide what it cannot.
+ *
+ * `extract` mirrors what `/health` reports and nothing here reads it: page
+ * reading is an API and MCP capability, not something this UI offers.
+ */
 export interface Capabilities {
   extract: boolean;
   insights: boolean;

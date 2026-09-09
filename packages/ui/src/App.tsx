@@ -41,23 +41,24 @@ export function App() {
           </a>
           <p className="tagline">One query, every backend search engine.</p>
         </div>
-        <nav aria-label="Sections">
-          <NavLink route={{ name: "search" }} current={route} label="Search" />
-          {capabilities.insights && (
-            <>
-              <NavLink route={{ name: "metrics" }} current={route} label="Metrics" />
-              <NavLink route={{ name: "searches" }} current={route} label="History" />
-            </>
-          )}
-        </nav>
+        {/* One section is not a nav: without the dashboard there is nowhere
+            to go, and a lone pill marking the page you are already on is a
+            control that does nothing. */}
+        {capabilities.insights && (
+          <nav aria-label="Sections">
+            <NavLink route={{ name: "search" }} current={route} label="Search" />
+            <NavLink route={{ name: "metrics" }} current={route} label="Metrics" />
+            <NavLink route={{ name: "searches" }} current={route} label="History" />
+          </nav>
+        )}
       </header>
 
-      {renderRoute(route, capabilities)}
+      {renderRoute(route)}
     </main>
   );
 }
 
-function renderRoute(route: Route, capabilities: Capabilities) {
+function renderRoute(route: Route) {
   switch (route.name) {
     case "metrics":
       return <MetricsPage />;
@@ -66,7 +67,7 @@ function renderRoute(route: Route, capabilities: Capabilities) {
     case "search-detail":
       return <SearchDetailPage searchId={route.searchId} />;
     default:
-      return <SearchPage canRead={capabilities.extract} />;
+      return <SearchPage urlQuery={route.query ?? ""} />;
   }
 }
 
